@@ -136,7 +136,7 @@ class ConnectionProvider with ChangeNotifier {
     if (_currentServer != null && availableServers.any((s) => s.id == _currentServer!.id)) {
       // 如果用户手动选择了服务器，且该服务器仍然存在，优先使用
       serverToConnect = _currentServer;
-      print('使用用户选择的服务器: ${serverToConnect.name} (${serverToConnect.ping}ms)');
+      print('使用用户选择的服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)');
     } else if (availableServers.length == 1) {
       // 如果只有一个服务器，直接使用
       serverToConnect = availableServers.first;
@@ -145,7 +145,7 @@ class ConnectionProvider with ChangeNotifier {
       // 如果有多个服务器，自动选择最优
       serverToConnect = _getBestServer(availableServers);
       if (serverToConnect != null) {
-        print('自动选择最优服务器: ${serverToConnect.name} (${serverToConnect.ping}ms)');
+        print('自动选择最优服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)');
         // 更新当前服务器显示，但不保存（临时选择）
         _currentServer = serverToConnect;
         notifyListeners();
