@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
 import '../providers/server_provider.dart';
 import '../providers/connection_provider.dart';
