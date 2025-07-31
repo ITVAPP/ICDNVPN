@@ -86,15 +86,15 @@ jobs:
       run: |
         $buildPath = "build\windows\x64\runner\Release"
         
-        # 创建配置文件模板
-        $configTemplate = @'
-{
-  "domains": [
-    "pages-vless-a9f.pages.dev"
-  ],
-  "uuid": "bc24baea-3e5c-4107-a231-416cf00504fe"
-}
-'@
+        # 创建配置文件模板 - 使用转义字符避免YAML语法冲突
+        $configTemplate = @"
+        {
+          "domains": [
+            "pages-vless-a9f.pages.dev"
+          ],
+          "uuid": "bc24baea-3e5c-4107-a231-416cf00504fe"
+        }
+        "@
         
         $configTemplate | Out-File -FilePath "$buildPath\config_template.json" -Encoding UTF8
     
@@ -123,71 +123,71 @@ jobs:
       run: |
         # 使用NSIS创建安装程序（需要先创建NSIS脚本）
         # 这里提供一个简单的NSIS脚本模板
-        $nsisScript = @'
-!define APPNAME "CFVPN"
-!define COMPANYNAME "YourCompany"
-!define DESCRIPTION "Cloudflare VPN Client"
-!define VERSIONMAJOR 1
-!define VERSIONMINOR 0
-!define VERSIONBUILD 0
-!define INSTALLSIZE 50000
+        $nsisScript = @"
+        !define APPNAME "CFVPN"
+        !define COMPANYNAME "YourCompany"
+        !define DESCRIPTION "Cloudflare VPN Client"
+        !define VERSIONMAJOR 1
+        !define VERSIONMINOR 0
+        !define VERSIONBUILD 0
+        !define INSTALLSIZE 50000
 
-RequestExecutionLevel admin
+        RequestExecutionLevel admin
 
-InstallDir "$PROGRAMFILES\${APPNAME}"
+        InstallDir "`$PROGRAMFILES\`${APPNAME}"
 
-Name "${APPNAME}"
-OutFile "CFVPN-Setup.exe"
+        Name "`${APPNAME}"
+        OutFile "CFVPN-Setup.exe"
 
-!include "MUI2.nsh"
+        !include "MUI2.nsh"
 
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
+        !insertmacro MUI_PAGE_WELCOME
+        !insertmacro MUI_PAGE_DIRECTORY
+        !insertmacro MUI_PAGE_INSTFILES
+        !insertmacro MUI_PAGE_FINISH
 
-!insertmacro MUI_UNPAGE_WELCOME
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
-!insertmacro MUI_UNPAGE_FINISH
+        !insertmacro MUI_UNPAGE_WELCOME
+        !insertmacro MUI_UNPAGE_CONFIRM
+        !insertmacro MUI_UNPAGE_INSTFILES
+        !insertmacro MUI_UNPAGE_FINISH
 
-!insertmacro MUI_LANGUAGE "English"
+        !insertmacro MUI_LANGUAGE "English"
 
-Section "install"
-    SetOutPath "$INSTDIR"
-    
-    File /r "build\windows\x64\runner\Release\*.*"
-    
-    WriteUninstaller "$INSTDIR\uninstall.exe"
-    
-    # 创建开始菜单快捷方式
-    CreateDirectory "$SMPROGRAMS\${APPNAME}"
-    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\proxy_app.exe"
-    CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe"
-    
-    # 创建桌面快捷方式
-    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\proxy_app.exe"
-    
-    # 写入注册表
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${COMPANYNAME}"
-    WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "EstimatedSize" ${INSTALLSIZE}
-SectionEnd
+        Section "install"
+            SetOutPath "`$INSTDIR"
+            
+            File /r "build\windows\x64\runner\Release\*.*"
+            
+            WriteUninstaller "`$INSTDIR\uninstall.exe"
+            
+            # 创建开始菜单快捷方式
+            CreateDirectory "`$SMPROGRAMS\`${APPNAME}"
+            CreateShortcut "`$SMPROGRAMS\`${APPNAME}\`${APPNAME}.lnk" "`$INSTDIR\proxy_app.exe"
+            CreateShortcut "`$SMPROGRAMS\`${APPNAME}\Uninstall.lnk" "`$INSTDIR\uninstall.exe"
+            
+            # 创建桌面快捷方式
+            CreateShortcut "`$DESKTOP\`${APPNAME}.lnk" "`$INSTDIR\proxy_app.exe"
+            
+            # 写入注册表
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "DisplayName" "`${APPNAME}"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "UninstallString" "`$INSTDIR\uninstall.exe"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "InstallLocation" "`$INSTDIR"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "Publisher" "`${COMPANYNAME}"
+            WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "EstimatedSize" `${INSTALLSIZE}
+        SectionEnd
 
-Section "uninstall"
-    Delete "$INSTDIR\*.*"
-    RMDir /r "$INSTDIR"
-    
-    Delete "$SMPROGRAMS\${APPNAME}\*.*"
-    RMDir "$SMPROGRAMS\${APPNAME}"
-    
-    Delete "$DESKTOP\${APPNAME}.lnk"
-    
-    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-SectionEnd
-'@
+        Section "uninstall"
+            Delete "`$INSTDIR\*.*"
+            RMDir /r "`$INSTDIR"
+            
+            Delete "`$SMPROGRAMS\`${APPNAME}\*.*"
+            RMDir "`$SMPROGRAMS\`${APPNAME}"
+            
+            Delete "`$DESKTOP\`${APPNAME}.lnk"
+            
+            DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}"
+        SectionEnd
+        "@
         
         # 保存NSIS脚本（实际使用时需要安装NSIS）
         # $nsisScript | Out-File -FilePath "installer.nsi" -Encoding UTF8
