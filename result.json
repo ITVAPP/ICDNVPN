@@ -1,0 +1,14 @@
+[
+    {
+        "ip": "104.16.65.39",
+        "port": 443,
+        "delay": 155,
+        "downloadSpeed": 54
+    },
+    {
+        "ip": "104.16.31.208",
+        "port": 443,
+        "delay": 193,
+        "downloadSpeed": 21
+    }
+]

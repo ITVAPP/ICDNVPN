@@ -1,0 +1,200 @@
+name: Build Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.19.0'
+        channel: 'stable'
+    
+    - name: Install dependencies
+      run: flutter pub get
+    
+    - name: Build Windows app
+      run: flutter build windows --release
+    
+    - name: Download V2Ray core
+      shell: pwsh
+      run: |
+        # 下载V2Ray核心文件
+        $v2rayVersion = "v5.12.1"
+        $downloadUrl = "https://github.com/v2fly/v2ray-core/releases/download/$v2rayVersion/v2ray-windows-64.zip"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile "v2ray.zip"
+        
+        # 解压到构建目录
+        $buildPath = "build\windows\x64\runner\Release"
+        New-Item -ItemType Directory -Force -Path "$buildPath\v2ray"
+        Expand-Archive -Path "v2ray.zip" -DestinationPath "temp_v2ray"
+        
+        # 只复制必需的文件
+        Copy-Item "temp_v2ray\v2ray.exe" -Destination "$buildPath\v2ray\"
+        Copy-Item "temp_v2ray\geoip.dat" -Destination "$buildPath\v2ray\"
+        Copy-Item "temp_v2ray\geosite.dat" -Destination "$buildPath\v2ray\"
+        
+        # 清理临时文件
+        Remove-Item -Recurse -Force "temp_v2ray"
+        Remove-Item "v2ray.zip"
+    
+    - name: Download CloudflareST
+      shell: pwsh
+      run: |
+        # 下载CloudflareST (优选IP测试工具)
+        $cfstVersion = "v2.2.5"
+        $downloadUrl = "https://github.com/XIU2/CloudflareSpeedTest/releases/download/$cfstVersion/CloudflareST_windows_amd64.zip"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile "cfst.zip"
+        
+        # 解压到构建目录
+        $buildPath = "build\windows\x64\runner\Release"
+        Expand-Archive -Path "cfst.zip" -DestinationPath "temp_cfst"
+        
+        # 重命名并复制文件
+        Copy-Item "temp_cfst\CloudflareST.exe" -Destination "$buildPath\cftest.exe"
+        Copy-Item "temp_cfst\ip.txt" -Destination "$buildPath\"
+        
+        # 清理临时文件
+        Remove-Item -Recurse -Force "temp_cfst"
+        Remove-Item "cfst.zip"
+    
+    - name: Create config template
+      shell: pwsh
+      run: |
+        $buildPath = "build\windows\x64\runner\Release"
+        
+        # 创建配置文件模板
+        $configTemplate = @'
+{
+  "domains": [
+    "pages-vless-a9f.pages.dev"
+  ],
+  "uuid": "bc24baea-3e5c-4107-a231-416cf00504fe"
+}
+'@
+        
+        $configTemplate | Out-File -FilePath "$buildPath\config_template.json" -Encoding UTF8
+    
+    - name: Package application
+      shell: pwsh
+      run: |
+        $version = "${{ github.ref_name }}".TrimStart("v")
+        $buildPath = "build\windows\x64\runner\Release"
+        $outputName = "CFVPN-Windows-x64-$version"
+        
+        # 创建发布目录
+        New-Item -ItemType Directory -Force -Path "release"
+        
+        # 压缩所有文件
+        Compress-Archive -Path "$buildPath\*" -DestinationPath "release\$outputName.zip"
+        
+        # 生成文件哈希
+        $hash = Get-FileHash "release\$outputName.zip" -Algorithm SHA256
+        "$($hash.Hash)  $outputName.zip" | Out-File -FilePath "release\$outputName.zip.sha256" -Encoding UTF8
+        
+        Write-Host "Package created: $outputName.zip"
+        Write-Host "SHA256: $($hash.Hash)"
+    
+    - name: Create installer (optional)
+      shell: pwsh
+      run: |
+        # 使用NSIS创建安装程序（需要先创建NSIS脚本）
+        # 这里提供一个简单的NSIS脚本模板
+        $nsisScript = @'
+!define APPNAME "CFVPN"
+!define COMPANYNAME "YourCompany"
+!define DESCRIPTION "Cloudflare VPN Client"
+!define VERSIONMAJOR 1
+!define VERSIONMINOR 0
+!define VERSIONBUILD 0
+!define INSTALLSIZE 50000
+
+RequestExecutionLevel admin
+
+InstallDir "$PROGRAMFILES\${APPNAME}"
+
+Name "${APPNAME}"
+OutFile "CFVPN-Setup.exe"
+
+!include "MUI2.nsh"
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_WELCOME
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_UNPAGE_FINISH
+
+!insertmacro MUI_LANGUAGE "English"
+
+Section "install"
+    SetOutPath "$INSTDIR"
+    
+    File /r "build\windows\x64\runner\Release\*.*"
+    
+    WriteUninstaller "$INSTDIR\uninstall.exe"
+    
+    # 创建开始菜单快捷方式
+    CreateDirectory "$SMPROGRAMS\${APPNAME}"
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\proxy_app.exe"
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe"
+    
+    # 创建桌面快捷方式
+    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\proxy_app.exe"
+    
+    # 写入注册表
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "InstallLocation" "$INSTDIR"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${COMPANYNAME}"
+    WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "EstimatedSize" ${INSTALLSIZE}
+SectionEnd
+
+Section "uninstall"
+    Delete "$INSTDIR\*.*"
+    RMDir /r "$INSTDIR"
+    
+    Delete "$SMPROGRAMS\${APPNAME}\*.*"
+    RMDir "$SMPROGRAMS\${APPNAME}"
+    
+    Delete "$DESKTOP\${APPNAME}.lnk"
+    
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
+SectionEnd
+'@
+        
+        # 保存NSIS脚本（实际使用时需要安装NSIS）
+        # $nsisScript | Out-File -FilePath "installer.nsi" -Encoding UTF8
+        # & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-release
+        path: release/*
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/*.zip
+          release/*.sha256
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
