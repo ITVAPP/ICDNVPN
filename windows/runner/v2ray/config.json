@@ -1,0 +1,235 @@
+{
+  // ============== 入站配置 ==============
+  // 定义本地监听端口，接收来自系统的网络请求
+  "inbounds": [
+    {
+      // SOCKS5 代理入站
+      "port": 7898,                    // 本地 SOCKS5 监听端口
+      "protocol": "socks",             // 协议类型：SOCKS5
+      "settings": {
+        "auth": "noauth",              // 认证方式：无需认证
+        "udp": true                    // 支持 UDP 转发（用于 DNS 查询等）
+      }
+    },
+    {
+      // HTTP 代理入站
+      "tag": "http",                   // 标签，用于路由规则引用
+      "port": 7899,                    // 本地 HTTP 监听端口
+      "protocol": "http",              // 协议类型：HTTP
+      "sniffing": {                    // 流量嗅探，识别流量类型
+        "enabled": true,               // 启用嗅探
+        "destOverride": [              // 根据嗅探结果覆盖目标地址
+          "http",                      // HTTP 流量
+          "tls"                        // HTTPS/TLS 流量
+        ],
+        "routeOnly": false             // 不仅用于路由，还会修改目标地址
+      },
+      "settings": {
+        "auth": "noauth",              // 认证方式：无需认证
+        "udp": true,                   // 支持 UDP（HTTP 代理通常不需要）
+        "allowTransparent": false      // 不允许透明代理
+      }
+    }
+  ],
+
+  // ============== 出站配置 ==============
+  // 定义流量如何发送到远程服务器
+  "outbounds": [
+    {
+      // 主要代理出站（连接到远程 VLESS 服务器）
+      "tag": "proxy",                  // 标签，路由规则中使用
+      "protocol": "vless",             // 协议：VLESS（更轻量的协议）
+      "settings": {
+        "vnext": [                     // VLESS 服务器列表
+          {
+            "address": "104.16.52.54", // 服务器 IP（Cloudflare CDN IP）
+            "port": 443,               // 服务器端口（HTTPS 标准端口）
+            "users": [                 // 用户列表
+              {
+                "id": "bc24baea-3e5c-4107-a231-416cf00504fe",  // UUID，必须与服务器匹配
+                "alterId": 0,          // 额外 ID（VLESS 不使用）
+                "email": "t@t.tt",     // 用户标识（仅用于日志）
+                "security": "auto",    // 加密方式：自动选择
+                "encryption": "none"   // VLESS 特性：不加密（TLS 已提供加密）
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {              // 传输层配置
+        "network": "ws",               // 传输协议：WebSocket
+        "security": "tls",             // 传输层加密：TLS
+        "tlsSettings": {               // TLS 配置
+          "allowInsecure": false,      // 不允许不安全的证书
+          "serverName": "pages-vless-a9f.pages.dev",  // SNI：服务器域名
+          "fingerprint": "randomized"  // TLS 指纹：随机化（防止被识别）
+        },
+        "wsSettings": {                // WebSocket 配置
+          "path": "/",                 // WebSocket 路径
+          "headers": {                 // HTTP 头部
+            "Host": "pages-vless-a9f.pages.dev"  // Host 头（CDN 需要）
+          }
+        },
+        "sockopt": {                   // Socket 选项
+          "dialerProxy": "proxy3"      // 使用 proxy3 出站进行连接（分片）
+        }
+      },
+      "mux": {                         // 多路复用（不推荐与 CDN 使用）
+        "enabled": false,              // 禁用
+        "concurrency": -1              // 并发连接数
+      }
+    },
+    
+    {
+      // 直连出站（不经过代理）
+      "tag": "direct",                 // 标签
+      "protocol": "freedom",           // freedom 表示直接连接
+      "settings": {}                   // 无需额外设置
+    },
+    
+    {
+      // 拦截出站（丢弃流量）
+      "tag": "block",                  // 标签
+      "protocol": "blackhole",         // 黑洞协议：丢弃所有流量
+      "settings": {
+        "response": {
+          "type": "http"               // 返回 HTTP 错误响应
+        }
+      }
+    },
+    
+    {
+      // 分片出站（用于绕过 GFW 的 TLS 检测）
+      "tag": "proxy3",                 // 标签
+      "protocol": "freedom",           // 直连协议
+      "settings": {
+        "fragment": {                  // 分片设置
+          "packets": "tlshello",       // 对 TLS Hello 包进行分片
+          "length": "100-200",         // 分片大小：100-200 字节
+          "interval": "10-20"          // 分片间隔：10-20 毫秒
+        }
+      }
+    }
+  ],
+
+  // ============== DNS 配置 ==============
+  // 智能 DNS 解析，防止 DNS 泄露
+  "dns": {
+    "hosts": {                         // 静态 DNS 记录
+      "dns.google": "8.8.8.8",         // Google DNS 的 IP
+      "proxy.example.com": "127.0.0.1" // 示例域名解析
+    },
+    "servers": [                       // DNS 服务器列表
+      {
+        "address": "223.5.5.5",        // 阿里 DNS（用于国内域名）
+        "domains": [                   // 使用此 DNS 的域名规则
+          "geosite:cn",                // 中国网站
+          "geosite:geolocation-cn"     // 地理位置在中国的域名
+        ],
+        "expectIPs": [                 // 期望返回的 IP 范围
+          "geoip:cn"                   // 中国 IP
+        ]
+      },
+      "1.1.1.1",                       // Cloudflare DNS
+      "8.8.8.8",                       // Google DNS
+      "https://dns.google/dns-query"  // DoH (DNS over HTTPS)
+    ]
+  },
+
+  // ============== 路由配置 ==============
+  // 决定流量走代理还是直连
+  "routing": {
+    "domainStrategy": "AsIs",          // 域名解析策略：保持原样
+    "rules": [                         // 路由规则（按顺序匹配）
+      
+      // 规则1：API 流量
+      {
+        "type": "field",
+        "inboundTag": ["api"],         // 来自 API 的流量
+        "outboundTag": "api"           // 发送到 API 出站
+      },
+      
+      // 规则2：特定域名直连
+      {
+        "type": "field",
+        "outboundTag": "direct",       // 直连
+        "domain": [                    // 域名列表
+          "domain:example-example.com",
+          "domain:example-example2.com",
+          "domain:3o91888o77.vicp.fun" // 示例域名
+        ]
+      },
+      
+      // 规则3：拦截 QUIC 流量
+      {
+        "type": "field",
+        "port": "443",                 // 443 端口
+        "network": "udp",              // UDP 协议（QUIC）
+        "outboundTag": "block"         // 拦截（强制使用 TCP）
+      },
+      
+      // 规则4：拦截广告
+      {
+        "type": "field",
+        "outboundTag": "block",        // 拦截
+        "domain": [
+          "geosite:category-ads-all"  // 广告域名集合
+        ]
+      },
+      
+      // 规则5：国内域名直连
+      {
+        "type": "field",
+        "outboundTag": "direct",       // 直连
+        "domain": [
+          "domain:dns.alidns.com",     // 阿里 DNS
+          "domain:doh.pub",            // DNSPod DoH
+          "domain:dot.pub",            // DNSPod DoT
+          "domain:doh.360.cn",         // 360 DoH
+          "domain:dot.360.cn",         // 360 DoT
+          "geosite:cn",                // 中国网站
+          "geosite:geolocation-cn"     // 地理位置在中国的网站
+        ]
+      },
+      
+      // 规则6：国内 IP 直连
+      {
+        "type": "field",
+        "outboundTag": "direct",       // 直连
+        "ip": [
+          // 国内 DNS 服务器
+          "223.5.5.5/32",              // 阿里 DNS
+          "223.6.6.6/32",              // 阿里 DNS
+          "2400:3200::1/128",          // 阿里 DNS IPv6
+          "2400:3200:baba::1/128",     // 阿里 DNS IPv6
+          "119.29.29.29/32",           // DNSPod
+          "1.12.12.12/32",             // DNSPod
+          "120.53.53.53/32",           // OneDNS
+          "2402:4e00::/128",           // DNSPod IPv6
+          "2402:4e00:1::/128",         // DNSPod IPv6
+          "180.76.76.76/32",           // 百度 DNS
+          "2400:da00::6666/128",       // 百度 DNS IPv6
+          "114.114.114.114/32",        // 114 DNS
+          "114.114.115.115/32",        // 114 DNS
+          "180.184.1.1/32",            // 移动 DNS
+          "180.184.2.2/32",            // 移动 DNS
+          "101.226.4.6/32",            // 联通 DNS
+          "218.30.118.6/32",           // 联通 DNS
+          "123.125.81.6/32",           // 联通 DNS
+          "140.207.198.6/32",          // 电信 DNS
+          
+          // IP 类型
+          "geoip:private",             // 私有 IP（局域网）
+          "geoip:cn"                   // 中国大陆 IP
+        ]
+      },
+      
+      // 规则7：默认规则（其他所有流量）
+      {
+        "type": "field",
+        "port": "0-65535",             // 所有端口
+        "outboundTag": "proxy"         // 走代理
+      }
+    ]
+  }
+}
