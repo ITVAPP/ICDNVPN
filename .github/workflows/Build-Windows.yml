@@ -1,9 +1,7 @@
 name: Build Windows Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # 仅保留手动触发方式
   workflow_dispatch:
 
 jobs:
@@ -26,27 +24,42 @@ jobs:
     - name: Build Windows app
       run: flutter build windows --release
     
-    - name: Download V2Ray core
+    - name: Copy V2Ray core from project
       shell: pwsh
       run: |
-        # 下载V2Ray核心文件
-        $v2rayVersion = "v5.12.1"
-        $downloadUrl = "https://github.com/v2fly/v2ray-core/releases/download/$v2rayVersion/v2ray-windows-64.zip"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile "v2ray.zip"
+        # 从项目目录复制V2Ray核心文件
+        $sourcePath = "windows\runner\v2ray"
+        $buildPath = "build\windows\x64\runner\Release\v2ray"
         
-        # 解压到构建目录
-        $buildPath = "build\windows\x64\runner\Release"
-        New-Item -ItemType Directory -Force -Path "$buildPath\v2ray"
-        Expand-Archive -Path "v2ray.zip" -DestinationPath "temp_v2ray"
+        # 创建目标目录
+        New-Item -ItemType Directory -Force -Path $buildPath
         
-        # 只复制必需的文件
-        Copy-Item "temp_v2ray\v2ray.exe" -Destination "$buildPath\v2ray\"
-        Copy-Item "temp_v2ray\geoip.dat" -Destination "$buildPath\v2ray\"
-        Copy-Item "temp_v2ray\geosite.dat" -Destination "$buildPath\v2ray\"
+        # 复制V2Ray核心文件
+        if (Test-Path "$sourcePath\v2ray.exe") {
+            Copy-Item "$sourcePath\v2ray.exe" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied v2ray.exe"
+        } else {
+            Write-Error "v2ray.exe not found in $sourcePath"
+            exit 1
+        }
         
-        # 清理临时文件
-        Remove-Item -Recurse -Force "temp_v2ray"
-        Remove-Item "v2ray.zip"
+        if (Test-Path "$sourcePath\geoip.dat") {
+            Copy-Item "$sourcePath\geoip.dat" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied geoip.dat"
+        } else {
+            Write-Error "geoip.dat not found in $sourcePath"
+            exit 1
+        }
+        
+        if (Test-Path "$sourcePath\geosite.dat") {
+            Copy-Item "$sourcePath\geosite.dat" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied geosite.dat"
+        } else {
+            Write-Error "geosite.dat not found in $sourcePath"
+            exit 1
+        }
+        
+        Write-Host "V2Ray core files copied successfully"
     
     - name: Download CloudflareST
       shell: pwsh
