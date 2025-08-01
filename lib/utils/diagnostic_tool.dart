@@ -26,7 +26,9 @@ class CloudflareDiagnosticTool {
       results['workDirExists'] = await Directory(workDir).exists();
       
       // 3. 检查 ip.txt 文件
-      final ipFilePath = path.join(workDir, 'ip.txt');
+      final exePath = Platform.resolvedExecutable;
+      final appDir = path.dirname(exePath);
+      final ipFilePath = path.join(appDir, 'ip.txt');
       results['ipFilePath'] = ipFilePath;
       results['ipFileExists'] = await File(ipFilePath).exists();
       
@@ -167,32 +169,6 @@ class CloudflareDiagnosticTool {
       context: context,
       barrierDismissible: false,
       builder: (context) => _DiagnosticDialog(),
-    );
-  }
-  
-  Widget _buildCodeBlock(String title, String content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: SelectableText(
-            content,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 11,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
     );
   }
 }
@@ -404,5 +380,31 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
     });
     
     return widgets;
+  }
+  
+  Widget _buildCodeBlock(String title, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: SelectableText(
+            content,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
   }
 }
