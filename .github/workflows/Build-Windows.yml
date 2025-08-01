@@ -1,5 +1,4 @@
 name: Build Windows Release
-
 on:
   # 仅保留手动触发方式
   workflow_dispatch:
@@ -30,10 +29,10 @@ jobs:
     - name: Build Windows app
       run: flutter build windows --release
     
-    - name: Copy V2Ray core and CloudflareST from project
+    - name: Copy V2Ray core and ip.txt from project
       shell: pwsh
       run: |
-        # 从项目目录复制V2Ray核心文件和CloudflareST工具
+        # 从项目目录复制V2Ray核心文件
         $sourcePath = "windows\runner\v2ray"
         $buildPath = "build\windows\x64\runner\Release\v2ray"
         
@@ -67,27 +66,19 @@ jobs:
         
         Write-Host "V2Ray core files copied successfully"
         
-        # 复制CloudflareST工具到构建目录根目录
-        $sourcePathCF = "windows\runner"
+        # 复制 ip.txt 到构建目录根目录
+        $sourcePathRoot = "windows\runner"
         $buildPathRoot = "build\windows\x64\runner\Release"
         
-        if (Test-Path "$sourcePathCF\cftest.exe") {
-            Copy-Item "$sourcePathCF\cftest.exe" -Destination "$buildPathRoot\" -Force
-            Write-Host "✓ Copied cftest.exe"
-        } else {
-            Write-Error "cftest.exe not found in $sourcePathCF"
-            exit 1
-        }
-        
-        if (Test-Path "$sourcePathCF\ip.txt") {
-            Copy-Item "$sourcePathCF\ip.txt" -Destination "$buildPathRoot\" -Force
+        if (Test-Path "$sourcePathRoot\ip.txt") {
+            Copy-Item "$sourcePathRoot\ip.txt" -Destination "$buildPathRoot\" -Force
             Write-Host "✓ Copied ip.txt"
         } else {
-            Write-Error "ip.txt not found in $sourcePathCF"
+            Write-Error "ip.txt not found in $sourcePathRoot"
             exit 1
         }
         
-        Write-Host "CloudflareST files copied successfully"
+        Write-Host "All required files copied successfully"
     
     - name: Package application
       shell: pwsh
