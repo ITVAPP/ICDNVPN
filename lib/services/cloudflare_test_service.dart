@@ -132,70 +132,6 @@ class CloudflareTestService {
     }
   }
   
-  // 从 IP 段中采样（优化算法：每个 /24 段采样一个）
-  static Future<List<String>> _sampleIpsFromRanges(int targetCount) async {
-    final ips = <String>[];
-    
-    // 加载 IP 段
-    final cloudflareIpRanges = await _loadIpRanges();
-    
-    // 第一轮：每个 CIDR 按 /24 段采样
-    for (final range in cloudflareIpRanges) {
-      final rangeIps = _sampleFromCidr(range, targetCount);
-      ips.addAll(rangeIps);
-      
-      if (ips.length >= targetCount) {
-        break;
-      }
-    }
-    
-    // 如果第一轮采样不够，进行第二轮随机补充
-    if (ips.length < targetCount) {
-      print('第一轮采样获得 ${ips.length} 个IP，继续随机补充...');
-      final random = Random();
-      final additionalNeeded = targetCount - ips.length;
-      
-      // 从较大的 IP 段中额外采样
-      final largeRanges = cloudflareIpRanges.where((range) => range.contains('/12') || range.contains('/13')).toList();
-      
-      for (final range in largeRanges) {
-        final parts = range.split('/');
-        final baseIp = parts[0];
-        final prefixLength = int.parse(parts[1]);
-        
-        // 对于大段，每次多采样一些
-        final samplesToTake = (additionalNeeded / largeRanges.length).ceil();
-        
-        for (int i = 0; i < samplesToTake && ips.length < targetCount; i++) {
-          // 随机生成一个 IP
-          final ipParts = baseIp.split('.').map(int.parse).toList();
-          var ipNum = ((ipParts[0] & 0xFF) << 24) | 
-                      ((ipParts[1] & 0xFF) << 16) | 
-                      ((ipParts[2] & 0xFF) << 8) | 
-                      (ipParts[3] & 0xFF);
-          
-          final hostBits = 32 - prefixLength;
-          final offset = random.nextInt(1 << hostBits);
-          final randomIpNum = ipNum + offset;
-          
-          final randomIp = '${(randomIpNum >> 24) & 0xFF}.${(randomIpNum >> 16) & 0xFF}.${(randomIpNum >> 8) & 0xFF}.${randomIpNum & 0xFF}';
-          
-          // 避免重复
-          if (!ips.contains(randomIp)) {
-            ips.add(randomIp);
-          }
-        }
-      }
-    }
-    
-    // 打乱顺序
-    ips.shuffle();
-    
-    print('总共采样了 ${ips.length} 个IP进行测试');
-    
-    return ips.take(targetCount).toList();
-  }
-  
   // 从 CIDR 中按 /24 段采样 IP（匹配 CloudflareSpeedTest 算法）
   static List<String> _sampleFromCidr(String cidr, int count) {
     final ips = <String>[];
@@ -262,6 +198,70 @@ class CloudflareTestService {
     }
     
     return ips;
+  }
+  
+  // 从 IP 段中采样（优化算法：每个 /24 段采样一个）
+  static Future<List<String>> _sampleIpsFromRanges(int targetCount) async {
+    final ips = <String>[];
+    
+    // 加载 IP 段
+    final cloudflareIpRanges = await _loadIpRanges();
+    
+    // 第一轮：每个 CIDR 按 /24 段采样
+    for (final range in cloudflareIpRanges) {
+      final rangeIps = _sampleFromCidr(range, targetCount);
+      ips.addAll(rangeIps);
+      
+      if (ips.length >= targetCount) {
+        break;
+      }
+    }
+    
+    // 如果第一轮采样不够，进行第二轮随机补充
+    if (ips.length < targetCount) {
+      print('第一轮采样获得 ${ips.length} 个IP，继续随机补充...');
+      final random = Random();
+      final additionalNeeded = targetCount - ips.length;
+      
+      // 从较大的 IP 段中额外采样
+      final largeRanges = cloudflareIpRanges.where((range) => range.contains('/12') || range.contains('/13')).toList();
+      
+      for (final range in largeRanges) {
+        final parts = range.split('/');
+        final baseIp = parts[0];
+        final prefixLength = int.parse(parts[1]);
+        
+        // 对于大段，每次多采样一些
+        final samplesToTake = (additionalNeeded / largeRanges.length).ceil();
+        
+        for (int i = 0; i < samplesToTake && ips.length < targetCount; i++) {
+          // 随机生成一个 IP
+          final ipParts = baseIp.split('.').map(int.parse).toList();
+          var ipNum = ((ipParts[0] & 0xFF) << 24) | 
+                      ((ipParts[1] & 0xFF) << 16) | 
+                      ((ipParts[2] & 0xFF) << 8) | 
+                      (ipParts[3] & 0xFF);
+          
+          final hostBits = 32 - prefixLength;
+          final offset = random.nextInt(1 << hostBits);
+          final randomIpNum = ipNum + offset;
+          
+          final randomIp = '${(randomIpNum >> 24) & 0xFF}.${(randomIpNum >> 16) & 0xFF}.${(randomIpNum >> 8) & 0xFF}.${randomIpNum & 0xFF}';
+          
+          // 避免重复
+          if (!ips.contains(randomIp)) {
+            ips.add(randomIp);
+          }
+        }
+      }
+    }
+    
+    // 打乱顺序
+    ips.shuffle();
+    
+    print('总共采样了 ${ips.length} 个IP进行测试');
+    
+    return ips.take(targetCount).toList();
   }
   
   // 获取备用 Cloudflare IP 列表
@@ -393,10 +393,5 @@ class CloudflareTestService {
     } catch (e) {
       return 999;
     }
-  }
-  
-  // 获取可执行文件路径（保留此方法以兼容诊断工具）
-  static Future<String> getExecutablePath(String executableName) async {
-    return V2RayService.getExecutablePath(executableName);
   }
 }
