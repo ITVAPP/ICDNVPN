@@ -9,88 +9,123 @@ class CloudflareDiagnosticTool {
     final results = <String, dynamic>{};
     
     try {
-      // 1. 检查 cftest.exe 是否存在
-      final exePath = await V2RayService.getExecutablePath('cftest.exe');
-      results['exePath'] = exePath;
-      results['exeExists'] = await File(exePath).exists();
+      // 1. 检查 V2Ray 是否存在
+      final v2rayPath = await V2RayService.getExecutablePath(path.join('v2ray', 'v2ray.exe'));
+      results['v2rayPath'] = v2rayPath;
+      results['v2rayExists'] = await File(v2rayPath).exists();
       
-      if (results['exeExists']) {
-        final exeFile = File(exePath);
-        results['exeSize'] = await exeFile.length();
-        results['exeModified'] = (await exeFile.lastModified()).toString();
+      if (results['v2rayExists']) {
+        final v2rayFile = File(v2rayPath);
+        results['v2raySize'] = await v2rayFile.length();
+        results['v2rayModified'] = (await v2rayFile.lastModified()).toString();
       }
       
       // 2. 检查工作目录
-      final workDir = path.dirname(exePath);
+      final workDir = path.dirname(v2rayPath);
       results['workDir'] = workDir;
       results['workDirExists'] = await Directory(workDir).exists();
       
-      // 3. 检查 ip.txt 文件
-      final ipFilePath = path.join(workDir, 'ip.txt');
-      results['ipFilePath'] = ipFilePath;
-      results['ipFileExists'] = await File(ipFilePath).exists();
+      // 3. 检查网络连接
+      results['networkTest'] = await _testNetworkConnection();
       
-      if (results['ipFileExists']) {
-        final ipFile = File(ipFilePath);
-        results['ipFileSize'] = await ipFile.length();
-        final lines = await ipFile.readAsLines();
-        results['ipFileLines'] = lines.length;
-        
-        // 检查前几行内容
-        results['ipFileSample'] = lines.take(3).join('\n');
-      }
-      
-      // 4. 检查 result.csv 文件
-      final resultPath = path.join(workDir, 'result.csv');
-      results['resultFileExists'] = await File(resultPath).exists();
-      
-      // 5. 检查权限（尝试创建测试文件）
-      try {
-        final testFile = File(path.join(workDir, 'test_permission.txt'));
-        await testFile.writeAsString('test');
-        await testFile.delete();
-        results['writePermission'] = true;
-      } catch (e) {
-        results['writePermission'] = false;
-        results['permissionError'] = e.toString();
-      }
-      
-      // 6. 尝试运行 cftest.exe -h 获取帮助信息
-      if (results['exeExists']) {
-        try {
-          final helpResult = await Process.run(
-            exePath,
-            ['-h'],
-            workingDirectory: workDir,
-            runInShell: true,
-            stdoutEncoding: utf8,
-            stderrEncoding: utf8,
-          );
-          results['helpExitCode'] = helpResult.exitCode;
-          results['helpOutput'] = helpResult.stdout.toString();
-          results['helpError'] = helpResult.stderr.toString();
-          
-          // 分析输出以确定正确的参数格式
-          final helpText = '${helpResult.stdout}\n${helpResult.stderr}';
-          results['supportsFile'] = helpText.contains('-f') || helpText.contains('-file');
-          results['supportsOutput'] = helpText.contains('-o');
-          results['supportsTl'] = helpText.contains('-tl');
-          results['supportsSl'] = helpText.contains('-sl');
-        } catch (e) {
-          results['helpError'] = e.toString();
-        }
-      }
-      
-      // 7. 检查系统信息
+      // 4. 检查系统信息
       results['platform'] = Platform.operatingSystem;
       results['platformVersion'] = Platform.operatingSystemVersion;
       results['dartVersion'] = Platform.version;
+      
+      // 5. 测试 Cloudflare 连接
+      results['cloudflareTest'] = await _testCloudflareConnection();
       
     } catch (e) {
       results['error'] = e.toString();
     }
     
     return results;
+  }
+  
+  // 测试网络连接
+  static Future<Map<String, dynamic>> _testNetworkConnection() async {
+    final result = <String, dynamic>{};
+    
+    try {
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 5);
+      
+      // 测试连接到常见网站
+      final testUrls = [
+        'https://www.google.com',
+        'https://www.cloudflare.com',
+        'https://1.1.1.1',
+      ];
+      
+      for (final url in testUrls) {
+        try {
+          final uri = Uri.parse(url);
+          final request = await httpClient.getUrl(uri);
+          final response = await request.close();
+          await response.drain();
+          result[url] = response.statusCode == 200 ? 'OK' : 'Failed (${response.statusCode})';
+        } catch (e) {
+          result[url] = 'Error: ${e.toString().split('\n').first}';
+        }
+      }
+      
+      httpClient.close();
+    } catch (e) {
+      result['error'] = e.toString();
+    }
+    
+    return result;
+  }
+  
+  // 测试 Cloudflare 连接
+  static Future<Map<String, dynamic>> _testCloudflareConnection() async {
+    final result = <String, dynamic>{};
+    
+    try {
+      // 测试几个 Cloudflare IP
+      final testIps = ['172.67.182.2', '104.21.48.84', '104.25.191.12'];
+      
+      for (final ip in testIps) {
+        try {
+          final httpClient = HttpClient();
+          httpClient.connectionTimeout = const Duration(seconds: 3);
+          
+          final uri = Uri(
+            scheme: 'https',
+            host: ip,
+            port: 443,
+            path: '/cdn-cgi/trace',
+          );
+          
+          final request = await httpClient.getUrl(uri);
+          request.headers.set('Host', 'cloudflare.com');
+          
+          final startTime = DateTime.now();
+          final response = await request.close();
+          await response.drain();
+          final endTime = DateTime.now();
+          
+          final latency = endTime.difference(startTime).inMilliseconds;
+          
+          result[ip] = {
+            'status': response.statusCode == 200 ? 'OK' : 'Failed',
+            'latency': '${latency}ms',
+          };
+          
+          httpClient.close();
+        } catch (e) {
+          result[ip] = {
+            'status': 'Error',
+            'error': e.toString().split('\n').first,
+          };
+        }
+      }
+    } catch (e) {
+      result['error'] = e.toString();
+    }
+    
+    return result;
   }
   
   // 显示诊断对话框
@@ -131,7 +166,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Cloudflare 测试诊断'),
+      title: const Text('Cloudflare 连接诊断'),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -149,70 +184,32 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildDiagnosticSection('可执行文件检查'),
+                    _buildDiagnosticSection('V2Ray 检查'),
                     _buildDiagnosticItem(
-                      'cftest.exe',
-                      _diagnosticResults!['exePath'],
-                      success: _diagnosticResults!['exeExists'] == true,
+                      'v2ray.exe',
+                      _diagnosticResults!['v2rayPath'],
+                      success: _diagnosticResults!['v2rayExists'] == true,
                     ),
-                    if (_diagnosticResults!['exeExists'] == true) ...[
+                    if (_diagnosticResults!['v2rayExists'] == true) ...[
                       _buildDiagnosticItem(
                         '文件大小',
-                        '${(_diagnosticResults!['exeSize'] / 1024 / 1024).toStringAsFixed(2)} MB',
+                        '${(_diagnosticResults!['v2raySize'] / 1024 / 1024).toStringAsFixed(2)} MB',
                       ),
                       _buildDiagnosticItem(
                         '修改时间',
-                        _diagnosticResults!['exeModified'],
+                        _diagnosticResults!['v2rayModified'],
                       ),
                     ],
                     
                     const Divider(),
-                    _buildDiagnosticSection('配置文件检查'),
-                    _buildDiagnosticItem(
-                      'ip.txt',
-                      _diagnosticResults!['ipFileExists'] == true ? '存在' : '不存在',
-                      success: _diagnosticResults!['ipFileExists'] == true,
-                    ),
-                    if (_diagnosticResults!['ipFileExists'] == true) ...[
-                      _buildDiagnosticItem(
-                        'IP行数',
-                        '${_diagnosticResults!['ipFileLines']} 行',
-                      ),
-                      if (_diagnosticResults!['ipFileSample'] != null)
-                        _buildCodeBlock('前几行内容', _diagnosticResults!['ipFileSample']),
-                    ],
+                    _buildDiagnosticSection('网络连接测试'),
+                    if (_diagnosticResults!['networkTest'] != null)
+                      ..._buildNetworkTestResults(_diagnosticResults!['networkTest']),
                     
                     const Divider(),
-                    _buildDiagnosticSection('权限检查'),
-                    _buildDiagnosticItem(
-                      '写入权限',
-                      _diagnosticResults!['writePermission'] == true ? '正常' : '无权限',
-                      success: _diagnosticResults!['writePermission'] == true,
-                    ),
-                    
-                    if (_diagnosticResults!['helpOutput'] != null || 
-                        _diagnosticResults!['helpError'] != null) ...[
-                      const Divider(),
-                      _buildDiagnosticSection('程序输出'),
-                      _buildCodeBlock(
-                        '帮助信息',
-                        _diagnosticResults!['helpOutput']?.toString().isNotEmpty == true
-                            ? _diagnosticResults!['helpOutput'].toString()
-                            : _diagnosticResults!['helpError'].toString(),
-                      ),
-                      
-                      // 参数支持情况
-                      const SizedBox(height: 8),
-                      const Text('参数支持:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Row(
-                        children: [
-                          _buildSupportChip('-f', _diagnosticResults!['supportsFile'] ?? false),
-                          _buildSupportChip('-o', _diagnosticResults!['supportsOutput'] ?? false),
-                          _buildSupportChip('-tl', _diagnosticResults!['supportsTl'] ?? false),
-                          _buildSupportChip('-sl', _diagnosticResults!['supportsSl'] ?? false),
-                        ],
-                      ),
-                    ],
+                    _buildDiagnosticSection('Cloudflare 节点测试'),
+                    if (_diagnosticResults!['cloudflareTest'] != null)
+                      ..._buildCloudflareTestResults(_diagnosticResults!['cloudflareTest']),
                     
                     const Divider(),
                     _buildDiagnosticSection('系统信息'),
@@ -295,57 +292,42 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
     );
   }
   
-  Widget _buildCodeBlock(String title, String code) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(4),
+  List<Widget> _buildNetworkTestResults(Map<String, dynamic> networkTest) {
+    final widgets = <Widget>[];
+    
+    networkTest.forEach((url, result) {
+      if (url != 'error') {
+        final isOk = result.toString().startsWith('OK');
+        widgets.add(
+          _buildDiagnosticItem(
+            url.replaceAll('https://', ''),
+            result.toString(),
+            success: isOk,
           ),
-          child: SelectableText(
-            code,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ],
-    );
+        );
+      }
+    });
+    
+    return widgets;
   }
   
-  Widget _buildSupportChip(String param, bool supported) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8, top: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: supported ? Colors.green.shade100 : Colors.red.shade100,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            supported ? Icons.check : Icons.close,
-            size: 12,
-            color: supported ? Colors.green : Colors.red,
+  List<Widget> _buildCloudflareTestResults(Map<String, dynamic> cloudflareTest) {
+    final widgets = <Widget>[];
+    
+    cloudflareTest.forEach((ip, result) {
+      if (ip != 'error' && result is Map) {
+        final isOk = result['status'] == 'OK';
+        final latency = result['latency'] ?? 'N/A';
+        widgets.add(
+          _buildDiagnosticItem(
+            'IP: $ip',
+            isOk ? '延迟: $latency' : result['error'] ?? 'Failed',
+            success: isOk,
           ),
-          const SizedBox(width: 4),
-          Text(
-            param,
-            style: TextStyle(
-              fontSize: 12,
-              color: supported ? Colors.green.shade700 : Colors.red.shade700,
-            ),
-          ),
-        ],
-      ),
-    );
+        );
+      }
+    });
+    
+    return widgets;
   }
 }
