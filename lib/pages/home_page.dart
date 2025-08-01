@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../models/server_model.dart';
-import '../services/speed_test_service.dart';
+import '../services/speed_test_service.dart'; 
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -168,7 +168,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Text(
               '• $_connectedTime',
               style: TextStyle(
-                color: Colors.green.shade700,
+                                              color: Colors.green[700],
                 fontSize: 12,
               ),
             ),
@@ -327,7 +327,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           server.location,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[600],
+                                                          color: Colors.grey[600],
                           ),
                         ),
                       ],
@@ -507,6 +507,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           icon: Icons.speed,
           label: '测速',
           onTap: () async {
+            final connectionProvider = context.read<ConnectionProvider>();
             if (!connectionProvider.isConnected) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('请先连接代理')),
@@ -661,7 +662,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                     Icon(
                       Icons.error_outline,
                       size: 48,
-                      color: Colors.red.shade400,
+                      color: Colors.red[400],
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -669,7 +670,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.red.shade700,
+                        color: Colors.red[700],
                       ),
                     ),
                     const SizedBox(height: 8),
