@@ -128,12 +128,12 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用标准窗口样式
+  // 使用标准窗口样式，但移除边框以支持圆角
   const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX);
   
-  // 创建窗口
+  // 创建窗口，使用扩展样式支持圆角
   HWND window = CreateWindowEx(
-      0,  // 不使用扩展样式
+      WS_EX_APPWINDOW | WS_EX_WINDOWEDGE,  // 使用应用窗口样式
       window_class,
       title.c_str(),
       window_style,
@@ -148,6 +148,21 @@ bool Win32Window::Create(const std::wstring& title,
       
   if (!window) {
     return false;
+  }
+
+  // 设置窗口圆角（Windows 11）
+  HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
+  if (dwmapi) {
+    typedef HRESULT (WINAPI *DwmSetWindowAttributeFunc)(HWND, DWORD, LPCVOID, DWORD);
+    DwmSetWindowAttributeFunc DwmSetWindowAttributeProc = 
+        (DwmSetWindowAttributeFunc)GetProcAddress(dwmapi, "DwmSetWindowAttribute");
+    
+    if (DwmSetWindowAttributeProc) {
+      // 设置圆角样式
+      DWORD cornerPreference = 2; // DWMWCP_ROUND
+      DwmSetWindowAttributeProc(window, 33, &cornerPreference, sizeof(cornerPreference));
+    }
+    FreeLibrary(dwmapi);
   }
 
   UpdateTheme(window);
