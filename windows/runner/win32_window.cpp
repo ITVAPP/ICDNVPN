@@ -128,10 +128,10 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用圆角窗口样式
+  // 使用标准窗口样式
   const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX);
   
-  // 创建圆角窗口
+  // 创建窗口
   HWND window = CreateWindowEx(
       0,  // 不使用扩展样式
       window_class,
@@ -148,29 +148,6 @@ bool Win32Window::Create(const std::wstring& title,
       
   if (!window) {
     return false;
-  }
-
-  // 启用圆角（Windows 11）
-  OSVERSIONINFOEX osvi = { sizeof(osvi), 0, 0, 0, 0, {0}, 0, 0 };
-  DWORDLONG const dwlConditionMask = VerSetConditionMask(
-      VerSetConditionMask(
-          VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL),
-          VER_MINORVERSION, VER_GREATER_EQUAL),
-      VER_BUILDNUMBER, VER_GREATER_EQUAL);
-
-  osvi.dwMajorVersion = 10;
-  osvi.dwMinorVersion = 0;
-  osvi.dwBuildNumber = 22000;  // Windows 11最低版本号
-
-  bool isWindows11 = VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask);
-  
-  if (isWindows11) {
-    DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
-    DwmSetWindowAttribute(window, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
-    
-    DWM_WINDOW_CORNER_PREFERENCE cornerPreference = DWMWCP_ROUND;
-    DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, 
-                         &cornerPreference, sizeof(cornerPreference));
   }
 
   UpdateTheme(window);
