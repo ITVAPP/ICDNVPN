@@ -1,10 +1,10 @@
-import 'dart:io';
-import 'dart:convert';
-import 'package:path/path.dart' as path;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:proxy_app/services/v2ray_service.dart';
-import 'package:proxy_app/services/cloudflare_test_service.dart';
+import '../services/v2ray_service.dart';
+import '../services/cloudflare_test_service.dart';
+import 'package:path/path.dart' as path;
+import 'dart:io';
+import 'dart:convert';
 import '../models/server_model.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
@@ -246,14 +246,14 @@ class _ServersPageState extends State<ServersPage> {
                   Icon(
                     Icons.cloud_off,
                     size: 80,
-                    color: Colors.grey.shade400,
+                                          color: Colors.grey[400],
                   ),
                   const SizedBox(height: 16),
                   Text(
                     '暂无服务器',
                     style: TextStyle(
                       fontSize: 18,
-                      color: Colors.grey.shade600,
+                                                        color: Colors.grey[600],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -460,10 +460,10 @@ class _ServerListItemState extends State<ServerListItem>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: widget.isConnected
-                            ? [Colors.green.shade400, Colors.green.shade600]
+                            ? [Colors.green[400]!, Colors.green[600]!]
                             : widget.isSelected
-                              ? [theme.primaryColor.shade400, theme.primaryColor.shade600]
-                              : [Colors.grey.shade400, Colors.grey.shade600],
+                              ? [theme.primaryColor.withOpacity(0.8), theme.primaryColor]
+                              : [Colors.grey[400]!, Colors.grey[600]!],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -555,14 +555,14 @@ class _ServerListItemState extends State<ServerListItem>
                               Icon(
                                 Icons.location_on,
                                 size: 14,
-                                color: Colors.grey.shade600,
+                                color: Colors.grey[600],
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 widget.server.location,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey.shade600,
+                                  color: Colors.grey[600],
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -587,7 +587,7 @@ class _ServerListItemState extends State<ServerListItem>
                             '${widget.server.ip}:${widget.server.port}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade500,
+                              color: Colors.grey[500],
                               fontFamily: 'monospace',
                             ),
                           ),
