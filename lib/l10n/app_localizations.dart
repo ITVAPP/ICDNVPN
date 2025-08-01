@@ -125,6 +125,12 @@ abstract class AppLocalizations {
   String get fileCheck;
   String get networkTest;
   String get systemInfo;
+  
+  // 退出确认
+  String get confirmExit;
+  String get confirmExitDesc;
+  String get minimize;
+  String get exitApp;
 }
 
 // 本地化委托
@@ -272,6 +278,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get fileCheck => 'File Check';
   @override String get networkTest => 'Network Test';
   @override String get systemInfo => 'System Info';
+  
+  // 退出确认
+  @override String get confirmExit => 'Exit Confirmation';
+  @override String get confirmExitDesc => 'Choose an action:';
+  @override String get minimize => 'Minimize to Tray';
+  @override String get exitApp => 'Exit Application';
 }
 
 // 简体中文
@@ -384,6 +396,12 @@ class AppLocalizationsZhCn extends AppLocalizations {
   @override String get fileCheck => '文件检查';
   @override String get networkTest => '网络测试';
   @override String get systemInfo => '系统信息';
+  
+  // 退出确认
+  @override String get confirmExit => '退出确认';
+  @override String get confirmExitDesc => '请选择操作：';
+  @override String get minimize => '最小化到托盘';
+  @override String get exitApp => '退出应用';
 }
 
 // 繁体中文
@@ -498,6 +516,12 @@ class AppLocalizationsZhTw extends AppLocalizations {
   @override String get fileCheck => '檔案檢查';
   @override String get networkTest => '網路測試';
   @override String get systemInfo => '系統資訊';
+  
+  // 退出确认
+  @override String get confirmExit => '退出確認';
+  @override String get confirmExitDesc => '請選擇操作：';
+  @override String get minimize => '最小化到系統匣';
+  @override String get exitApp => '退出應用';
 }
 
 // 西班牙语
@@ -511,6 +535,12 @@ class AppLocalizationsEs extends AppLocalizationsEn {
   @override String get connected => 'Conectado';
   @override String get disconnected => 'Desconectado';
   // ... 其他翻译
+  
+  // 退出确认
+  @override String get confirmExit => 'Confirmar salida';
+  @override String get confirmExitDesc => 'Elige una acción:';
+  @override String get minimize => 'Minimizar a la bandeja';
+  @override String get exitApp => 'Salir de la aplicación';
 }
 
 // 俄语
@@ -524,6 +554,12 @@ class AppLocalizationsRu extends AppLocalizationsEn {
   @override String get connected => 'Подключено';
   @override String get disconnected => 'Отключено';
   // ... 其他翻译
+  
+  // 退出确认
+  @override String get confirmExit => 'Подтверждение выхода';
+  @override String get confirmExitDesc => 'Выберите действие:';
+  @override String get minimize => 'Свернуть в трей';
+  @override String get exitApp => 'Выйти из приложения';
 }
 
 // 阿拉伯语
@@ -537,4 +573,10 @@ class AppLocalizationsAr extends AppLocalizationsEn {
   @override String get connected => 'متصل';
   @override String get disconnected => 'غير متصل';
   // ... 其他翻译
+  
+  // 退出确认
+  @override String get confirmExit => 'تأكيد الخروج';
+  @override String get confirmExitDesc => 'اختر إجراء:';
+  @override String get minimize => 'تصغير إلى علبة النظام';
+  @override String get exitApp => 'الخروج من التطبيق';
 }

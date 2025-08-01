@@ -367,6 +367,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
   
   List<Widget> _buildCloudflareTestResults(Map<String, dynamic> cloudflareTest) {
     final widgets = <Widget>[];
+    final l10n = AppLocalizations.of(context);
     
     cloudflareTest.forEach((ip, result) {
       if (ip != 'error' && result is Map) {

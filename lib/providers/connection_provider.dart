@@ -12,6 +12,8 @@ class ConnectionProvider with ChangeNotifier {
   final String _storageKey = 'current_server';
   bool _autoConnect = false;
   bool _tunMode = false;
+  bool _isDisposed = false;
+  
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
@@ -24,8 +26,22 @@ class ConnectionProvider with ChangeNotifier {
     _loadCurrentServer();
   }
   
+  @override
+  void dispose() {
+    _isDisposed = true;
+    // 如果还在连接状态，断开连接
+    if (_isConnected) {
+      disconnect().catchError((e) {
+        print('dispose时断开连接失败: $e');
+      });
+    }
+    super.dispose();
+  }
+  
   // 处理V2Ray进程意外退出
   void _handleV2RayProcessExit() {
+    if (_isDisposed) return;
+    
     if (_isConnected) {
       print('V2Ray process exited unexpectedly, updating connection status...');
       _isConnected = false;
@@ -35,7 +51,9 @@ class ConnectionProvider with ChangeNotifier {
           print('Error disabling system proxy after process exit: $e');
         });
       }
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
   
@@ -43,7 +61,7 @@ class ConnectionProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _autoConnect = prefs.getBool('auto_connect') ?? false;
     _tunMode = prefs.getBool('tun_mode') ?? false;
-    if (_autoConnect) {
+    if (_autoConnect && !_isDisposed) {
       connect();
     }
   }
@@ -55,7 +73,9 @@ class ConnectionProvider with ChangeNotifier {
     _tunMode = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('tun_mode', value);
-    notifyListeners();
+    if (!_isDisposed) {
+      notifyListeners();
+    }
     if (_isConnected) {
       await connect();
     }
@@ -65,7 +85,9 @@ class ConnectionProvider with ChangeNotifier {
     _autoConnect = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_connect', value);
-    notifyListeners();
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
   
   Future<void> _loadCurrentServer() async {
@@ -76,7 +98,9 @@ class ConnectionProvider with ChangeNotifier {
       _currentServer = ServerModel.fromJson(Map<String, dynamic>.from(
         Map.castFrom(json.decode(serverJson))
       ));
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
   
@@ -120,6 +144,8 @@ class ConnectionProvider with ChangeNotifier {
   }
   
   Future<void> connect() async {
+    if (_isDisposed) return;
+    
     ServerModel? serverToConnect;
     
     // 获取所有可用服务器
@@ -148,7 +174,9 @@ class ConnectionProvider with ChangeNotifier {
         print('自动选择最优服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)');
         // 更新当前服务器显示，但不保存（临时选择）
         _currentServer = serverToConnect;
-        notifyListeners();
+        if (!_isDisposed) {
+          notifyListeners();
+        }
       }
     }
     
@@ -167,7 +195,9 @@ class ConnectionProvider with ChangeNotifier {
               await ProxyService.enableSystemProxy();
             }
             _isConnected = true;
-            notifyListeners();
+            if (!_isDisposed) {
+              notifyListeners();
+            }
           } catch (e) {
             // 如果系统代理设置失败，停止V2Ray
             await V2RayService.stop();
@@ -180,7 +210,9 @@ class ConnectionProvider with ChangeNotifier {
         print('Connection failed: $e');
         // 确保状态一致性
         _isConnected = false;
-        notifyListeners();
+        if (!_isDisposed) {
+          notifyListeners();
+        }
         rethrow;
       }
     } else {
@@ -197,12 +229,16 @@ class ConnectionProvider with ChangeNotifier {
         await ProxyService.disableSystemProxy();
       }
       _isConnected = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     } catch (e) {
       print('Error during disconnect: $e');
       // 即使出错也要更新状态
       _isConnected = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
       rethrow;
     }
   }
@@ -210,6 +246,8 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> setCurrentServer(ServerModel? server) async {
     _currentServer = server;
     await _saveCurrentServer();
-    notifyListeners();
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
 }

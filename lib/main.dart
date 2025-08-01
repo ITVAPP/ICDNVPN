@@ -13,8 +13,10 @@ import 'providers/locale_provider.dart';
 import 'widgets/cloudflare_test_dialog.dart';
 import 'utils/diagnostic_tool.dart';
 import 'l10n/app_localizations.dart';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'services/v2ray_service.dart';
+import 'services/proxy_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -262,8 +264,54 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
 
   @override
   void onWindowClose() async {
-    // 窗口关闭时最小化到托盘而不是退出
-    await windowManager.hide();
+    // 显示选择对话框
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context).confirmExit),
+        content: Text(AppLocalizations.of(context).confirmExitDesc),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(AppLocalizations.of(context).minimize),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(AppLocalizations.of(context).exitApp),
+          ),
+        ],
+      ),
+    );
+    
+    if (shouldExit == true) {
+      // 用户选择退出，清理资源
+      try {
+        final connectionProvider = context.read<ConnectionProvider>();
+        
+        // 如果已连接，先断开连接
+        if (connectionProvider.isConnected) {
+          await connectionProvider.disconnect();
+        }
+        
+        // 确保V2Ray进程被终止
+        await V2RayService.stop();
+        
+        // 清理系统代理设置
+        await ProxyService.disableSystemProxy();
+        
+      } catch (e) {
+        print('清理资源时出错: $e');
+      } finally {
+        // 销毁窗口并退出应用
+        await windowManager.destroy();
+        exit(0);
+      }
+    } else {
+      // 用户选择最小化或关闭了对话框，隐藏窗口
+      await windowManager.hide();
+    }
   }
 
   @override
@@ -350,7 +398,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                   ),
                   _WindowControlButton(
                     icon: Icons.close,
-                    onPressed: () => windowManager.hide(),
+                    onPressed: () => windowManager.close(),
                     isDark: isDark,
                     isClose: true,
                   ),
