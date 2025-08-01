@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../models/server_model.dart';
+import '../services/speed_test_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -505,10 +506,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _buildActionButton(
           icon: Icons.speed,
           label: '测速',
-          onTap: () {
-            // TODO: 实现测速功能
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('测速功能开发中')),
+          onTap: () async {
+            if (!connectionProvider.isConnected) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('请先连接代理')),
+              );
+              return;
+            }
+            
+            // 显示测速对话框
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => _SpeedTestDialog(),
             );
           },
         ),
@@ -559,5 +569,193 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+}
+
+// 速度测试对话框
+class _SpeedTestDialog extends StatefulWidget {
+  @override
+  State<_SpeedTestDialog> createState() => _SpeedTestDialogState();
+}
+
+class _SpeedTestDialogState extends State<_SpeedTestDialog> {
+  bool _isTesting = true;
+  Map<String, dynamic>? _testResults;
+  
+  @override
+  void initState() {
+    super.initState();
+    _runSpeedTest();
+  }
+  
+  Future<void> _runSpeedTest() async {
+    try {
+      final results = await SpeedTestService.runSpeedTest(
+        isConnected: true,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _testResults = results;
+          _isTesting = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testResults = {
+            'success': false,
+            'error': e.toString(),
+          };
+          _isTesting = false;
+        });
+      }
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: const [
+          Icon(Icons.speed, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('连接速度测试'),
+        ],
+      ),
+      content: SizedBox(
+        width: 300,
+        child: _isTesting
+          ? const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('正在测试连接速度...'),
+                SizedBox(height: 8),
+                Text(
+                  '这可能需要几秒钟',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            )
+          : _testResults != null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_testResults!['success'] == true) ...[
+                    _buildResultItem(
+                      icon: Icons.network_ping,
+                      label: '延迟',
+                      value: '${_testResults!['latency']} ms',
+                      color: _getPingColor(_testResults!['latency']),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildResultItem(
+                      icon: Icons.download,
+                      label: '下载速度',
+                      value: '${_testResults!['downloadSpeed'].toStringAsFixed(2)} MB/s',
+                      color: Colors.blue,
+                    ),
+                  ] else ...[
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: Colors.red.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '测试失败',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _testResults!['error'] ?? '未知错误',
+                      style: const TextStyle(fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              )
+          : const SizedBox.shrink(),
+      ),
+      actions: [
+        if (!_isTesting) ...[
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _isTesting = true;
+                _testResults = null;
+              });
+              _runSpeedTest();
+            },
+            child: const Text('重新测试'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ],
+    );
+  }
+  
+  Widget _buildResultItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Color _getPingColor(int ping) {
+    if (ping < 50) return Colors.green;
+    if (ping < 100) return Colors.lightGreen;
+    if (ping < 150) return Colors.orange;
+    if (ping < 200) return Colors.deepOrange;
+    return Colors.red;
   }
 }
