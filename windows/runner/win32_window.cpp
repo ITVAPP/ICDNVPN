@@ -113,7 +113,6 @@ void WindowClassRegistrar::UnregisterWindowClass() {
 
 Win32Window::Win32Window() {
   ++g_active_window_count;
-  ZeroMemory(&tray_icon_data_, sizeof(NOTIFYICONDATA));
 }
 
 Win32Window::~Win32Window() {
@@ -176,9 +175,6 @@ bool Win32Window::Create(const std::wstring& title,
 
   UpdateTheme(window);
 
-  // Add tray icon when window is created
-  AddTrayIcon();
-
   return OnCreate();
 }
 
@@ -220,15 +216,6 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
-    case WM_CLOSE:
-      ShowWindow(false);
-      AddTrayIcon();
-      return 0;
-
-    case WM_USER + 1:
-      HandleTrayMessage(wparam, lparam);
-      return 0;
-
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
       LONG newWidth = newRectSize->right - newRectSize->left;
@@ -263,130 +250,10 @@ Win32Window::MessageHandler(HWND hwnd,
   return DefWindowProc(window_handle_, message, wparam, lparam);
 }
 
-void Win32Window::ShowWindow(bool show) {
-  if (window_handle_) {
-    ::ShowWindow(window_handle_, show ? SW_SHOW : SW_HIDE);
-  }
-}
-
-void Win32Window::AddTrayIcon() {
-  if (!window_handle_ || is_tray_icon_added_) return;
-
-  tray_icon_data_.cbSize = sizeof(NOTIFYICONDATA);
-  tray_icon_data_.hWnd = window_handle_;
-  tray_icon_data_.uID = 1;
-  tray_icon_data_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-  tray_icon_data_.uCallbackMessage = WM_USER + 1;
-  tray_icon_data_.hIcon = (HICON)LoadImage(GetModuleHandle(nullptr),
-                                          MAKEINTRESOURCE(IDI_APP_ICON),
-                                          IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
-  wcscpy_s(tray_icon_data_.szTip, L"CFVPN");
-
-  Shell_NotifyIcon(NIM_ADD, &tray_icon_data_);
-  is_tray_icon_added_ = true;
-}
-
-void Win32Window::RemoveTrayIcon() {
-  if (!is_tray_icon_added_) return;
-
-  Shell_NotifyIcon(NIM_DELETE, &tray_icon_data_);
-  is_tray_icon_added_ = false;
-}
-
-void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
-  if (wparam != 1) return;
-
-  switch (lparam) {
-    case WM_LBUTTONUP:
-      ShowWindow(true);
-      ::SetForegroundWindow(window_handle_);
-      break;
-    case WM_RBUTTONUP: {
-      POINT pt;
-      GetCursorPos(&pt);
-      
-      // 创建现代化的弹出菜单
-      HMENU menu = CreatePopupMenu();
-      
-      // 设置菜单样式为现代化风格
-      MENUINFO menuInfo = {0};
-      menuInfo.cbSize = sizeof(MENUINFO);
-      menuInfo.fMask = MIM_STYLE | MIM_APPLYTOSUBMENUS | MIM_BACKGROUND;
-      menuInfo.dwStyle = MNS_NOTIFYBYPOS | MNS_AUTODISMISS;
-      
-      // 检查是否暗色模式
-      bool isDarkMode = false;
-      DWORD light_mode = 1;
-      DWORD light_mode_size = sizeof(light_mode);
-      RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                  kGetPreferredBrightnessRegValue, RRF_RT_REG_DWORD, 
-                  nullptr, &light_mode, &light_mode_size);
-      isDarkMode = (light_mode == 0);
-      
-      // 设置菜单背景色
-      if (isDarkMode) {
-        menuInfo.hbrBack = CreateSolidBrush(RGB(45, 45, 45));
-      } else {
-        menuInfo.hbrBack = CreateSolidBrush(RGB(250, 250, 250));
-      }
-      SetMenuInfo(menu, &menuInfo);
-      
-      // 添加带图标的菜单项
-      MENUITEMINFO mii = {0};
-      mii.cbSize = sizeof(MENUITEMINFO);
-      mii.fMask = MIIM_STRING | MIIM_ID | MIIM_STATE;
-      
-      // "显示窗口" 菜单项
-      mii.wID = 1;
-      mii.dwTypeData = const_cast<LPWSTR>(L"    Show Window");
-      mii.cch = wcslen(mii.dwTypeData);
-      InsertMenuItem(menu, 0, TRUE, &mii);
-      
-      // 分隔线
-      mii.fMask = MIIM_TYPE;
-      mii.fType = MFT_SEPARATOR;
-      InsertMenuItem(menu, 1, TRUE, &mii);
-      
-      // "退出" 菜单项
-      mii.fMask = MIIM_STRING | MIIM_ID | MIIM_STATE;
-      mii.wID = 2;
-      mii.dwTypeData = const_cast<LPWSTR>(L"    Exit");
-      mii.cch = wcslen(mii.dwTypeData);
-      InsertMenuItem(menu, 2, TRUE, &mii);
-      
-      // 设置前台窗口以确保菜单正确显示
-      SetForegroundWindow(window_handle_);
-      
-      // 显示菜单
-      int cmd = TrackPopupMenu(menu, 
-                              TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTBUTTON,
-                              pt.x, pt.y, 0, window_handle_, nullptr);
-      
-      // 清理菜单资源
-      if (menuInfo.hbrBack) {
-        DeleteObject(menuInfo.hbrBack);
-      }
-      DestroyMenu(menu);
-
-      // 处理菜单命令
-      if (cmd == 1) {
-        ShowWindow(true);
-        ::SetForegroundWindow(window_handle_);
-      } else if (cmd == 2) {
-        RemoveTrayIcon();
-        DestroyWindow(window_handle_);
-        PostQuitMessage(0);
-      }
-      break;
-    }
-  }
-}
-
 void Win32Window::Destroy() {
   OnDestroy();
 
   if (window_handle_) {
-    RemoveTrayIcon();
     DestroyWindow(window_handle_);
     window_handle_ = nullptr;
   }

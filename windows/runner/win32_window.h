@@ -82,18 +82,6 @@ class Win32Window {
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
-  // Show or hide the window
-  void ShowWindow(bool show);
-
-  // Add system tray icon
-  void AddTrayIcon();
-
-  // Remove system tray icon
-  void RemoveTrayIcon();
-
-  // Handle tray icon messages
-  void HandleTrayMessage(WPARAM wparam, LPARAM lparam);
-
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
@@ -136,10 +124,6 @@ class Win32Window {
 
   // window handle for hosted content.
   HWND child_content_ = nullptr;
-
-  // Tray icon data
-  NOTIFYICONDATA tray_icon_data_;
-  bool is_tray_icon_added_ = false;
 };
 
 #endif  // RUNNER_WIN32_WINDOW_H_
