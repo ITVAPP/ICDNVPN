@@ -25,15 +25,48 @@ class CloudflareDiagnosticTool {
       results['workDir'] = workDir;
       results['workDirExists'] = await Directory(workDir).exists();
       
-      // 3. 检查网络连接
+      // 3. 检查 ip.txt 文件
+      final ipFilePath = path.join(workDir, 'ip.txt');
+      results['ipFilePath'] = ipFilePath;
+      results['ipFileExists'] = await File(ipFilePath).exists();
+      
+      if (results['ipFileExists']) {
+        final ipFile = File(ipFilePath);
+        results['ipFileSize'] = await ipFile.length();
+        final lines = await ipFile.readAsLines();
+        
+        // 统计有效的 IP 段数量
+        int validIpRanges = 0;
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
+            validIpRanges++;
+          }
+        }
+        results['ipFileLines'] = lines.length;
+        results['validIpRanges'] = validIpRanges;
+        
+        // 显示前几个 IP 段
+        final sampleRanges = <String>[];
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
+            sampleRanges.add(trimmed);
+            if (sampleRanges.length >= 3) break;
+          }
+        }
+        results['ipFileSample'] = sampleRanges.join('\n');
+      }
+      
+      // 4. 检查网络连接
       results['networkTest'] = await _testNetworkConnection();
       
-      // 4. 检查系统信息
+      // 5. 检查系统信息
       results['platform'] = Platform.operatingSystem;
       results['platformVersion'] = Platform.operatingSystemVersion;
       results['dartVersion'] = Platform.version;
       
-      // 5. 测试 Cloudflare 连接
+      // 6. 测试 Cloudflare 连接
       results['cloudflareTest'] = await _testCloudflareConnection();
       
     } catch (e) {
@@ -136,6 +169,32 @@ class CloudflareDiagnosticTool {
       builder: (context) => _DiagnosticDialog(),
     );
   }
+  
+  Widget _buildCodeBlock(String title, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: SelectableText(
+            content,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
 }
 
 class _DiagnosticDialog extends StatefulWidget {
@@ -199,6 +258,22 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                         '修改时间',
                         _diagnosticResults!['v2rayModified'],
                       ),
+                    ],
+                    
+                    const Divider(),
+                    _buildDiagnosticSection('配置文件检查'),
+                    _buildDiagnosticItem(
+                      'ip.txt',
+                      _diagnosticResults!['ipFileExists'] == true ? '存在' : '不存在',
+                      success: _diagnosticResults!['ipFileExists'] == true,
+                    ),
+                    if (_diagnosticResults!['ipFileExists'] == true) ...[
+                      _buildDiagnosticItem(
+                        '有效IP段',
+                        '${_diagnosticResults!['validIpRanges']} 个',
+                      ),
+                      if (_diagnosticResults!['ipFileSample'] != null)
+                        _buildCodeBlock('IP段示例', _diagnosticResults!['ipFileSample']),
                     ],
                     
                     const Divider(),
