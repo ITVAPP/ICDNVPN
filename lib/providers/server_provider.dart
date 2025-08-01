@@ -168,11 +168,22 @@ class ServerProvider with ChangeNotifier {
   List<ServerModel> _generateNamedServers(List<ServerModel> servers) {
     final namedServers = <ServerModel>[];
     
-    for (int i = 0; i < servers.length; i++) {
-      final server = servers[i];
+    // 按国家分组计数
+    final countryCountMap = <String, int>{};
+    
+    for (final server in servers) {
+      final countryCode = server.location.toUpperCase();
+      
+      // 获取该国家的当前计数
+      final currentCount = countryCountMap[countryCode] ?? 0;
+      countryCountMap[countryCode] = currentCount + 1;
+      
+      // 生成名称，格式：国家代码+编号，如 US01, HK02
+      final name = '$countryCode${(currentCount + 1).toString().padLeft(2, '0')}';
+      
       namedServers.add(ServerModel(
         id: server.id,
-        name: 'CF节点 ${(i + 1).toString().padLeft(2, '0')}',
+        name: name,
         location: server.location,
         ip: server.ip,
         port: server.port,
@@ -185,31 +196,37 @@ class ServerProvider with ChangeNotifier {
 
   // 添加服务器时生成正确的名称
   Future<void> _addServersWithProperNames(List<ServerModel> newServers) async {
-    // 获取当前最大的CF节点编号
-    int maxCfNumber = 0;
+    // 统计现有服务器的国家编号
+    final countryCountMap = <String, int>{};
+    
     for (final server in _servers) {
-      if (server.name.startsWith('CF节点')) {
-        final match = RegExp(r'CF节点\s*(\d+)').firstMatch(server.name);
-        if (match != null) {
-          final number = int.tryParse(match.group(1)!) ?? 0;
-          if (number > maxCfNumber) {
-            maxCfNumber = number;
-          }
+      // 解析服务器名称，提取国家代码和编号
+      final match = RegExp(r'^([A-Z]{2})(\d+)$').firstMatch(server.name);
+      if (match != null) {
+        final countryCode = match.group(1)!;
+        final number = int.parse(match.group(2)!);
+        final currentMax = countryCountMap[countryCode] ?? 0;
+        if (number > currentMax) {
+          countryCountMap[countryCode] = number;
         }
       }
     }
     
     // 为新服务器生成名称
-    for (int i = 0; i < newServers.length; i++) {
-      final server = newServers[i];
+    for (final server in newServers) {
+      final countryCode = server.location.toUpperCase();
       
       // 检查是否已存在相同IP
       final existingIndex = _servers.indexWhere((s) => s.ip == server.ip);
       if (existingIndex == -1) {
-        maxCfNumber++;
+        // 获取下一个编号
+        final currentMax = countryCountMap[countryCode] ?? 0;
+        final nextNumber = currentMax + 1;
+        countryCountMap[countryCode] = nextNumber;
+        
         _servers.add(ServerModel(
           id: server.id,
-          name: 'CF节点 ${maxCfNumber.toString().padLeft(2, '0')}',
+          name: '$countryCode${nextNumber.toString().padLeft(2, '0')}',
           location: server.location,
           ip: server.ip,
           port: server.port,
@@ -240,10 +257,11 @@ class ServerProvider with ChangeNotifier {
     } else {
       // 生成正确的名称
       if (server.name == server.ip || server.name.isEmpty) {
-        final maxNumber = _getMaxCfNumber();
+        final countryCode = server.location.toUpperCase();
+        final maxNumber = _getMaxNumberForCountry(countryCode);
         server = ServerModel(
           id: server.id,
-          name: 'CF节点 ${(maxNumber + 1).toString().padLeft(2, '0')}',
+          name: '$countryCode${(maxNumber + 1).toString().padLeft(2, '0')}',
           location: server.location,
           ip: server.ip,
           port: server.port,
@@ -262,20 +280,18 @@ class ServerProvider with ChangeNotifier {
     int addedCount = 0;
     await _addServersWithProperNames(servers);
     notifyListeners();
-    return addedCount;
+    return servers.length;
   }
 
-  // 获取当前最大的CF节点编号
-  int _getMaxCfNumber() {
+  // 获取特定国家的最大编号
+  int _getMaxNumberForCountry(String countryCode) {
     int maxNumber = 0;
     for (final server in _servers) {
-      if (server.name.startsWith('CF节点')) {
-        final match = RegExp(r'CF节点\s*(\d+)').firstMatch(server.name);
-        if (match != null) {
-          final number = int.tryParse(match.group(1)!) ?? 0;
-          if (number > maxNumber) {
-            maxNumber = number;
-          }
+      final match = RegExp(r'^([A-Z]{2})(\d+)$').firstMatch(server.name);
+      if (match != null && match.group(1) == countryCode) {
+        final number = int.parse(match.group(2)!);
+        if (number > maxNumber) {
+          maxNumber = number;
         }
       }
     }

@@ -123,7 +123,7 @@ class _ServersPageState extends State<ServersPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.serverList),
-        centerTitle: true,
+        centerTitle: false,  // 标题居左
         actions: [
           // 测试延迟按钮
           IconButton(

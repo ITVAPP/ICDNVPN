@@ -100,25 +100,40 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
 
       if (!mounted) return;
 
-      // 为服务器生成友好的名称，创建新的ServerModel实例
-      final existingCount = context.read<ServerProvider>().servers
-          .where((s) => s.name.startsWith(l10n.cfNode)).length;
+      // 为服务器生成友好的名称，使用国家代码前缀
+      final serverProvider = context.read<ServerProvider>();
       
+      // 统计已有节点的国家编号
+      final countryCountMap = <String, int>{};
+      for (final server in serverProvider.servers) {
+        final match = RegExp(r'^([A-Z]{2})(\d+)$').firstMatch(server.name);
+        if (match != null) {
+          final countryCode = match.group(1)!;
+          final number = int.parse(match.group(2)!);
+          final currentMax = countryCountMap[countryCode] ?? 0;
+          if (number > currentMax) {
+            countryCountMap[countryCode] = number;
+          }
+        }
+      }
+      
+      // 为新节点生成名称
       final namedServers = <ServerModel>[];
-      int index = existingCount + 1;
       for (var server in servers) {
+        final countryCode = server.location.toUpperCase();
+        final currentCount = countryCountMap[countryCode] ?? 0;
+        countryCountMap[countryCode] = currentCount + 1;
+        
         namedServers.add(ServerModel(
           id: server.id,
-          name: '${l10n.cfNode} ${index.toString().padLeft(2, '0')}',
+          name: '$countryCode${(currentCount + 1).toString().padLeft(2, '0')}',
           location: server.location,
           ip: server.ip,
           port: server.port,
           ping: server.ping,
         ));
-        index++;
       }
 
-      final serverProvider = context.read<ServerProvider>();
       final addedCount = await serverProvider.addServers(namedServers);
 
       setState(() {
