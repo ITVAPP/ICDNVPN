@@ -109,8 +109,8 @@ class ProxyService {
         desiredAccessRights: AccessRights.readOnly
       );
       
-      final proxyEnable = key.getValue('ProxyEnable')?.value as int?;
-      final proxyServer = key.getValue('ProxyServer')?.value as String?;
+      final proxyEnable = key.getValue('ProxyEnable')?.data as int?;
+      final proxyServer = key.getValue('ProxyServer')?.data as String?;
       
       key.close();
       
@@ -135,9 +135,9 @@ class ProxyService {
         desiredAccessRights: AccessRights.readOnly
       );
       
-      final proxyEnable = key.getValue('ProxyEnable')?.value as int? ?? 0;
-      final proxyServer = key.getValue('ProxyServer')?.value as String? ?? '';
-      final proxyOverride = key.getValue('ProxyOverride')?.value as String? ?? '';
+      final proxyEnable = key.getValue('ProxyEnable')?.data as int? ?? 0;
+      final proxyServer = key.getValue('ProxyServer')?.data as String? ?? '';
+      final proxyOverride = key.getValue('ProxyOverride')?.data as String? ?? '';
       
       key.close();
       
