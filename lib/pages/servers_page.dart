@@ -6,6 +6,7 @@ import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../widgets/cloudflare_test_dialog.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/location_utils.dart';
 
 class ServersPage extends StatefulWidget {
   const ServersPage({super.key});
@@ -78,13 +79,10 @@ class _ServersPageState extends State<ServersPage> {
 
       // 更新服务器延迟
       int updatedCount = 0;
-      for (final entry in latencyMap.entries) {
-        final server = serverProvider.servers.firstWhere(
-          (s) => s.ip == entry.key,
-          orElse: () => ServerModel(id: '', name: '', location: '', ip: '', port: 0),
-        );
-        if (server.id.isNotEmpty) {
-          await serverProvider.updatePing(server.id, entry.value);
+      for (final server in serverProvider.servers) {
+        final latency = latencyMap[server.ip];
+        if (latency != null) {
+          await serverProvider.updatePing(server.id, latency);
           updatedCount++;
         }
       }
@@ -170,7 +168,7 @@ class _ServersPageState extends State<ServersPage> {
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: Text(l10n.disconnect), // 使用"断开"作为取消
+                        child: Text(l10n.disconnect),
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(context, true),
@@ -303,7 +301,7 @@ class _ServersPageState extends State<ServersPage> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
-                            child: Text(l10n.disconnect), // 使用"断开"作为取消
+                            child: Text(l10n.disconnect),
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(context, true),
@@ -389,6 +387,7 @@ class _ServerListItemState extends State<ServerListItem>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final locationInfo = LocationUtils.getLocationInfo(widget.server.location);
     
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -479,10 +478,11 @@ class _ServerListItemState extends State<ServerListItem>
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          const Icon(
-                            Icons.dns,
-                            color: Colors.white,
-                            size: 28,
+                          Center(
+                            child: Text(
+                              locationInfo['flag'] ?? '🌐',
+                              style: const TextStyle(fontSize: 28),
+                            ),
                           ),
                           if (widget.isConnected)
                             Positioned(
@@ -524,6 +524,17 @@ class _ServerListItemState extends State<ServerListItem>
                                     color: widget.isSelected
                                       ? theme.primaryColor
                                       : null,
+                                    shadows: widget.isSelected
+                                      ? [
+                                          Shadow(
+                                            color: theme.brightness == Brightness.dark
+                                              ? Colors.black54
+                                              : Colors.white70,
+                                            blurRadius: 2,
+                                            offset: const Offset(1, 1),
+                                          ),
+                                        ]
+                                      : null,
                                   ),
                                 ),
                               ),
@@ -554,14 +565,29 @@ class _ServerListItemState extends State<ServerListItem>
                               Icon(
                                 Icons.location_on,
                                 size: 14,
-                                color: Colors.grey[600],
+                                color: widget.isSelected
+                                  ? theme.primaryColor
+                                  : Colors.grey[600],
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                widget.server.location,
+                                locationInfo['country'] ?? widget.server.location,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey[600],
+                                  color: widget.isSelected
+                                    ? theme.primaryColor
+                                    : Colors.grey[600],
+                                  shadows: widget.isSelected
+                                    ? [
+                                        Shadow(
+                                          color: theme.brightness == Brightness.dark
+                                            ? Colors.black54
+                                            : Colors.white70,
+                                          blurRadius: 2,
+                                          offset: const Offset(0.5, 0.5),
+                                        ),
+                                      ]
+                                    : null,
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -586,7 +612,9 @@ class _ServerListItemState extends State<ServerListItem>
                             '${widget.server.ip}:${widget.server.port}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[500],
+                              color: widget.isSelected
+                                ? theme.primaryColor.withOpacity(0.8)
+                                : Colors.grey[500],
                               fontFamily: 'monospace',
                             ),
                           ),

@@ -1,11 +1,20 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:path/path.dart' as path;
 
 class V2RayService {
   static Process? _v2rayProcess;
   static bool _isRunning = false;
   static Function? _onProcessExit; // 进程退出回调
+  
+  // 流量统计相关
+  static int _uploadSpeed = 0;
+  static int _downloadSpeed = 0;
+  static int _uploadTotal = 0;
+  static int _downloadTotal = 0;
+  static DateTime _lastUpdateTime = DateTime.now();
+  static Timer? _statsTimer;
   
   static Future<String> getExecutablePath(String executableName) async {
     if (Platform.isWindows) {
@@ -30,9 +39,7 @@ class V2RayService {
     required int serverPort,
     int localPort = 7898,  // SOCKS5 代理端口
     int httpPort = 7899,   // HTTP 代理端口
-    bool tunMode = false,   // TUN 模式
   }) async {
-    print('v2ray print: generateConfig called with tunMode: $tunMode');
     serverPort = 443;//暂时写死443
     final v2rayPath = await _getV2RayPath();
     final configPath = path.join(
@@ -40,54 +47,67 @@ class V2RayService {
       'config.json'
     );
 
-    final inbounds = [];
-
-    if (!tunMode) {
-      inbounds.add({
-        "port": localPort,
-        "protocol": "socks",
-        "settings": {
-          "auth": "noauth",
-          "udp": true
-        }
-      });
-      inbounds.add({
-        "tag": "http",
-        "port": httpPort,
-        "protocol": "http",
-        "sniffing": {
-          "enabled": true,
-          "destOverride": [
-            "http",
-            "tls"
-          ],
-          "routeOnly": false
-        },
-        "settings": {
-          "auth": "noauth",
-          "udp": true,
-          "allowTransparent": false
-        }
-      });
-    } else {
-      print('v2ray print: 开启TUN模式，tunMode值为: $tunMode');
-      inbounds.add({
-        "port": 7900,
-        "protocol": "dokodemo-door",
-        "settings": {
-          "network": "tcp,udp",
-          "followRedirect": true
-        },
-        "sniffing": {
-          "enabled": true,
-          "destOverride": ["http", "tls"],
-          "routeOnly": false
-        }
-      });
-    }
-
     final config = {
-      "inbounds": inbounds,
+      "stats": {}, // 启用统计功能
+      "api": {
+        "tag": "api",
+        "services": [
+          "StatsService"
+        ]
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "statsUserUplink": true,
+            "statsUserDownlink": true
+          }
+        },
+        "system": {
+          "statsInboundUplink": true,
+          "statsInboundDownlink": true,
+          "statsOutboundUplink": true,
+          "statsOutboundDownlink": true
+        }
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": localPort,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true,
+            "userLevel": 0
+          }
+        },
+        {
+          "tag": "http",
+          "port": httpPort,
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls"
+            ],
+            "routeOnly": false
+          },
+          "settings": {
+            "auth": "noauth",
+            "udp": true,
+            "allowTransparent": false,
+            "userLevel": 0
+          }
+        },
+        {
+          "tag": "api",
+          "port": 10085,
+          "protocol": "dokodemo-door",
+          "settings": {
+            "address": "127.0.0.1"
+          }
+        }
+      ],
       "outbounds": [
         {
           "tag": "proxy",
@@ -276,9 +296,7 @@ class V2RayService {
   static Future<bool> start({
     required String serverIp,
     required int serverPort,
-    bool tunMode = false,
   }) async {
-    print('v2ray print: start方法被调用，tunMode值为: $tunMode');
     if (_isRunning) {
       await stop();  // 确保先停止旧进程
     }
@@ -290,7 +308,7 @@ class V2RayService {
       }
 
       // 生成配置文件
-      await generateConfig(serverIp: serverIp, serverPort: serverPort, tunMode: tunMode);
+      await generateConfig(serverIp: serverIp, serverPort: serverPort);
 
       final v2rayPath = await _getV2RayPath();
       if (!await File(v2rayPath).exists()) {
@@ -335,6 +353,17 @@ class V2RayService {
       });
 
       _isRunning = true;
+      
+      // 重置流量统计
+      _uploadSpeed = 0;
+      _downloadSpeed = 0;
+      _uploadTotal = 0;
+      _downloadTotal = 0;
+      _lastUpdateTime = DateTime.now();
+      
+      // 启动流量统计定时器（每2分钟读取一次）
+      _startStatsTimer();
+      
       return true;
     } catch (e) {
       print('Failed to start V2Ray: $e');
@@ -344,6 +373,9 @@ class V2RayService {
   }
 
   static Future<void> stop() async {
+    // 停止流量统计定时器
+    _stopStatsTimer();
+    
     if (_v2rayProcess != null) {
       try {
         // 首先尝试优雅关闭（发送SIGTERM信号）
@@ -402,4 +434,205 @@ class V2RayService {
   }
 
   static bool get isRunning => _isRunning;
+  
+  // 启动流量统计定时器
+  static void _startStatsTimer() {
+    _stopStatsTimer(); // 确保没有重复的定时器
+    
+    // 立即执行一次
+    _updateTrafficStatsFromAPI();
+    
+    // 每2分钟更新一次
+    _statsTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      _updateTrafficStatsFromAPI();
+    });
+  }
+  
+  // 停止流量统计定时器
+  static void _stopStatsTimer() {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+  }
+  
+  // 从 V2Ray API 获取流量统计
+  static Future<void> _updateTrafficStatsFromAPI() async {
+    if (!_isRunning) return;
+    
+    try {
+      // 获取 v2ray.exe 的路径
+      final v2rayPath = await _getV2RayPath();
+      final v2rayDir = path.dirname(v2rayPath);
+      final v2ctlPath = path.join(v2rayDir, 'v2ctl.exe');
+      
+      // 检查 v2ctl.exe 是否存在，如果不存在则使用 v2ray.exe
+      final executable = await File(v2ctlPath).exists() ? v2ctlPath : v2rayPath;
+      
+      // 使用 v2ray/v2ctl api 命令查询统计数据
+      final result = await Process.run(
+        executable,
+        ['api', 'statsquery', '--server=127.0.0.1:10085'],
+        runInShell: true,
+        workingDirectory: v2rayDir,
+      );
+      
+      if (result.exitCode == 0) {
+        // 解析统计数据
+        final output = result.stdout.toString();
+        _parseStatsOutput(output);
+      } else {
+        print('获取流量统计失败: ${result.stderr}');
+        // 如果 API 调用失败，尝试备用方法
+        await _updateTrafficStatsFromAlternativeMethod();
+      }
+    } catch (e) {
+      print('更新流量统计时出错: $e');
+    }
+  }
+  
+  // 备用方法：通过 HTTP API 获取流量统计
+  static Future<void> _updateTrafficStatsFromAlternativeMethod() async {
+    try {
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 2);
+      
+      // 尝试通过 HTTP 请求获取统计信息
+      final request = await httpClient.post(
+        '127.0.0.1',
+        10085,
+        '/v1/stats/query',
+      );
+      
+      // 发送空的查询体以获取所有统计数据
+      request.write('{"pattern": "", "reset": false}');
+      
+      final response = await request.close();
+      
+      if (response.statusCode == 200) {
+        final responseBody = await response.transform(utf8.decoder).join();
+        // 解析 JSON 格式的响应
+        _parseJSONStatsResponse(responseBody);
+      }
+      
+      httpClient.close();
+    } catch (e) {
+      print('备用方法获取流量统计失败: $e');
+    }
+  }
+  
+  // 解析 v2ray api statsquery 的输出
+  static void _parseStatsOutput(String output) {
+    try {
+      final lines = output.split('\n');
+      int totalUplink = 0;
+      int totalDownlink = 0;
+      
+      for (final line in lines) {
+        // 查找格式如: "inbound>>>http>>>traffic>>>uplink" value: 12345
+        if (line.contains('>>>traffic>>>')) {
+          final match = RegExp(r'value:\s*(\d+)').firstMatch(line);
+          if (match != null) {
+            final value = int.parse(match.group(1)!);
+            
+            if (line.contains('>>>uplink')) {
+              totalUplink += value;
+            } else if (line.contains('>>>downlink')) {
+              totalDownlink += value;
+            }
+          }
+        }
+      }
+      
+      // 计算速度
+      final now = DateTime.now();
+      final timeDiff = now.difference(_lastUpdateTime).inSeconds;
+      
+      if (timeDiff > 0) {
+        _uploadSpeed = ((totalUplink - _uploadTotal) / timeDiff).round();
+        _downloadSpeed = ((totalDownlink - _downloadTotal) / timeDiff).round();
+        
+        // 确保速度为非负数
+        if (_uploadSpeed < 0) _uploadSpeed = 0;
+        if (_downloadSpeed < 0) _downloadSpeed = 0;
+      }
+      
+      _uploadTotal = totalUplink;
+      _downloadTotal = totalDownlink;
+      _lastUpdateTime = now;
+      
+      print('流量统计更新: 上传=${_formatBytes(_uploadTotal)}, 下载=${_formatBytes(_downloadTotal)}');
+    } catch (e) {
+      print('解析流量统计输出失败: $e');
+    }
+  }
+  
+  // 解析 JSON 格式的统计响应
+  static void _parseJSONStatsResponse(String jsonStr) {
+    try {
+      final data = json.decode(jsonStr);
+      int totalUplink = 0;
+      int totalDownlink = 0;
+      
+      if (data['stat'] != null) {
+        for (final stat in data['stat']) {
+          final name = stat['name'] as String;
+          final value = stat['value'] as int;
+          
+          if (name.contains('>>>traffic>>>')) {
+            if (name.contains('>>>uplink')) {
+              totalUplink += value;
+            } else if (name.contains('>>>downlink')) {
+              totalDownlink += value;
+            }
+          }
+        }
+      }
+      
+      // 计算速度
+      final now = DateTime.now();
+      final timeDiff = now.difference(_lastUpdateTime).inSeconds;
+      
+      if (timeDiff > 0) {
+        _uploadSpeed = ((totalUplink - _uploadTotal) / timeDiff).round();
+        _downloadSpeed = ((totalDownlink - _downloadTotal) / timeDiff).round();
+        
+        // 确保速度为非负数
+        if (_uploadSpeed < 0) _uploadSpeed = 0;
+        if (_downloadSpeed < 0) _downloadSpeed = 0;
+      }
+      
+      _uploadTotal = totalUplink;
+      _downloadTotal = totalDownlink;
+      _lastUpdateTime = now;
+    } catch (e) {
+      print('解析 JSON 统计响应失败: $e');
+    }
+  }
+  
+  // 格式化字节数
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+  
+  // 获取流量统计信息
+  static Future<Map<String, int>> getTrafficStats() async {
+    if (!_isRunning) {
+      return {
+        'uploadSpeed': 0,
+        'downloadSpeed': 0,
+        'uploadTotal': 0,
+        'downloadTotal': 0,
+      };
+    }
+    
+    // 返回当前统计数据
+    return {
+      'uploadSpeed': _uploadSpeed,
+      'downloadSpeed': _downloadSpeed,
+      'uploadTotal': _uploadTotal,
+      'downloadTotal': _downloadTotal,
+    };
+  }
 }

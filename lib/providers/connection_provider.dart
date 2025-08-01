@@ -11,13 +11,11 @@ class ConnectionProvider with ChangeNotifier {
   ServerModel? _currentServer;
   final String _storageKey = 'current_server';
   bool _autoConnect = false;
-  bool _tunMode = false;
   bool _isDisposed = false;
   
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
-  bool get tunMode => _tunMode;
   
   ConnectionProvider() {
     // 设置V2Ray进程退出回调
@@ -46,11 +44,9 @@ class ConnectionProvider with ChangeNotifier {
       print('V2Ray process exited unexpectedly, updating connection status...');
       _isConnected = false;
       // 清理系统代理设置
-      if (!_tunMode) {
-        ProxyService.disableSystemProxy().catchError((e) {
-          print('Error disabling system proxy after process exit: $e');
-        });
-      }
+      ProxyService.disableSystemProxy().catchError((e) {
+        print('Error disabling system proxy after process exit: $e');
+      });
       if (!_isDisposed) {
         notifyListeners();
       }
@@ -60,24 +56,8 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _autoConnect = prefs.getBool('auto_connect') ?? false;
-    _tunMode = prefs.getBool('tun_mode') ?? false;
     if (_autoConnect && !_isDisposed) {
       connect();
-    }
-  }
-  
-  Future<void> setTunMode(bool value) async {
-    if (_isConnected) {
-      await disconnect();
-    }
-    _tunMode = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('tun_mode', value);
-    if (!_isDisposed) {
-      notifyListeners();
-    }
-    if (_isConnected) {
-      await connect();
     }
   }
   
@@ -185,15 +165,12 @@ class ConnectionProvider with ChangeNotifier {
         final success = await V2RayService.start(
           serverIp: serverToConnect.ip,
           serverPort: serverToConnect.port,
-          tunMode: _tunMode,
         );
 
         if (success) {
           try {
-            // 仅在非TUN模式下启用系统代理
-            if (!_tunMode) {
-              await ProxyService.enableSystemProxy();
-            }
+            // 启用系统代理
+            await ProxyService.enableSystemProxy();
             _isConnected = true;
             if (!_isDisposed) {
               notifyListeners();
@@ -224,10 +201,8 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> disconnect() async {
     try {
       await V2RayService.stop();
-      // 仅在非TUN模式下禁用系统代理
-      if (!_tunMode) {
-        await ProxyService.disableSystemProxy();
-      }
+      // 禁用系统代理
+      await ProxyService.disableSystemProxy();
       _isConnected = false;
       if (!_isDisposed) {
         notifyListeners();

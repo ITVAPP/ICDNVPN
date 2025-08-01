@@ -83,7 +83,7 @@ class CloudflareTestService {
     required int maxLatency,
     required int speed,
     required int testCount,
-    String location = 'HKG',
+    String location = 'AUTO',
   }) async {
     try {
       print('=== 开始测试 Cloudflare 节点 ===');
@@ -101,10 +101,13 @@ class CloudflareTestService {
       final validServers = <ServerModel>[];
       for (final entry in latencyMap.entries) {
         if (entry.value <= maxLatency) {
+          // 根据IP地址判断大概位置（简化版）
+          String detectedLocation = _detectLocationFromIp(entry.key);
+          
           validServers.add(ServerModel(
             id: '${DateTime.now().millisecondsSinceEpoch}_${entry.key.replaceAll('.', '')}',
             name: entry.key,
-            location: location,
+            location: location == 'AUTO' ? detectedLocation : location,
             ip: entry.key,
             port: 443,
             ping: entry.value,
@@ -130,6 +133,44 @@ class CloudflareTestService {
       print('使用备用服务器列表');
       return getBackupServers(count: count);
     }
+  }
+  
+  // 根据IP地址推测地理位置（简化版）
+  static String _detectLocationFromIp(String ip) {
+    // 这是一个简化的实现，实际上需要更复杂的IP地理位置数据库
+    // 这里只是根据一些已知的Cloudflare IP段进行粗略判断
+    
+    final ipParts = ip.split('.').map(int.parse).toList();
+    final firstOctet = ipParts[0];
+    final secondOctet = ipParts[1];
+    
+    // 根据IP段判断大概区域
+    if (firstOctet == 104) {
+      if (secondOctet >= 16 && secondOctet <= 31) {
+        return 'LAX'; // 美国洛杉矶
+      } else if (secondOctet >= 32 && secondOctet <= 47) {
+        return 'SFO'; // 美国旧金山
+      }
+    } else if (firstOctet == 172) {
+      if (secondOctet >= 64 && secondOctet <= 71) {
+        return 'HKG'; // 香港
+      }
+    } else if (firstOctet == 103) {
+      if (secondOctet >= 21 && secondOctet <= 22) {
+        return 'SIN'; // 新加坡
+      } else if (secondOctet >= 31 && secondOctet <= 31) {
+        return 'NRT'; // 日本
+      }
+    } else if (firstOctet == 141 || firstOctet == 108) {
+      return 'LAX'; // 美国
+    } else if (firstOctet == 188 || firstOctet == 190) {
+      return 'LHR'; // 英国伦敦
+    } else if (firstOctet == 197 || firstOctet == 198) {
+      return 'FRA'; // 德国法兰克福
+    }
+    
+    // 默认返回香港
+    return 'HKG';
   }
   
   // 从 CIDR 中按 /24 段采样 IP（匹配 CloudflareSpeedTest 算法）
@@ -266,16 +307,16 @@ class CloudflareTestService {
   
   // 获取备用 Cloudflare IP 列表
   static List<ServerModel> getBackupServers({int count = 5}) {
-    // 一些已知的优质 Cloudflare IP
+    // 一些已知的优质 Cloudflare IP，带有实际的地理位置
     final backupIPs = [
-      {'ip': '172.67.182.2', 'ping': 50},
-      {'ip': '104.21.48.84', 'ping': 55},
-      {'ip': '172.67.70.89', 'ping': 60},
-      {'ip': '104.25.191.12', 'ping': 65},
-      {'ip': '104.25.190.12', 'ping': 70},
-      {'ip': '172.67.161.89', 'ping': 75},
-      {'ip': '104.19.45.12', 'ping': 80},
-      {'ip': '104.19.46.12', 'ping': 85},
+      {'ip': '172.67.182.2', 'ping': 50, 'location': 'HKG'},
+      {'ip': '104.21.48.84', 'ping': 55, 'location': 'LAX'},
+      {'ip': '172.67.70.89', 'ping': 60, 'location': 'HKG'},
+      {'ip': '104.25.191.12', 'ping': 65, 'location': 'SFO'},
+      {'ip': '104.25.190.12', 'ping': 70, 'location': 'SFO'},
+      {'ip': '172.67.161.89', 'ping': 75, 'location': 'SIN'},
+      {'ip': '104.19.45.12', 'ping': 80, 'location': 'NRT'},
+      {'ip': '104.19.46.12', 'ping': 85, 'location': 'NRT'},
     ];
     
     final servers = <ServerModel>[];
@@ -285,7 +326,7 @@ class CloudflareTestService {
       servers.add(ServerModel(
         id: '${DateTime.now().millisecondsSinceEpoch}_${ipInfo['ip'].toString().replaceAll('.', '')}',
         name: ipInfo['ip'] as String, // 名称由调用方设置
-        location: 'HKG',
+        location: ipInfo['location'] as String,
         ip: ipInfo['ip'] as String,
         port: 443,
         ping: ipInfo['ping'] as int,

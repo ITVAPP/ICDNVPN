@@ -4,8 +4,11 @@ import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
+import '../services/v2ray_service.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/location_utils.dart';
 import 'dart:math' as math;
+import 'dart:async';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,29 +18,24 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  late AnimationController _pulseController;
   late AnimationController _slideController;
   late AnimationController _loadingController;
-  late Animation<double> _pulseAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _loadingAnimation;
   
-  // 流量统计（模拟数据，实际应从V2Ray获取）
+  // 流量统计
   String _uploadSpeed = '0 KB/s';
   String _downloadSpeed = '0 KB/s';
   String _connectedTime = '00:00:00';
+  Timer? _trafficTimer;
+  Timer? _connectedTimeTimer;
+  DateTime? _connectStartTime;
   
   bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
-    
-    // 脉冲动画控制器
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    )..repeat(reverse: true);
     
     // 滑动动画控制器
     _slideController = AnimationController(
@@ -52,14 +50,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
     
     // 动画配置
-    _pulseAnimation = Tween<double>(
-      begin: 0.95,
-      end: 1.05,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.1),
       end: Offset.zero,
@@ -77,14 +67,100 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     ));
     
     _slideController.forward();
+    
+    // 监听连接状态变化
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+      connectionProvider.addListener(_onConnectionChanged);
+      _onConnectionChanged();
+    });
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    connectionProvider.removeListener(_onConnectionChanged);
     _slideController.dispose();
     _loadingController.dispose();
+    _trafficTimer?.cancel();
+    _connectedTimeTimer?.cancel();
     super.dispose();
+  }
+  
+  void _onConnectionChanged() {
+    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    if (connectionProvider.isConnected) {
+      _startTrafficMonitoring();
+      _startConnectedTimeTimer();
+    } else {
+      _stopTrafficMonitoring();
+      _stopConnectedTimeTimer();
+    }
+  }
+  
+  void _startTrafficMonitoring() {
+    _trafficTimer?.cancel();
+    _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateTrafficStats();
+    });
+  }
+  
+  void _stopTrafficMonitoring() {
+    _trafficTimer?.cancel();
+    setState(() {
+      _uploadSpeed = '0 KB/s';
+      _downloadSpeed = '0 KB/s';
+    });
+  }
+  
+  void _startConnectedTimeTimer() {
+    _connectStartTime = DateTime.now();
+    _connectedTimeTimer?.cancel();
+    _connectedTimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateConnectedTime();
+    });
+  }
+  
+  void _stopConnectedTimeTimer() {
+    _connectedTimeTimer?.cancel();
+    _connectStartTime = null;
+    setState(() {
+      _connectedTime = '00:00:00';
+    });
+  }
+  
+  void _updateConnectedTime() {
+    if (_connectStartTime != null) {
+      final duration = DateTime.now().difference(_connectStartTime!);
+      final hours = duration.inHours.toString().padLeft(2, '0');
+      final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+      final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+      setState(() {
+        _connectedTime = '$hours:$minutes:$seconds';
+      });
+    }
+  }
+  
+  void _updateTrafficStats() async {
+    try {
+      final stats = await V2RayService.getTrafficStats();
+      setState(() {
+        _uploadSpeed = _formatSpeed(stats['uploadSpeed'] ?? 0);
+        _downloadSpeed = _formatSpeed(stats['downloadSpeed'] ?? 0);
+      });
+    } catch (e) {
+      print('获取流量统计失败: $e');
+    }
+  }
+  
+  String _formatSpeed(int bytesPerSecond) {
+    if (bytesPerSecond < 1024) {
+      return '$bytesPerSecond B/s';
+    } else if (bytesPerSecond < 1024 * 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    } else {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
   }
 
   @override
@@ -151,7 +227,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       
                       // 快速操作按钮
                       const SizedBox(height: 30),
-                      _buildQuickActions(serverProvider, l10n),
+                      _buildQuickActions(serverProvider, connectionProvider, l10n),
                     ],
                   ),
                 ),
@@ -214,7 +290,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
     return MouseRegion(
-      cursor: SystemMouseCursors.click, // 鼠标悬停时显示手势
+      cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: _isProcessing ? null : () async {
           // 触感反馈
@@ -253,81 +329,62 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           }
         },
         child: AnimatedBuilder(
-          animation: Listenable.merge([
-            isConnected ? _pulseAnimation : _slideAnimation,
-            _loadingAnimation,
-          ]),
+          animation: _loadingAnimation,
           builder: (context, child) {
-            return Transform.scale(
-              scale: isConnected && !_isProcessing ? _pulseAnimation.value : 1.0,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: _isProcessing
+            return Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: _isProcessing
+                    ? [
+                        Colors.grey.shade400,
+                        Colors.grey.shade600,
+                      ]
+                    : isConnected
                       ? [
-                          Colors.grey.shade400,
-                          Colors.grey.shade600,
+                          Colors.green.shade400,
+                          Colors.green.shade600,
                         ]
-                      : isConnected
-                        ? [
-                            Colors.green.shade400,
-                            Colors.green.shade600,
-                          ]
-                        : [
-                            Colors.blue.shade400,
-                            Colors.blue.shade600,
-                          ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (_isProcessing 
-                        ? Colors.grey 
-                        : (isConnected ? Colors.green : Colors.blue)
-                      ).withOpacity(0.3),
-                      blurRadius: 30,
-                      spreadRadius: 10,
-                    ),
-                  ],
+                      : [
+                          Colors.blue.shade400,
+                          Colors.blue.shade600,
+                        ],
                 ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // 外圈动画
-                    if (isConnected && !_isProcessing)
-                      ...List.generate(3, (index) {
-                        return AnimatedContainer(
-                          duration: Duration(milliseconds: 1000 + (index * 500)),
-                          width: 200 + (index * 40),
-                          height: 200 + (index * 40),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.green.withOpacity(0.2 - (index * 0.05)),
-                              width: 2,
-                            ),
-                          ),
-                        );
-                      }),
-                    
-                    // 中心图标 - 加载时旋转
-                    Transform.rotate(
-                      angle: _isProcessing ? _loadingAnimation.value : 0,
-                      child: Icon(
-                        _isProcessing 
-                          ? Icons.sync
-                          : (isConnected ? Icons.shield : Icons.shield_outlined),
-                        size: 80,
-                        color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: (_isProcessing 
+                      ? Colors.grey 
+                      : (isConnected ? Colors.green : Colors.blue)
+                    ).withOpacity(0.3),
+                    blurRadius: 30,
+                    spreadRadius: 10,
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // 中心内容容器
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // 中心图标 - 使用火箭图标
+                      Transform.rotate(
+                        angle: _isProcessing ? _loadingAnimation.value : 0,
+                        child: Icon(
+                          _isProcessing 
+                            ? Icons.sync
+                            : (isConnected ? Icons.rocket_launch : Icons.rocket),
+                          size: 80,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    
-                    // 状态文字 - 调整位置
-                    Positioned(
-                      bottom: 35, // 文字位置下移
-                      child: AnimatedOpacity(
+                      const SizedBox(height: 12),
+                      // 状态文字
+                      AnimatedOpacity(
                         opacity: _isProcessing ? 0.7 : 1.0,
                         duration: const Duration(milliseconds: 300),
                         child: Text(
@@ -336,14 +393,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             : (isConnected ? l10n.clickToDisconnect : l10n.clickToConnect),
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
-                            fontSize: 16, // 文字增大
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
             );
           },
@@ -354,6 +411,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildServerInfoCard(ServerModel server, bool isConnected, AppLocalizations l10n) {
     final theme = Theme.of(context);
+    final locationInfo = LocationUtils.getLocationInfo(server.location);
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -383,7 +441,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   color: theme.primaryColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(Icons.dns, color: theme.primaryColor),
+                child: Center(
+                  child: Text(
+                    locationInfo['flag'] ?? '🌐',
+                    style: const TextStyle(fontSize: 30),
+                  ),
+                ),
               ),
               const SizedBox(width: 15),
               Expanded(
@@ -403,7 +466,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         Icon(Icons.location_on, size: 14, color: theme.hintColor),
                         const SizedBox(width: 4),
                         Text(
-                          server.location,
+                          locationInfo['country'] ?? server.location,
                           style: TextStyle(
                             fontSize: 14,
                             color: theme.hintColor,
@@ -570,7 +633,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildQuickActions(ServerProvider serverProvider, AppLocalizations l10n) {
+  Widget _buildQuickActions(ServerProvider serverProvider, ConnectionProvider connectionProvider, AppLocalizations l10n) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
@@ -582,7 +645,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             final servers = serverProvider.servers;
             if (servers.isNotEmpty) {
               final bestServer = servers.reduce((a, b) => a.ping < b.ping ? a : b);
-              context.read<ConnectionProvider>().setCurrentServer(bestServer);
+              connectionProvider.setCurrentServer(bestServer);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('${l10n.selectServer}: ${bestServer.name}'),
@@ -595,19 +658,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           icon: Icons.speed,
           label: l10n.speedTest,
           onTap: () async {
-            final connectionProvider = context.read<ConnectionProvider>();
-            if (!connectionProvider.isConnected) {
+            final servers = serverProvider.servers;
+            
+            if (servers.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l10n.noAvailableServer)),
+                SnackBar(content: Text(l10n.noServers)),
               );
               return;
             }
             
-            // 显示测速对话框
+            // 显示测速对话框 - 如果已连接，测试当前服务器；否则测试第一个服务器
+            final testServer = connectionProvider.isConnected 
+                ? connectionProvider.currentServer 
+                : servers.first;
+                
             showDialog(
               context: context,
               barrierDismissible: false,
-              builder: (context) => _SpeedTestDialog(),
+              builder: (context) => _SpeedTestDialog(currentServer: testServer),
             );
           },
         ),
@@ -665,8 +733,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 }
 
-// 速度测试对话框 - 使用统一的testLatency方法
+// 速度测试对话框
 class _SpeedTestDialog extends StatefulWidget {
+  final ServerModel? currentServer;
+  
+  const _SpeedTestDialog({
+    this.currentServer,
+  });
+  
   @override
   State<_SpeedTestDialog> createState() => _SpeedTestDialogState();
 }
@@ -685,24 +759,27 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
     final l10n = AppLocalizations.of(context);
     
     try {
-      final connectionProvider = context.read<ConnectionProvider>();
-      final currentServer = connectionProvider.currentServer;
+      final serverProvider = context.read<ServerProvider>();
+      final servers = serverProvider.servers;
       
-      if (currentServer == null) {
-        throw l10n.noAvailableServer;
+      if (servers.isEmpty) {
+        throw l10n.noServers;
       }
       
-      // 使用统一的testLatency方法测试当前服务器
-      final latencyMap = await CloudflareTestService.testLatency([currentServer.ip]);
-      final latency = latencyMap[currentServer.ip] ?? 999;
+      // 如果有当前服务器，优先测试当前服务器
+      final testServer = widget.currentServer ?? servers.first;
+      
+      // 使用统一的testLatency方法测试服务器
+      final latencyMap = await CloudflareTestService.testLatency([testServer.ip]);
+      final latency = latencyMap[testServer.ip] ?? 999;
       
       if (mounted) {
         setState(() {
           _testResults = {
             'success': true,
             'latency': latency,
-            'serverName': currentServer.name,
-            'serverLocation': currentServer.location,
+            'serverName': testServer.name,
+            'serverLocation': testServer.location,
           };
           _isTesting = false;
         });
@@ -767,6 +844,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       ),
                     ),
                     Text(
+                      LocationUtils.getLocationInfo(_testResults!['serverLocation'] ?? '')['country'] ?? 
                       _testResults!['serverLocation'] ?? '',
                       style: TextStyle(
                         fontSize: 14,
@@ -820,7 +898,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(l10n.disconnect), // 使用"断开"作为关闭按钮文字
+            child: Text(l10n.disconnect),
           ),
         ],
       ],

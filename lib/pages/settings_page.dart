@@ -77,15 +77,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     .setAutoConnect(value);
               },
             ),
-            _SettingSwitch(
-              title: l10n.tunMode,
-              subtitle: l10n.tunModeDesc,
-              value: Provider.of<ConnectionProvider>(context).tunMode,
-              onChanged: (value) {
-                Provider.of<ConnectionProvider>(context, listen: false)
-                    .setTunMode(value);
-              },
-            ),
             
             // 外观设置
             const _SectionDivider(),

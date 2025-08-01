@@ -38,8 +38,8 @@ void main() async {
     
     // 设置窗口选项
     WindowOptions windowOptions = const WindowOptions(
-      size: Size(400, 650), // 调整默认大小以适应内容
-      minimumSize: Size(380, 600),
+      size: Size(400, 720), // 增加默认高度以适应内容
+      minimumSize: Size(380, 650),
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
@@ -273,7 +273,11 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         content: Text(AppLocalizations.of(context).confirmExitDesc),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () async {
+              Navigator.pop(context, false);
+              // 隐藏窗口到系统托盘
+              await windowManager.hide();
+            },
             child: Text(AppLocalizations.of(context).minimize),
           ),
           TextButton(
@@ -308,9 +312,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         await windowManager.destroy();
         exit(0);
       }
-    } else {
-      // 用户选择最小化或关闭了对话框，隐藏窗口
-      await windowManager.hide();
     }
   }
 
@@ -331,10 +332,10 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
 
-    // 仅在桌面平台添加圆角裁剪
+    // 仅在桌面平台添加圆角裁剪，并增大圆角半径
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20), // 增大圆角半径
         child: scaffold,
       );
     }
