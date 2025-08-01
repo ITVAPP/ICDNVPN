@@ -10,23 +10,53 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  provider: ^6.1.1
-  shared_preferences: ^2.2.2
+  flutter_localizations:
+    sdk: flutter
+    
   dio: ^5.4.0
   flutter_svg: ^2.0.9
-  cupertino_icons: ^1.0.2
-  path: ^1.8.3
   path_provider: ^2.1.2
-  win32_registry: ^1.1.2
   http: ^1.1.0 
+  
+  # 状态管理
+  provider: ^6.1.1
+  
+  # 本地存储
+  shared_preferences: ^2.2.2
+  
+  # Windows特性
+  win32: ^5.1.1
+  win32_registry: ^1.1.2
+  ffi: ^2.1.0
+  
+  # 窗口管理
+  window_manager: ^0.3.7
+  
+  # 路径处理
+  path: ^1.8.3
+  
+  # URL启动
+  url_launcher: ^6.2.2
+  
+  # 图标
+  cupertino_icons: ^1.0.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^3.0.1
 
 flutter:
   uses-material-design: true
   
+  # 应用图标
   assets:
     - assets/images/
+  
+  # 字体配置（如果需要）
+  # fonts:
+  #   - family: CustomFont
+  #     fonts:
+  #       - asset: fonts/CustomFont-Regular.ttf
+  #       - asset: fonts/CustomFont-Bold.ttf
+  #         weight: 700

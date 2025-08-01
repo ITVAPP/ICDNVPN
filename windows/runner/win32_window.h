@@ -7,6 +7,33 @@
 #include <memory>
 #include <string>
 
+// Windows 11 DWM API constants
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+
+#ifndef DWMWCP_ROUND
+typedef enum {
+  DWMWCP_DEFAULT = 0,
+  DWMWCP_DONOTROUND = 1,
+  DWMWCP_ROUND = 2,
+  DWMWCP_ROUNDSMALL = 3
+} DWM_WINDOW_CORNER_PREFERENCE;
+#endif
+
+#ifndef DWMWA_NCRENDERING_POLICY
+#define DWMWA_NCRENDERING_POLICY 2
+#endif
+
+#ifndef DWMNCRP_ENABLED
+typedef enum {
+  DWMNCRP_USEWINDOWSTYLE = 0,
+  DWMNCRP_DISABLED = 1,
+  DWMNCRP_ENABLED = 2,
+  DWMNCRP_LAST = 3
+} DWMNCRENDERINGPOLICY;
+#endif
+
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
 // rendering and input handling

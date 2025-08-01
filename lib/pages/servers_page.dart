@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../services/v2ray_service.dart';
 import '../services/cloudflare_test_service.dart';
-import 'package:path/path.dart' as path;
-import 'dart:io';
-import 'dart:convert';
 import '../models/server_model.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../widgets/cloudflare_test_dialog.dart';
+import '../l10n/app_localizations.dart';
 
 class ServersPage extends StatefulWidget {
   const ServersPage({super.key});
@@ -21,20 +18,18 @@ class _ServersPageState extends State<ServersPage> {
   bool _isAscending = true;
   bool _isTesting = false;
 
-  static Future<String> _getExecutablePath() async {
-    return V2RayService.getExecutablePath('cftest.exe');
-  }
-
   void _addCloudflareServer(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Row(
-          children: const [
-            Icon(Icons.cloud_download, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('从Cloudflare添加'),
+          children: [
+            const Icon(Icons.cloud_download, color: Colors.blue),
+            const SizedBox(width: 8),
+            Text(l10n.addFromCloudflare),
           ],
         ),
         content: const CloudflareTestDialog(),
@@ -43,10 +38,12 @@ class _ServersPageState extends State<ServersPage> {
   }
 
   Future<void> _testAllServersLatency() async {
+    final l10n = AppLocalizations.of(context);
     final serverProvider = context.read<ServerProvider>();
+    
     if (serverProvider.servers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可测试的服务器')),
+        SnackBar(content: Text(l10n.noServers)),
       );
       return;
     }
@@ -60,13 +57,13 @@ class _ServersPageState extends State<ServersPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('测试延迟'),
+        title: Text(l10n.testLatency),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
-            Text('正在测试 ${serverProvider.servers.length} 个服务器的延迟...'),
+            Text('${l10n.testing} ${serverProvider.servers.length} ${l10n.servers.toLowerCase()}...'),
           ],
         ),
       ),
@@ -98,7 +95,7 @@ class _ServersPageState extends State<ServersPage> {
       Navigator.of(context).pop();
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('延迟测试完成，更新了 $updatedCount 个服务器')),
+        SnackBar(content: Text('${l10n.testCompleted}，${l10n.refresh} $updatedCount ${l10n.servers.toLowerCase()}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -107,7 +104,7 @@ class _ServersPageState extends State<ServersPage> {
       Navigator.of(context).pop();
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('测试失败: $e')),
+        SnackBar(content: Text('${l10n.testFailed}: $e')),
       );
     } finally {
       if (mounted) {
@@ -121,10 +118,11 @@ class _ServersPageState extends State<ServersPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('服务器列表'),
+        title: Text(l10n.serverList),
         centerTitle: true,
         actions: [
           // 测试延迟按钮
@@ -139,7 +137,7 @@ class _ServersPageState extends State<ServersPage> {
                   ),
                 )
               : const Icon(Icons.speed),
-            tooltip: '测试延迟',
+            tooltip: l10n.testLatency,
             onPressed: _isTesting ? null : _testAllServersLatency,
           ),
           // 排序按钮
@@ -147,7 +145,7 @@ class _ServersPageState extends State<ServersPage> {
             icon: Icon(
               _isAscending ? Icons.arrow_upward : Icons.arrow_downward,
             ),
-            tooltip: _isAscending ? '延迟从低到高' : '延迟从高到低',
+            tooltip: _isAscending ? l10n.sortAscending : l10n.sortDescending,
             onPressed: () {
               setState(() {
                 _isAscending = !_isAscending;
@@ -157,7 +155,7 @@ class _ServersPageState extends State<ServersPage> {
           // 从cloudflare添加按钮
           IconButton(
             icon: const Icon(Icons.cloud),
-            tooltip: '从Cloudflare添加',
+            tooltip: l10n.fromCloudflare,
             onPressed: () => _addCloudflareServer(context),
           ),
           // 更多选项
@@ -167,17 +165,17 @@ class _ServersPageState extends State<ServersPage> {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text('重置服务器列表'),
-                    content: const Text('这将清空所有服务器并重新从Cloudflare获取，确定继续吗？'),
+                    title: Text(l10n.resetServerList),
+                    content: Text(l10n.confirmReset),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('取消'),
+                        child: Text(l10n.disconnect), // 使用"断开"作为取消
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(context, true),
                         style: TextButton.styleFrom(foregroundColor: Colors.red),
-                        child: const Text('确定'),
+                        child: Text(l10n.confirmDelete),
                       ),
                     ],
                   ),
@@ -187,19 +185,19 @@ class _ServersPageState extends State<ServersPage> {
                   await context.read<ServerProvider>().resetServers();
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('服务器列表已重置')),
+                    SnackBar(content: Text(l10n.allServersDeleted)),
                   );
                 }
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'reset',
                 child: Row(
                   children: [
-                    Icon(Icons.refresh, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('重置服务器列表'),
+                    const Icon(Icons.refresh, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Text(l10n.resetServerList),
                   ],
                 ),
               ),
@@ -222,9 +220,9 @@ class _ServersPageState extends State<ServersPage> {
                     style: const TextStyle(fontSize: 16),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '首次运行需要获取可用节点，请稍候...',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  Text(
+                    l10n.gettingNodes,
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ],
               ),
@@ -246,21 +244,21 @@ class _ServersPageState extends State<ServersPage> {
                   Icon(
                     Icons.cloud_off,
                     size: 80,
-                                          color: Colors.grey[400],
+                    color: Colors.grey[400],
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '暂无服务器',
+                    l10n.noServers,
                     style: TextStyle(
                       fontSize: 18,
-                                                        color: Colors.grey[600],
+                      color: Colors.grey[600],
                     ),
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
                     onPressed: () => _addCloudflareServer(context),
                     icon: const Icon(Icons.add),
-                    label: const Text('添加服务器'),
+                    label: Text(l10n.addServer),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
@@ -291,7 +289,7 @@ class _ServersPageState extends State<ServersPage> {
                     connectionProvider.setCurrentServer(server);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('已选择 ${server.name}'),
+                        content: Text('${l10n.selectServer} ${server.name}'),
                         duration: const Duration(seconds: 1),
                       ),
                     );
@@ -300,19 +298,19 @@ class _ServersPageState extends State<ServersPage> {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('确认删除'),
-                        content: Text('是否删除服务器 ${server.name}？'),
+                        title: Text(l10n.confirmDelete),
+                        content: Text('${l10n.confirmDelete} ${server.name}？'),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
-                            child: const Text('取消'),
+                            child: Text(l10n.disconnect), // 使用"断开"作为取消
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(context, true),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.red,
                             ),
-                            child: const Text('删除'),
+                            child: Text(l10n.deleteServer),
                           ),
                         ],
                       ),
@@ -325,7 +323,7 @@ class _ServersPageState extends State<ServersPage> {
                       }
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('已删除 ${server.name}')),
+                        SnackBar(content: Text('${l10n.serverDeleted} ${server.name}')),
                       );
                     }
                   },
@@ -390,6 +388,7 @@ class _ServerListItemState extends State<ServerListItem>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -480,7 +479,7 @@ class _ServerListItemState extends State<ServerListItem>
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.dns,
                             color: Colors.white,
                             size: 28,
@@ -538,9 +537,9 @@ class _ServerListItemState extends State<ServerListItem>
                                     color: Colors.green.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Text(
-                                    '已连接',
-                                    style: TextStyle(
+                                  child: Text(
+                                    l10n.connected,
+                                    style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.green,
                                       fontWeight: FontWeight.w600,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../services/v2ray_service.dart';
+import '../l10n/app_localizations.dart';
 
 class CloudflareDiagnosticTool {
   static Future<Map<String, dynamic>> runDiagnostics() async {
@@ -200,18 +201,20 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
   
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
     return AlertDialog(
-      title: const Text('Cloudflare 连接诊断'),
+      title: Text(l10n.diagnosticTool),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
         child: _isRunning
-            ? const Column(
+            ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('正在运行诊断...'),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(l10n.runDiagnostics),
                 ],
               )
             : SingleChildScrollView(
@@ -219,7 +222,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildDiagnosticSection('V2Ray 检查'),
+                    _buildDiagnosticSection(l10n.fileCheck),
                     _buildDiagnosticItem(
                       'v2ray.exe',
                       _diagnosticResults!['v2rayPath'],
@@ -227,45 +230,45 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                     ),
                     if (_diagnosticResults!['v2rayExists'] == true) ...[
                       _buildDiagnosticItem(
-                        '文件大小',
+                        'Size',
                         '${(_diagnosticResults!['v2raySize'] / 1024 / 1024).toStringAsFixed(2)} MB',
                       ),
                       _buildDiagnosticItem(
-                        '修改时间',
+                        'Modified',
                         _diagnosticResults!['v2rayModified'],
                       ),
                     ],
                     
                     const Divider(),
-                    _buildDiagnosticSection('配置文件检查'),
+                    _buildDiagnosticSection('Config'),
                     _buildDiagnosticItem(
                       'ip.txt',
-                      _diagnosticResults!['ipFileExists'] == true ? '存在' : '不存在',
+                      _diagnosticResults!['ipFileExists'] == true ? 'OK' : 'Missing',
                       success: _diagnosticResults!['ipFileExists'] == true,
                     ),
                     if (_diagnosticResults!['ipFileExists'] == true) ...[
                       _buildDiagnosticItem(
-                        '有效IP段',
-                        '${_diagnosticResults!['validIpRanges']} 个',
+                        'IP Ranges',
+                        '${_diagnosticResults!['validIpRanges']}',
                       ),
                       if (_diagnosticResults!['ipFileSample'] != null)
-                        _buildCodeBlock('IP段示例', _diagnosticResults!['ipFileSample']),
+                        _buildCodeBlock('Sample', _diagnosticResults!['ipFileSample']),
                     ],
                     
                     const Divider(),
-                    _buildDiagnosticSection('网络连接测试'),
+                    _buildDiagnosticSection(l10n.networkTest),
                     if (_diagnosticResults!['networkTest'] != null)
                       ..._buildNetworkTestResults(_diagnosticResults!['networkTest']),
                     
                     const Divider(),
-                    _buildDiagnosticSection('Cloudflare 节点测试'),
+                    _buildDiagnosticSection('Cloudflare Test'),
                     if (_diagnosticResults!['cloudflareTest'] != null)
                       ..._buildCloudflareTestResults(_diagnosticResults!['cloudflareTest']),
                     
                     const Divider(),
-                    _buildDiagnosticSection('系统信息'),
-                    _buildDiagnosticItem('操作系统', _diagnosticResults!['platform']),
-                    _buildDiagnosticItem('系统版本', _diagnosticResults!['platformVersion']),
+                    _buildDiagnosticSection(l10n.systemInfo),
+                    _buildDiagnosticItem('OS', _diagnosticResults!['platform']),
+                    _buildDiagnosticItem('Version', _diagnosticResults!['platformVersion']),
                   ],
                 ),
               ),
@@ -279,11 +282,11 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
               });
               _runDiagnostics();
             },
-            child: const Text('重新诊断'),
+            child: Text(l10n.refresh),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+            child: Text(l10n.disconnect), // 使用"断开"作为关闭
           ),
         ],
       ],
@@ -372,7 +375,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
         widgets.add(
           _buildDiagnosticItem(
             'IP: $ip',
-            isOk ? '延迟: $latency' : result['error'] ?? 'Failed',
+            isOk ? '${l10n.latency}: $latency' : result['error'] ?? 'Failed',
             success: isOk,
           ),
         );

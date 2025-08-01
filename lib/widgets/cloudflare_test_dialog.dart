@@ -4,6 +4,7 @@ import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
 import '../providers/server_provider.dart';
 import '../providers/connection_provider.dart';
+import '../l10n/app_localizations.dart';
 
 class CloudflareTestDialog extends StatefulWidget {
   const CloudflareTestDialog({super.key});
@@ -36,23 +37,25 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
   Future<void> _startTest() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final l10n = AppLocalizations.of(context);
     final connectionProvider = context.read<ConnectionProvider>();
+    
     if (connectionProvider.isConnected) {
       if (!mounted) return;
       
       final shouldContinue = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('警告'),
-          content: const Text('测试前需要断开当前连接，是否继续？'),
+          title: Text(l10n.testLatency),
+          content: Text(l10n.gettingNodes),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
+              child: Text(l10n.disconnect), // 使用"断开"作为取消
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('继续'),
+              child: Text(l10n.connect), // 使用"连接"作为继续
             ),
           ],
         ),
@@ -65,21 +68,21 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
 
     setState(() {
       _isLoading = true;
-      _statusMessage = '正在准备测试...';
+      _statusMessage = l10n.preparing;
       _progress = 0.1;
     });
 
     try {
       // 模拟进度更新
       setState(() {
-        _statusMessage = '正在连接Cloudflare节点...';
+        _statusMessage = l10n.connectingNodes;
         _progress = 0.3;
       });
       
       await Future.delayed(const Duration(milliseconds: 500));
       
       setState(() {
-        _statusMessage = '正在测试节点延迟...';
+        _statusMessage = l10n.testingLatency;
         _progress = 0.5;
       });
 
@@ -91,7 +94,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
       );
 
       setState(() {
-        _statusMessage = '正在处理测试结果...';
+        _statusMessage = l10n.processingResults;
         _progress = 0.8;
       });
 
@@ -99,14 +102,14 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
 
       // 为服务器生成友好的名称，创建新的ServerModel实例
       final existingCount = context.read<ServerProvider>().servers
-          .where((s) => s.name.startsWith('CF节点')).length;
+          .where((s) => s.name.startsWith(l10n.cfNode)).length;
       
       final namedServers = <ServerModel>[];
       int index = existingCount + 1;
       for (var server in servers) {
         namedServers.add(ServerModel(
           id: server.id,
-          name: 'CF节点 ${index.toString().padLeft(2, '0')}',
+          name: '${l10n.cfNode} ${index.toString().padLeft(2, '0')}',
           location: server.location,
           ip: server.ip,
           port: server.port,
@@ -120,7 +123,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
 
       setState(() {
         _progress = 1.0;
-        _statusMessage = '测试完成！';
+        _statusMessage = '${l10n.testCompleted}！';
       });
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -130,11 +133,11 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
       
       String message;
       if (addedCount == servers.length) {
-        message = '成功添加 $addedCount 个新节点';
+        message = '${l10n.serverAdded} $addedCount';
       } else if (addedCount > 0) {
-        message = '添加了 $addedCount 个新节点，${servers.length - addedCount} 个节点已存在';
+        message = '${l10n.serverAdded} $addedCount';
       } else {
-        message = '所有节点已存在，已更新延迟信息';
+        message = l10n.alreadyLatestVersion;
       }
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,13 +151,15 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
         _progress = 0.0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('测试失败: $e')),
+        SnackBar(content: Text('${l10n.testFailed}: $e')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       child: Form(
@@ -176,70 +181,70 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
               // 表单输入
               TextFormField(
                 controller: _countController,
-                decoration: const InputDecoration(
-                  labelText: '添加数量',
-                  helperText: '要添加的节点数量（建议3-5个）',
-                  prefixIcon: Icon(Icons.add_circle_outline),
+                decoration: InputDecoration(
+                  labelText: l10n.nodeCount,
+                  helperText: '${l10n.nodeCount} (3-5)',
+                  prefixIcon: const Icon(Icons.add_circle_outline),
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return '请输入数量';
+                  if (value == null || value.isEmpty) return l10n.operationFailed;
                   final num = int.tryParse(value);
-                  if (num == null) return '请输入有效数字';
-                  if (num < 1 || num > 10) return '数量应在1-10之间';
+                  if (num == null) return l10n.operationFailed;
+                  if (num < 1 || num > 10) return '1-10';
                   return null;
                 },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _latencyController,
-                decoration: const InputDecoration(
-                  labelText: '延迟上限',
-                  helperText: '最大可接受延迟（毫秒）',
-                  prefixIcon: Icon(Icons.speed),
+                decoration: InputDecoration(
+                  labelText: l10n.maxLatency,
+                  helperText: '${l10n.maxLatency} (ms)',
+                  prefixIcon: const Icon(Icons.speed),
                   suffixText: 'ms',
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return '请输入延迟上限';
+                  if (value == null || value.isEmpty) return l10n.operationFailed;
                   final num = int.tryParse(value);
-                  if (num == null) return '请输入有效数字';
-                  if (num < 50 || num > 500) return '延迟应在50-500ms之间';
+                  if (num == null) return l10n.operationFailed;
+                  if (num < 50 || num > 500) return '50-500ms';
                   return null;
                 },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _speedController,
-                decoration: const InputDecoration(
-                  labelText: '最低网速',
-                  helperText: '最低下载速度要求',
-                  prefixIcon: Icon(Icons.download),
+                decoration: InputDecoration(
+                  labelText: l10n.minSpeed,
+                  helperText: '${l10n.minSpeed} (MB/s)',
+                  prefixIcon: const Icon(Icons.download),
                   suffixText: 'MB/s',
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return '请输入网速要求';
+                  if (value == null || value.isEmpty) return l10n.operationFailed;
                   final num = int.tryParse(value);
-                  if (num == null) return '请输入有效数字';
-                  if (num < 1 || num > 100) return '网速应在1-100MB/s之间';
+                  if (num == null) return l10n.operationFailed;
+                  if (num < 1 || num > 100) return '1-100MB/s';
                   return null;
                 },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _testCountController,
-                decoration: const InputDecoration(
-                  labelText: '测试样本数',
-                  helperText: '测试IP数量（越多越准确但耗时更长）',
-                  prefixIcon: Icon(Icons.analytics),
+                decoration: InputDecoration(
+                  labelText: l10n.testSamples,
+                  helperText: l10n.testSamples,
+                  prefixIcon: const Icon(Icons.analytics),
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return '请输入测试次数';
+                  if (value == null || value.isEmpty) return l10n.operationFailed;
                   final num = int.tryParse(value);
-                  if (num == null) return '请输入有效数字';
-                  if (num < 10 || num > 100) return '测试次数应在10-100之间';
+                  if (num == null) return l10n.operationFailed;
+                  if (num < 10 || num > 100) return '10-100';
                   return null;
                 },
               ),
@@ -251,13 +256,13 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('取消'),
+                    child: Text(l10n.disconnect), // 使用"断开"作为取消
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: _startTest,
                     icon: const Icon(Icons.cloud_download),
-                    label: const Text('开始测试'),
+                    label: Text(l10n.startTest),
                   ),
                 ],
               ),

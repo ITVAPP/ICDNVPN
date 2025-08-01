@@ -4,6 +4,8 @@ import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
+import '../l10n/app_localizations.dart';
+import 'dart:math' as math;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,13 +17,17 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late AnimationController _slideController;
+  late AnimationController _loadingController;
   late Animation<double> _pulseAnimation;
   late Animation<Offset> _slideAnimation;
+  late Animation<double> _loadingAnimation;
   
   // 流量统计（模拟数据，实际应从V2Ray获取）
   String _uploadSpeed = '0 KB/s';
   String _downloadSpeed = '0 KB/s';
   String _connectedTime = '00:00:00';
+  
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -36,6 +42,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     // 滑动动画控制器
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    
+    // 加载动画控制器
+    _loadingController = AnimationController(
+      duration: const Duration(seconds: 1),
       vsync: this,
     );
     
@@ -56,6 +68,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       curve: Curves.easeOut,
     ));
     
+    _loadingAnimation = Tween<double>(
+      begin: 0,
+      end: 2 * math.pi,
+    ).animate(CurvedAnimation(
+      parent: _loadingController,
+      curve: Curves.linear,
+    ));
+    
     _slideController.forward();
   }
 
@@ -63,12 +83,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void dispose() {
     _pulseController.dispose();
     _slideController.dispose();
+    _loadingController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     
     return Scaffold(
       body: Container(
@@ -76,13 +99,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              theme.colorScheme.surface,
-              theme.colorScheme.surface.withOpacity(0.8),
-            ],
+            colors: isDark
+              ? [
+                  const Color(0xFF1E1E1E),
+                  const Color(0xFF2C2C2C),
+                ]
+              : [
+                  const Color(0xFFF5F5F5),
+                  const Color(0xFFE8E8E8),
+                ],
           ),
         ),
         child: SafeArea(
+          top: false,
           child: Consumer2<ConnectionProvider, ServerProvider>(
             builder: (context, connectionProvider, serverProvider, child) {
               final isConnected = connectionProvider.isConnected;
@@ -91,33 +120,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 child: Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.only(
+                    left: 20.0,
+                    right: 20.0,
+                    top: 60.0, // 增加顶部内边距，为自定义标题栏留出空间
+                    bottom: 20.0,
+                  ),
                   child: Column(
                     children: [
                       // 顶部状态栏
-                      _buildStatusBar(isConnected),
+                      _buildStatusBar(isConnected, l10n),
                       const SizedBox(height: 40),
                       
                       // 主连接按钮
                       SlideTransition(
                         position: _slideAnimation,
-                        child: _buildConnectionButton(isConnected, connectionProvider),
+                        child: _buildConnectionButton(isConnected, connectionProvider, l10n),
                       ),
                       const SizedBox(height: 40),
                       
                       // 服务器信息卡片
                       if (currentServer != null)
-                        _buildServerInfoCard(currentServer, isConnected),
+                        _buildServerInfoCard(currentServer, isConnected, l10n),
                       
                       // 流量统计卡片
                       if (isConnected) ...[
                         const SizedBox(height: 20),
-                        _buildTrafficCard(),
+                        _buildTrafficCard(l10n),
                       ],
                       
                       // 快速操作按钮
                       const SizedBox(height: 30),
-                      _buildQuickActions(serverProvider),
+                      _buildQuickActions(serverProvider, l10n),
                     ],
                   ),
                 ),
@@ -129,7 +163,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildStatusBar(bool isConnected) {
+  Widget _buildStatusBar(bool isConnected, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
@@ -157,7 +191,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 8),
           Text(
-            isConnected ? '已连接' : '未连接',
+            isConnected ? l10n.connected : l10n.disconnected,
             style: TextStyle(
               color: isConnected ? Colors.green : Colors.red,
               fontWeight: FontWeight.w600,
@@ -178,116 +212,161 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider) {
-    return GestureDetector(
-      onTap: () async {
-        // 触感反馈
-        Feedback.forTap(context);
-        
-        try {
-          if (isConnected) {
-            await provider.disconnect();
-          } else {
-            await provider.connect();
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('操作失败: ${e.toString()}'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      },
-      child: AnimatedBuilder(
-        animation: isConnected ? _pulseAnimation : _slideAnimation,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: isConnected ? _pulseAnimation.value : 1.0,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: isConnected
-                    ? [
-                        Colors.green.shade400,
-                        Colors.green.shade600,
-                      ]
-                    : [
-                        Colors.blue.shade400,
-                        Colors.blue.shade600,
-                      ],
+  Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click, // 鼠标悬停时显示手势
+      child: GestureDetector(
+        onTap: _isProcessing ? null : () async {
+          // 触感反馈
+          Feedback.forTap(context);
+          
+          setState(() {
+            _isProcessing = true;
+          });
+          
+          // 启动加载动画
+          _loadingController.repeat();
+          
+          try {
+            if (isConnected) {
+              await provider.disconnect();
+            } else {
+              await provider.connect();
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${l10n.operationFailed}: ${e.toString()}'),
+                  backgroundColor: Colors.red,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isConnected ? Colors.green : Colors.blue).withOpacity(0.3),
-                    blurRadius: 30,
-                    spreadRadius: 10,
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+              });
+              _loadingController.stop();
+              _loadingController.reset();
+            }
+          }
+        },
+        child: AnimatedBuilder(
+          animation: Listenable.merge([
+            isConnected ? _pulseAnimation : _slideAnimation,
+            _loadingAnimation,
+          ]),
+          builder: (context, child) {
+            return Transform.scale(
+              scale: isConnected && !_isProcessing ? _pulseAnimation.value : 1.0,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: _isProcessing
+                      ? [
+                          Colors.grey.shade400,
+                          Colors.grey.shade600,
+                        ]
+                      : isConnected
+                        ? [
+                            Colors.green.shade400,
+                            Colors.green.shade600,
+                          ]
+                        : [
+                            Colors.blue.shade400,
+                            Colors.blue.shade600,
+                          ],
                   ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // 外圈动画
-                  if (isConnected)
-                    ...List.generate(3, (index) {
-                      return AnimatedContainer(
-                        duration: Duration(milliseconds: 1000 + (index * 500)),
-                        width: 200 + (index * 40),
-                        height: 200 + (index * 40),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.green.withOpacity(0.2 - (index * 0.05)),
-                            width: 2,
+                  boxShadow: [
+                    BoxShadow(
+                      color: (_isProcessing 
+                        ? Colors.grey 
+                        : (isConnected ? Colors.green : Colors.blue)
+                      ).withOpacity(0.3),
+                      blurRadius: 30,
+                      spreadRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // 外圈动画
+                    if (isConnected && !_isProcessing)
+                      ...List.generate(3, (index) {
+                        return AnimatedContainer(
+                          duration: Duration(milliseconds: 1000 + (index * 500)),
+                          width: 200 + (index * 40),
+                          height: 200 + (index * 40),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.green.withOpacity(0.2 - (index * 0.05)),
+                              width: 2,
+                            ),
                           ),
-                        ),
-                      );
-                    }),
-                  
-                  // 中心图标
-                  Icon(
-                    isConnected ? Icons.shield : Icons.shield_outlined,
-                    size: 80,
-                    color: Colors.white,
-                  ),
-                  
-                  // 状态文字
-                  Positioned(
-                    bottom: 50,
-                    child: Text(
-                      isConnected ? '点击断开' : '点击连接',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                        );
+                      }),
+                    
+                    // 中心图标 - 加载时旋转
+                    Transform.rotate(
+                      angle: _isProcessing ? _loadingAnimation.value : 0,
+                      child: Icon(
+                        _isProcessing 
+                          ? Icons.sync
+                          : (isConnected ? Icons.shield : Icons.shield_outlined),
+                        size: 80,
+                        color: Colors.white,
                       ),
                     ),
-                  ),
-                ],
+                    
+                    // 状态文字 - 调整位置
+                    Positioned(
+                      bottom: 35, // 文字位置下移
+                      child: AnimatedOpacity(
+                        opacity: _isProcessing ? 0.7 : 1.0,
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          _isProcessing 
+                            ? (isConnected ? l10n.disconnecting : l10n.connecting)
+                            : (isConnected ? l10n.clickToDisconnect : l10n.clickToConnect),
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 16, // 文字增大
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildServerInfoCard(ServerModel server, bool isConnected) {
+  Widget _buildServerInfoCard(ServerModel server, bool isConnected, AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 10),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: theme.brightness == Brightness.dark
+              ? Colors.black.withOpacity(0.2)
+              : Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -301,10 +380,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: theme.primaryColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: const Icon(Icons.dns, color: Colors.blue),
+                child: Icon(Icons.dns, color: theme.primaryColor),
               ),
               const SizedBox(width: 15),
               Expanded(
@@ -321,13 +400,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                        Icon(Icons.location_on, size: 14, color: theme.hintColor),
                         const SizedBox(width: 4),
                         Text(
                           server.location,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[600],
+                            color: theme.hintColor,
                           ),
                         ),
                       ],
@@ -344,16 +423,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.1),
+              color: theme.brightness == Brightness.dark
+                ? Colors.grey.shade800.withOpacity(0.5)
+                : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'IP地址',
+                  'IP',
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: theme.hintColor,
                     fontSize: 14,
                   ),
                 ),
@@ -411,15 +492,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTrafficCard() {
+  Widget _buildTrafficCard(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Colors.blue.shade50,
-            Colors.blue.shade100.withOpacity(0.5),
-          ],
+          colors: theme.brightness == Brightness.dark
+            ? [
+                theme.primaryColor.withOpacity(0.2),
+                theme.primaryColor.withOpacity(0.1),
+              ]
+            : [
+                theme.primaryColor.withOpacity(0.1),
+                theme.primaryColor.withOpacity(0.05),
+              ],
         ),
         borderRadius: BorderRadius.circular(20),
       ),
@@ -430,18 +518,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             children: [
               _buildTrafficItem(
                 icon: Icons.upload,
-                label: '上传',
+                label: l10n.upload,
                 value: _uploadSpeed,
                 color: Colors.orange,
               ),
               Container(
                 width: 1,
                 height: 40,
-                color: Colors.grey.withOpacity(0.3),
+                color: theme.dividerColor,
               ),
               _buildTrafficItem(
                 icon: Icons.download,
-                label: '下载',
+                label: l10n.download,
                 value: _downloadSpeed,
                 color: Colors.blue,
               ),
@@ -465,7 +553,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         Text(
           label,
           style: TextStyle(
-            color: Colors.grey[600],
+            color: Theme.of(context).hintColor,
             fontSize: 12,
           ),
         ),
@@ -482,13 +570,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildQuickActions(ServerProvider serverProvider) {
+  Widget _buildQuickActions(ServerProvider serverProvider, AppLocalizations l10n) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildActionButton(
           icon: Icons.flash_on,
-          label: '优选节点',
+          label: l10n.autoSelectNode,
           onTap: () async {
             // 选择最优服务器
             final servers = serverProvider.servers;
@@ -497,7 +585,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               context.read<ConnectionProvider>().setCurrentServer(bestServer);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('已选择最优节点: ${bestServer.name}'),
+                  content: Text('${l10n.selectServer}: ${bestServer.name}'),
                 ),
               );
             }
@@ -505,12 +593,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         _buildActionButton(
           icon: Icons.speed,
-          label: '测速',
+          label: l10n.speedTest,
           onTap: () async {
             final connectionProvider = context.read<ConnectionProvider>();
             if (!connectionProvider.isConnected) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('请先连接代理')),
+                SnackBar(content: Text(l10n.noAvailableServer)),
               );
               return;
             }
@@ -525,11 +613,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         _buildActionButton(
           icon: Icons.refresh,
-          label: '刷新',
+          label: l10n.refresh,
           onTap: () async {
             // 刷新服务器列表延迟
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('正在刷新...')),
+              SnackBar(content: Text('${l10n.refresh}...')),
             );
           },
         ),
@@ -542,17 +630,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required String label,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
+    
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(15),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: theme.brightness == Brightness.dark
+                ? Colors.black.withOpacity(0.2)
+                : Colors.black.withOpacity(0.05),
               blurRadius: 5,
               offset: const Offset(0, 2),
             ),
@@ -560,7 +652,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         child: Column(
           children: [
-            Icon(icon, color: Theme.of(context).primaryColor),
+            Icon(icon, color: theme.primaryColor),
             const SizedBox(height: 4),
             Text(
               label,
@@ -590,12 +682,14 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
   }
   
   Future<void> _runSpeedTest() async {
+    final l10n = AppLocalizations.of(context);
+    
     try {
       final connectionProvider = context.read<ConnectionProvider>();
       final currentServer = connectionProvider.currentServer;
       
       if (currentServer == null) {
-        throw '未找到当前连接的服务器';
+        throw l10n.noAvailableServer;
       }
       
       // 使用统一的testLatency方法测试当前服务器
@@ -628,26 +722,28 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
   
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
     return AlertDialog(
       title: Row(
-        children: const [
-          Icon(Icons.speed, color: Colors.blue),
-          SizedBox(width: 8),
-          Text('连接延迟测试'),
+        children: [
+          const Icon(Icons.speed, color: Colors.blue),
+          const SizedBox(width: 8),
+          Text(l10n.speedTest),
         ],
       ),
       content: SizedBox(
         width: 300,
         child: _isTesting
-          ? const Column(
+          ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在测试连接延迟...'),
-                SizedBox(height: 8),
-                Text(
-                  '这可能需要几秒钟',
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(l10n.testingLatency),
+                const SizedBox(height: 8),
+                const Text(
+                  '',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -664,7 +760,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _testResults!['serverName'] ?? '当前服务器',
+                      _testResults!['serverName'] ?? l10n.currentServer,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -680,7 +776,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                     const SizedBox(height: 16),
                     _buildResultItem(
                       icon: Icons.network_ping,
-                      label: '延迟',
+                      label: l10n.latency,
                       value: '${_testResults!['latency']} ms',
                       color: _getPingColor(_testResults!['latency']),
                     ),
@@ -692,7 +788,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '测试失败',
+                      l10n.testFailed,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -701,7 +797,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _testResults!['error'] ?? '未知错误',
+                      _testResults!['error'] ?? '',
                       style: const TextStyle(fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
@@ -720,11 +816,11 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
               });
               _runSpeedTest();
             },
-            child: const Text('重新测试'),
+            child: Text(l10n.refresh),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+            child: Text(l10n.disconnect), // 使用"断开"作为关闭按钮文字
           ),
         ],
       ],

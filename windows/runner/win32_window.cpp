@@ -129,24 +129,49 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用合理的窗口尺寸
-  const int window_width = 400;
-  const int window_height = 600;
+  // 使用圆角窗口样式
+  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX);
   
-  HWND window = CreateWindow(
+  // 创建圆角窗口
+  HWND window = CreateWindowEx(
+      0,  // 不使用扩展样式
       window_class,
       title.c_str(),
-      WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      window_style,
       origin.x,
       origin.y,
-      window_width,
-      window_height,
+      size.width,
+      size.height,
       nullptr,
       nullptr,
       GetModuleHandle(nullptr),
       this);
+      
   if (!window) {
     return false;
+  }
+
+  // 启用圆角（Windows 11）
+  OSVERSIONINFOEX osvi = { sizeof(osvi), 0, 0, 0, 0, {0}, 0, 0 };
+  DWORDLONG const dwlConditionMask = VerSetConditionMask(
+      VerSetConditionMask(
+          VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL),
+          VER_MINORVERSION, VER_GREATER_EQUAL),
+      VER_BUILDNUMBER, VER_GREATER_EQUAL);
+
+  osvi.dwMajorVersion = 10;
+  osvi.dwMinorVersion = 0;
+  osvi.dwBuildNumber = 22000;  // Windows 11最低版本号
+
+  bool isWindows11 = VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask);
+  
+  if (isWindows11) {
+    DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+    DwmSetWindowAttribute(window, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
+    
+    DWM_WINDOW_CORNER_PREFERENCE cornerPreference = DWMWCP_ROUND;
+    DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, 
+                         &cornerPreference, sizeof(cornerPreference));
   }
 
   UpdateTheme(window);
@@ -279,14 +304,71 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
     case WM_RBUTTONUP: {
       POINT pt;
       GetCursorPos(&pt);
+      
+      // 创建现代化的弹出菜单
       HMENU menu = CreatePopupMenu();
-      AppendMenu(menu, MF_STRING, 1, L"Show");
-      AppendMenu(menu, MF_STRING, 2, L"Exit");
+      
+      // 设置菜单样式为现代化风格
+      MENUINFO menuInfo = {0};
+      menuInfo.cbSize = sizeof(MENUINFO);
+      menuInfo.fMask = MIM_STYLE | MIM_APPLYTOSUBMENUS | MIM_BACKGROUND;
+      menuInfo.dwStyle = MNS_NOTIFYBYPOS | MNS_AUTODISMISS;
+      
+      // 检查是否暗色模式
+      bool isDarkMode = false;
+      DWORD light_mode = 1;
+      DWORD light_mode_size = sizeof(light_mode);
+      RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
+                  kGetPreferredBrightnessRegValue, RRF_RT_REG_DWORD, 
+                  nullptr, &light_mode, &light_mode_size);
+      isDarkMode = (light_mode == 0);
+      
+      // 设置菜单背景色
+      if (isDarkMode) {
+        menuInfo.hbrBack = CreateSolidBrush(RGB(45, 45, 45));
+      } else {
+        menuInfo.hbrBack = CreateSolidBrush(RGB(250, 250, 250));
+      }
+      SetMenuInfo(menu, &menuInfo);
+      
+      // 添加带图标的菜单项
+      MENUITEMINFO mii = {0};
+      mii.cbSize = sizeof(MENUITEMINFO);
+      mii.fMask = MIIM_STRING | MIIM_ID | MIIM_STATE;
+      
+      // "显示窗口" 菜单项
+      mii.wID = 1;
+      mii.dwTypeData = const_cast<LPWSTR>(L"    Show Window");
+      mii.cch = wcslen(mii.dwTypeData);
+      InsertMenuItem(menu, 0, TRUE, &mii);
+      
+      // 分隔线
+      mii.fMask = MIIM_TYPE;
+      mii.fType = MFT_SEPARATOR;
+      InsertMenuItem(menu, 1, TRUE, &mii);
+      
+      // "退出" 菜单项
+      mii.fMask = MIIM_STRING | MIIM_ID | MIIM_STATE;
+      mii.wID = 2;
+      mii.dwTypeData = const_cast<LPWSTR>(L"    Exit");
+      mii.cch = wcslen(mii.dwTypeData);
+      InsertMenuItem(menu, 2, TRUE, &mii);
+      
+      // 设置前台窗口以确保菜单正确显示
       SetForegroundWindow(window_handle_);
-      int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+      
+      // 显示菜单
+      int cmd = TrackPopupMenu(menu, 
+                              TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTBUTTON,
                               pt.x, pt.y, 0, window_handle_, nullptr);
+      
+      // 清理菜单资源
+      if (menuInfo.hbrBack) {
+        DeleteObject(menuInfo.hbrBack);
+      }
       DestroyMenu(menu);
 
+      // 处理菜单命令
       if (cmd == 1) {
         ShowWindow(true);
         ::SetForegroundWindow(window_handle_);
