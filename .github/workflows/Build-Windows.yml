@@ -3,6 +3,12 @@ name: Build Windows Release
 on:
   # 仅保留手动触发方式
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: 1.0.0)'
+        required: false
+        default: '1.0.0'
+        type: string
 
 jobs:
   build-windows:
@@ -24,10 +30,10 @@ jobs:
     - name: Build Windows app
       run: flutter build windows --release
     
-    - name: Copy V2Ray core from project
+    - name: Copy V2Ray core and CloudflareST from project
       shell: pwsh
       run: |
-        # 从项目目录复制V2Ray核心文件
+        # 从项目目录复制V2Ray核心文件和CloudflareST工具
         $sourcePath = "windows\runner\v2ray"
         $buildPath = "build\windows\x64\runner\Release\v2ray"
         
@@ -60,26 +66,28 @@ jobs:
         }
         
         Write-Host "V2Ray core files copied successfully"
-    
-    - name: Download CloudflareST
-      shell: pwsh
-      run: |
-        # 下载CloudflareST (优选IP测试工具)
-        $cfstVersion = "v2.2.5"
-        $downloadUrl = "https://github.com/XIU2/CloudflareSpeedTest/releases/download/$cfstVersion/CloudflareST_windows_amd64.zip"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile "cfst.zip"
         
-        # 解压到构建目录
-        $buildPath = "build\windows\x64\runner\Release"
-        Expand-Archive -Path "cfst.zip" -DestinationPath "temp_cfst"
+        # 复制CloudflareST工具到构建目录根目录
+        $sourcePathCF = "windows\runner"
+        $buildPathRoot = "build\windows\x64\runner\Release"
         
-        # 重命名并复制文件
-        Copy-Item "temp_cfst\CloudflareST.exe" -Destination "$buildPath\cftest.exe"
-        Copy-Item "temp_cfst\ip.txt" -Destination "$buildPath\"
+        if (Test-Path "$sourcePathCF\cftest.exe") {
+            Copy-Item "$sourcePathCF\cftest.exe" -Destination "$buildPathRoot\" -Force
+            Write-Host "✓ Copied cftest.exe"
+        } else {
+            Write-Error "cftest.exe not found in $sourcePathCF"
+            exit 1
+        }
         
-        # 清理临时文件
-        Remove-Item -Recurse -Force "temp_cfst"
-        Remove-Item "cfst.zip"
+        if (Test-Path "$sourcePathCF\ip.txt") {
+            Copy-Item "$sourcePathCF\ip.txt" -Destination "$buildPathRoot\" -Force
+            Write-Host "✓ Copied ip.txt"
+        } else {
+            Write-Error "ip.txt not found in $sourcePathCF"
+            exit 1
+        }
+        
+        Write-Host "CloudflareST files copied successfully"
     
     - name: Create config template
       shell: pwsh
@@ -101,7 +109,12 @@ jobs:
     - name: Package application
       shell: pwsh
       run: |
-        $version = "${{ github.ref_name }}".TrimStart("v")
+        # 获取版本号 - 优先使用手动输入的版本，否则使用分支名或标签名
+        $version = "${{ github.event.inputs.version }}"
+        if ([string]::IsNullOrEmpty($version)) {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+        }
+        
         $buildPath = "build\windows\x64\runner\Release"
         $outputName = "CFVPN-Windows-x64-$version"
         
