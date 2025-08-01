@@ -128,7 +128,9 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用标准窗口样式，但移除边框以支持圆角
+  // 使用标准窗口样式，移除最大化按钮和调整大小功能
+  // 修复说明：保持 WS_OVERLAPPEDWINDOW 的完整性，只移除不需要的功能
+  // 这样可以避免边框样式的不一致性问题
   const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME);
   
   // 创建窗口
@@ -162,14 +164,14 @@ bool Win32Window::Create(const std::wstring& title,
       DWORD cornerPreference = 2; // DWMWCP_ROUND
       DwmSetWindowAttributeProc(window, 33, &cornerPreference, sizeof(cornerPreference));
       
-      // 扩展窗口边框到客户区（移除细黑线）
-      MARGINS margins = {-1, -1, -1, -1};
-      typedef HRESULT (WINAPI *DwmExtendFrameIntoClientAreaFunc)(HWND, const MARGINS*);
-      DwmExtendFrameIntoClientAreaFunc DwmExtendFrameIntoClientAreaProc = 
-          (DwmExtendFrameIntoClientAreaFunc)GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea");
-      if (DwmExtendFrameIntoClientAreaProc) {
-        DwmExtendFrameIntoClientAreaProc(window, &margins);
-      }
+      // 关键修复：移除 DwmExtendFrameIntoClientArea 调用
+      // 原因：在 Windows 11 中，当设置圆角窗口时，使用 DwmExtendFrameIntoClientArea
+      // 扩展边框到客户区会导致黑色描边问题。Windows 11 的圆角渲染机制已经能够
+      // 正确处理边框，不需要额外的边框扩展。
+      // 
+      // 删除的代码：
+      // MARGINS margins = {-1, -1, -1, -1};
+      // DwmExtendFrameIntoClientAreaFunc(window, &margins);
     }
     FreeLibrary(dwmapi);
   }
