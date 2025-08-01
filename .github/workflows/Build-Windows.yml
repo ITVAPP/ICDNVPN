@@ -29,7 +29,7 @@ jobs:
     - name: Build Windows app
       run: flutter build windows --release
     
-    - name: Copy V2Ray core and ip.txt from project
+    - name: Copy V2Ray core from project
       shell: pwsh
       run: |
         # 从项目目录复制V2Ray核心文件
@@ -61,20 +61,6 @@ jobs:
             Write-Host "✓ Copied geosite.dat"
         } else {
             Write-Error "geosite.dat not found in $sourcePath"
-            exit 1
-        }
-        
-        Write-Host "V2Ray core files copied successfully"
-        
-        # 复制 ip.txt 到构建目录根目录
-        $sourcePathRoot = "windows\runner"
-        $buildPathRoot = "build\windows\x64\runner\Release"
-        
-        if (Test-Path "$sourcePathRoot\ip.txt") {
-            Copy-Item "$sourcePathRoot\ip.txt" -Destination "$buildPathRoot\" -Force
-            Write-Host "✓ Copied ip.txt"
-        } else {
-            Write-Error "ip.txt not found in $sourcePathRoot"
             exit 1
         }
         
