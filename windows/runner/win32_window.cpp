@@ -129,11 +129,11 @@ bool Win32Window::Create(const std::wstring& title,
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
   // 使用标准窗口样式，但移除边框以支持圆角
-  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX);
+  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME | WS_BORDER);
   
   // 创建窗口，使用扩展样式支持圆角
   HWND window = CreateWindowEx(
-      WS_EX_APPWINDOW | WS_EX_WINDOWEDGE,  // 使用应用窗口样式
+      WS_EX_APPWINDOW,  // 移除了 WS_EX_WINDOWEDGE
       window_class,
       title.c_str(),
       window_style,
