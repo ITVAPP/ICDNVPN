@@ -3,14 +3,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:path/path.dart' as path;
 import '../models/server_model.dart';
-import './v2ray_service.dart';
 
 class CloudflareTestService {
   // 从 ip.txt 文件读取 IP 段
   static Future<List<String>> _loadIpRanges() async {
     try {
-      // 获取 ip.txt 文件路径（与 v2ray.exe 同目录）
-      final exePath = await V2RayService.getExecutablePath('v2ray.exe');
+      // 获取 ip.txt 文件路径（与可执行文件同目录）
+      final exePath = Platform.resolvedExecutable;
       final workDir = path.dirname(exePath);
       final ipFilePath = path.join(workDir, 'ip.txt');
       
