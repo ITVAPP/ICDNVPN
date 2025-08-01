@@ -1,9 +1,10 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:path/path.dart' as path;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:proxy_app/services/v2ray_service.dart';
-import 'package:path/path.dart' as path;
-import 'dart:io';
-import 'dart:convert';
+import 'package:proxy_app/services/cloudflare_test_service.dart';
 import '../models/server_model.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
@@ -73,50 +74,20 @@ class _ServersPageState extends State<ServersPage> {
 
     try {
       // 收集所有服务器的IP地址
-      final ips = serverProvider.servers.map((server) => server.ip).join(',');
+      final ips = serverProvider.servers.map((server) => server.ip).toList();
 
-      // 执行测试命令
-      final exePath = await _getExecutablePath();
-      
-      final process = await Process.start(
-        exePath,
-        ['-ip', ips],
-        workingDirectory: path.dirname(exePath),
-        mode: ProcessStartMode.inheritStdio,
-      );
-
-      // 等待进程完成
-      final exitCode = await process.exitCode;
-      if (exitCode != 0) {
-        throw '测试进程退出，错误代码：$exitCode';
-      }
-
-      // 读取测试结果
-      final resultFile = File(path.join(path.dirname(exePath), 'result.json'));
-      if (!await resultFile.exists()) {
-        throw '未找到测试结果文件';
-      }
-
-      final String jsonContent = await resultFile.readAsString();
-      final List<dynamic> results = jsonDecode(jsonContent);
+      // 使用 CloudflareTestService 的 testLatency 方法
+      final latencyMap = await CloudflareTestService.testLatency(ips);
 
       // 更新服务器延迟
       int updatedCount = 0;
-      for (var result in results) {
-        final ip = result['ip'];
-        final delay = result['delay'];
+      for (final entry in latencyMap.entries) {
         final server = serverProvider.servers.firstWhere(
-          (server) => server.ip == ip,
-          orElse: () => ServerModel(
-            id: '',
-            name: '',
-            location: '',
-            ip: '',
-            port: 0,
-          ),
+          (s) => s.ip == entry.key,
+          orElse: () => ServerModel(id: '', name: '', location: '', ip: '', port: 0),
         );
         if (server.id.isNotEmpty) {
-          await serverProvider.updatePing(server.id, delay);
+          await serverProvider.updatePing(server.id, entry.value);
           updatedCount++;
         }
       }
@@ -149,6 +120,8 @@ class _ServersPageState extends State<ServersPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('服务器列表'),
@@ -171,7 +144,9 @@ class _ServersPageState extends State<ServersPage> {
           ),
           // 排序按钮
           IconButton(
-            icon: const Icon(Icons.sort),
+            icon: Icon(
+              _isAscending ? Icons.arrow_upward : Icons.arrow_downward,
+            ),
             tooltip: _isAscending ? '延迟从低到高' : '延迟从高到低',
             onPressed: () {
               setState(() {
@@ -185,7 +160,7 @@ class _ServersPageState extends State<ServersPage> {
             tooltip: '从Cloudflare添加',
             onPressed: () => _addCloudflareServer(context),
           ),
-          // 重置按钮（清空并重新获取）
+          // 更多选项
           PopupMenuButton<String>(
             onSelected: (value) async {
               if (value == 'reset') {
@@ -268,21 +243,30 @@ class _ServersPageState extends State<ServersPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.cloud_off,
-                    size: 64,
-                    color: Colors.grey,
+                    size: 80,
+                    color: Colors.grey.shade400,
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     '暂无服务器',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
                   ElevatedButton.icon(
                     onPressed: () => _addCloudflareServer(context),
                     icon: const Icon(Icons.add),
                     label: const Text('添加服务器'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -295,19 +279,57 @@ class _ServersPageState extends State<ServersPage> {
             itemBuilder: (context, index) {
               final server = servers[index];
               final isSelected = connectionProvider.currentServer?.id == server.id;
+              final isConnected = connectionProvider.isConnected && isSelected;
               
-              return ServerListItem(
-                server: server,
-                isSelected: isSelected,
-                onTap: () {
-                  connectionProvider.setCurrentServer(server);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('已选择 ${server.name}'),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: ServerListItem(
+                  server: server,
+                  isSelected: isSelected,
+                  isConnected: isConnected,
+                  onTap: () {
+                    connectionProvider.setCurrentServer(server);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('已选择 ${server.name}'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                  onDelete: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('确认删除'),
+                        content: Text('是否删除服务器 ${server.name}？'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('取消'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                            ),
+                            child: const Text('删除'),
+                          ),
+                        ],
+                      ),
+                    ) ?? false;
+
+                    if (confirm) {
+                      serverProvider.deleteServer(server.id);
+                      if (connectionProvider.currentServer?.id == server.id) {
+                        connectionProvider.setCurrentServer(null);
+                      }
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('已删除 ${server.name}')),
+                      );
+                    }
+                  },
+                ),
               );
             },
           );
@@ -317,183 +339,316 @@ class _ServersPageState extends State<ServersPage> {
   }
 }
 
-class ServerListItem extends StatelessWidget {
+class ServerListItem extends StatefulWidget {
   final ServerModel server;
   final bool isSelected;
+  final bool isConnected;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   const ServerListItem({
     super.key,
     required this.server,
     required this.isSelected,
+    required this.isConnected,
     required this.onTap,
+    required this.onDelete,
   });
 
   @override
+  State<ServerListItem> createState() => _ServerListItemState();
+}
+
+class _ServerListItemState extends State<ServerListItem>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  bool _isHovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.98,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      elevation: isSelected ? 4 : 1,
-      color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
-      child: Dismissible(
-        key: Key(server.id),
-        direction: DismissDirection.endToStart,
-        confirmDismiss: (direction) async {
-          return await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('确认删除'),
-              content: Text('是否删除服务器 ${server.name}？'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('取消'),
+    final theme = Theme.of(context);
+    
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: GestureDetector(
+        onTapDown: (_) => _animationController.forward(),
+        onTapUp: (_) => _animationController.reverse(),
+        onTapCancel: () => _animationController.reverse(),
+        onTap: widget.onTap,
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: widget.isSelected
+                ? theme.primaryColor.withOpacity(0.15)
+                : theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: widget.isSelected
+                  ? theme.primaryColor.withOpacity(0.5)
+                  : Colors.transparent,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.isSelected
+                    ? theme.primaryColor.withOpacity(0.2)
+                    : Colors.black.withOpacity(0.05),
+                  blurRadius: widget.isSelected ? 20 : 10,
+                  offset: const Offset(0, 4),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('删除'),
-                ),
+                if (_isHovering)
+                  BoxShadow(
+                    color: theme.primaryColor.withOpacity(0.1),
+                    blurRadius: 20,
+                    spreadRadius: -5,
+                  ),
               ],
             ),
-          ) ?? false;
-        },
-        onDismissed: (direction) {
-          context.read<ServerProvider>().deleteServer(server.id);
-          final connectionProvider = context.read<ConnectionProvider>();
-          if (connectionProvider.currentServer?.id == server.id) {
-            connectionProvider.setCurrentServer(null);
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已删除 ${server.name}')),
-          );
-        },
-        background: Container(
-          color: Colors.red,
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 16),
-          child: const Icon(
-            Icons.delete,
-            color: Colors.white,
-          ),
-        ),
-        child: ListTile(
-          onTap: onTap,
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isSelected 
-                ? Theme.of(context).primaryColor.withOpacity(0.2)
-                : Colors.blue.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.public,
-              color: isSelected ? Theme.of(context).primaryColor : Colors.blue,
-            ),
-          ),
-          title: Text(
-            server.name,
-            style: TextStyle(
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.speed,
-                    size: 14,
-                    color: _getPingColor(server.ping),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${server.ping}ms',
-                    style: TextStyle(
-                      color: _getPingColor(server.ping),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${server.ip}:${server.port}',
-                      style: const TextStyle(fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+            child: Dismissible(
+              key: Key(widget.server.id),
+              direction: DismissDirection.endToStart,
+              onDismissed: (_) => widget.onDelete(),
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.delete,
+                  color: Colors.white,
+                  size: 28,
+                ),
               ),
-              if (server.location.isNotEmpty)
-                Row(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   children: [
-                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      server.location,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    // 服务器图标
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: widget.isConnected
+                            ? [Colors.green.shade400, Colors.green.shade600]
+                            : widget.isSelected
+                              ? [theme.primaryColor.shade400, theme.primaryColor.shade600]
+                              : [Colors.grey.shade400, Colors.grey.shade600],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          if (widget.isConnected)
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                        ],
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.dns,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          if (widget.isConnected)
+                            Positioned(
+                              right: 4,
+                              top: 4,
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 16),
+                    
+                    // 服务器信息
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  widget.server.name,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: widget.isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
+                                    color: widget.isSelected
+                                      ? theme.primaryColor
+                                      : null,
+                                  ),
+                                ),
+                              ),
+                              if (widget.isConnected)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    '已连接',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.server.location,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Icon(
+                                Icons.network_ping,
+                                size: 14,
+                                color: _getPingColor(widget.server.ping),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${widget.server.ping}ms',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _getPingColor(widget.server.ping),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${widget.server.ip}:${widget.server.port}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade500,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // 信号强度指示器
+                    _buildSignalIndicator(widget.server.ping),
                   ],
                 ),
-            ],
+              ),
+            ),
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isSelected)
-                const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: Icon(
-                    Icons.check_circle,
-                    color: Colors.green,
-                  ),
-                ),
-              _buildPingIndicator(server.ping),
-            ],
-          ),
-          isThreeLine: true,
         ),
       ),
     );
   }
 
   Color _getPingColor(int ping) {
-    if (ping < 80) return Colors.green;
+    if (ping < 50) return Colors.green;
+    if (ping < 100) return Colors.lightGreen;
     if (ping < 150) return Colors.orange;
+    if (ping < 200) return Colors.deepOrange;
     return Colors.red;
   }
 
-  Widget _buildPingIndicator(int ping) {
-    Color color;
-    int bars;
-
-    if (ping < 80) {
-      color = Colors.green;
-      bars = 3;
-    } else if (ping < 150) {
-      color = Colors.orange;
-      bars = 2;
-    } else {
-      color = Colors.red;
-      bars = 1;
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (index) {
-        return Container(
-          width: 3,
-          height: 8 + (index * 4),
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          decoration: BoxDecoration(
-            color: index < bars ? color : Colors.grey.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(1),
-          ),
-        );
-      }),
+  Widget _buildSignalIndicator(int ping) {
+    final strength = ping < 50 ? 5 : 
+                    ping < 100 ? 4 : 
+                    ping < 150 ? 3 : 
+                    ping < 200 ? 2 : 1;
+    
+    return Container(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(5, (index) {
+          final isActive = index < strength;
+          return Container(
+            width: 4,
+            height: 8 + (index * 3),
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              color: isActive
+                ? _getPingColor(ping)
+                : Colors.grey.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: _getPingColor(ping).withOpacity(0.5),
+                      blurRadius: 4,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+            ),
+          );
+        }),
+      ),
     );
   }
 }
