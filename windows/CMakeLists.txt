@@ -98,11 +98,6 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runner/v2ray"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
-install(FILES
-  "${CMAKE_CURRENT_SOURCE_DIR}/runner/ip.txt"
-  DESTINATION "${CMAKE_INSTALL_PREFIX}"
-  COMPONENT Runtime)
-
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")
