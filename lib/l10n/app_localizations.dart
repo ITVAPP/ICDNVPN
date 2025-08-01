@@ -28,6 +28,7 @@ abstract class AppLocalizations {
   String get disconnected;
   String get connecting;
   String get disconnecting;
+  String get close; // 新增
   
   // 主页
   String get clickToConnect;
@@ -181,6 +182,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get disconnected => 'Disconnected';
   @override String get connecting => 'Connecting...';
   @override String get disconnecting => 'Disconnecting...';
+  @override String get close => 'Close'; // 新增
   
   // 主页
   @override String get clickToConnect => 'Click to Connect';
@@ -299,6 +301,7 @@ class AppLocalizationsZhCn extends AppLocalizations {
   @override String get disconnected => '未连接';
   @override String get connecting => '正在连接...';
   @override String get disconnecting => '正在断开...';
+  @override String get close => '关闭'; // 新增
   
   // 主页
   @override String get clickToConnect => '点击连接';
@@ -417,6 +420,7 @@ class AppLocalizationsZhTw extends AppLocalizations {
   @override String get disconnected => '未連接';
   @override String get connecting => '正在連接...';
   @override String get disconnecting => '正在斷開...';
+  @override String get close => '關閉'; // 新增
   
   // 主页
   @override String get clickToConnect => '點擊連接';
@@ -431,8 +435,7 @@ class AppLocalizationsZhTw extends AppLocalizations {
   @override String get protected => '已保護';
   @override String get unprotected => '未保護';
   
-  // 其他省略...实际应该包含所有字段的繁体中文翻译
-  // 这里只展示部分作为示例
+  // 服务器页面
   @override String get serverList => '伺服器列表';
   @override String get addServer => '新增伺服器';
   @override String get deleteServer => '刪除伺服器';
@@ -448,8 +451,7 @@ class AppLocalizationsZhTw extends AppLocalizations {
   @override String get location => '位置';
   @override String get cfNode => 'CF節點';
   
-  // 为了节省空间，其他字段使用与简体中文相同的实现
-  // 实际应用中应该完整翻译所有字段
+  // 添加服务器
   @override String get addFromCloudflare => '從 Cloudflare 新增';
   @override String get autoGetBestNodes => '自動獲取最優節點';
   @override String get manualAdd => '手動新增';
@@ -534,6 +536,7 @@ class AppLocalizationsEs extends AppLocalizationsEn {
   @override String get disconnect => 'Desconectar';
   @override String get connected => 'Conectado';
   @override String get disconnected => 'Desconectado';
+  @override String get close => 'Cerrar'; // 新增
   // ... 其他翻译
   
   // 退出确认
@@ -553,6 +556,7 @@ class AppLocalizationsRu extends AppLocalizationsEn {
   @override String get disconnect => 'Отключить';
   @override String get connected => 'Подключено';
   @override String get disconnected => 'Отключено';
+  @override String get close => 'Закрыть'; // 新增
   // ... 其他翻译
   
   // 退出确认
@@ -572,6 +576,7 @@ class AppLocalizationsAr extends AppLocalizationsEn {
   @override String get disconnect => 'قطع الاتصال';
   @override String get connected => 'متصل';
   @override String get disconnected => 'غير متصل';
+  @override String get close => 'إغلاق'; // 新增
   // ... 其他翻译
   
   // 退出确认
