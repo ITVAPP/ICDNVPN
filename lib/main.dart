@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:system_tray/system_tray.dart';
 import 'pages/home_page.dart';
 import 'pages/servers_page.dart';
 import 'pages/settings_page.dart';
@@ -18,10 +17,6 @@ import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'services/v2ray_service.dart';
 import 'services/proxy_service.dart';
-
-// 全局系统托盘实例
-SystemTray? _systemTray;
-AppWindow? _appWindow;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,61 +53,9 @@ void main() async {
       // 设置阻止关闭，以便自定义关闭行为
       await windowManager.setPreventClose(true);
     });
-    
-    // 初始化系统托盘（仅Windows）
-    if (Platform.isWindows) {
-      await initSystemTray();
-    }
   }
   
   runApp(const MyApp());
-}
-
-// 初始化系统托盘
-Future<void> initSystemTray() async {
-  _systemTray = SystemTray();
-  _appWindow = AppWindow();
-  
-  // 初始化系统托盘
-  await _systemTray!.initSystemTray(
-    title: 'CFVPN',
-    iconPath: 'assets/images/logo.png', // 使用 png 图标，系统会自动处理
-  );
-  
-  // 设置托盘菜单
-  final Menu menu = Menu();
-  await menu.buildFrom([
-    MenuItemLabel(
-      label: '显示主窗口',
-      onClicked: (menuItem) async {
-        await _appWindow?.show();
-      },
-    ),
-    MenuSeparator(),
-    MenuItemLabel(
-      label: '退出',
-      onClicked: (menuItem) async {
-        // 清理资源
-        try {
-          await V2RayService.stop();
-          await ProxyService.disableSystemProxy();
-        } catch (e) {
-          print('清理资源时出错: $e');
-        }
-        await windowManager.destroy();
-        exit(0);
-      },
-    ),
-  ]);
-  
-  await _systemTray!.setContextMenu(menu);
-  
-  // 处理托盘图标点击事件
-  _systemTray!.registerSystemTrayEventHandler((eventName) {
-    if (eventName == kSystemTrayEventClick) {
-      _appWindow?.show();
-    }
-  });
 }
 
 class MyApp extends StatelessWidget {
@@ -349,28 +292,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
     
     if (shouldExit == true) {
-      // 显示退出进度对话框
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => WillPopScope(
-            onWillPop: () async => false,
-            child: AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(AppLocalizations.of(context).disconnecting),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
-      
-      // 清理资源
+      // 用户选择退出，清理资源
       try {
         final connectionProvider = context.read<ConnectionProvider>();
         
@@ -388,14 +310,10 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       } catch (e) {
         print('清理资源时出错: $e');
       } finally {
-          // 清理系统托盘
-          if (_systemTray != null) {
-            await _systemTray!.destroy();
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-          await windowManager.destroy();
-          exit(0);
-        }
+        // 销毁窗口并退出应用
+        await windowManager.destroy();
+        exit(0);
+      }
     }
   }
 
