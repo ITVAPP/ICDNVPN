@@ -128,12 +128,15 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用标准窗口样式，但移除边框以支持圆角
-  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX);
+  // 创建无边框窗口
+  // WS_POPUP: 无边框窗口
+  // WS_THICKFRAME: 允许调整大小（可选）
+  // WS_SYSMENU | WS_MINIMIZEBOX: 系统菜单和最小化功能
+  const DWORD window_style = WS_POPUP | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX;
   
-  // 创建窗口，使用扩展样式支持圆角
+  // 创建窗口
   HWND window = CreateWindowEx(
-      WS_EX_APPWINDOW | WS_EX_WINDOWEDGE,  // 使用应用窗口样式
+      0,  // 无扩展样式
       window_class,
       title.c_str(),
       window_style,
@@ -150,7 +153,23 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
-  // 设置窗口圆角（Windows 11）
+  // 使用通用的 SetWindowRgn 方法创建圆角
+  // 优点：在 Windows 7/8/10/11 所有版本都能工作
+  // 缺点：没有抗锯齿，边缘可能不够平滑
+  int cornerRadius = 10; // 圆角半径，可根据需要调整
+  HRGN hRgn = CreateRoundRectRgn(
+      0, 0,
+      size.width + 1,   // +1 确保右边缘像素包含在内
+      size.height + 1,  // +1 确保底边缘像素包含在内
+      cornerRadius * 2,
+      cornerRadius * 2
+  );
+  
+  // 应用圆角区域到窗口
+  SetWindowRgn(window, hRgn, TRUE);
+  // 注意：SetWindowRgn 会接管 hRgn 的所有权，所以不需要 DeleteObject
+
+  // 为无边框窗口添加阴影效果
   HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
   if (dwmapi) {
     typedef HRESULT (WINAPI *DwmSetWindowAttributeFunc)(HWND, DWORD, LPCVOID, DWORD);
@@ -158,9 +177,20 @@ bool Win32Window::Create(const std::wstring& title,
         (DwmSetWindowAttributeFunc)GetProcAddress(dwmapi, "DwmSetWindowAttribute");
     
     if (DwmSetWindowAttributeProc) {
-      // 设置圆角样式
-      DWORD cornerPreference = 2; // DWMWCP_ROUND
-      DwmSetWindowAttributeProc(window, 33, &cornerPreference, sizeof(cornerPreference));
+      // 启用窗口阴影
+      BOOL enableShadow = TRUE;
+      DwmSetWindowAttributeProc(window, 2, &enableShadow, sizeof(enableShadow));
+      
+      // 使用最小边距来增强阴影效果，但避免可见边框
+      typedef HRESULT (WINAPI *DwmExtendFrameIntoClientAreaFunc)(HWND, const MARGINS*);
+      DwmExtendFrameIntoClientAreaFunc DwmExtendFrameIntoClientAreaProc = 
+          (DwmExtendFrameIntoClientAreaFunc)GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea");
+      if (DwmExtendFrameIntoClientAreaProc) {
+        // 使用最小边距（1像素）仅用于启用阴影
+        // 这不会创建可见的边框，但会启用 DWM 阴影效果
+        MARGINS margins = {1, 1, 1, 1};
+        DwmExtendFrameIntoClientAreaProc(window, &margins);
+      }
     }
     FreeLibrary(dwmapi);
   }
@@ -218,6 +248,7 @@ Win32Window::MessageHandler(HWND hwnd,
 
       return 0;
     }
+    
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
@@ -225,6 +256,18 @@ Win32Window::MessageHandler(HWND hwnd,
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
                    rect.bottom - rect.top, TRUE);
       }
+      
+      // 窗口大小改变时需要更新圆角区域
+      int cornerRadius = 10;
+      HRGN hRgn = CreateRoundRectRgn(
+          0, 0,
+          rect.right - rect.left + 1,
+          rect.bottom - rect.top + 1,
+          cornerRadius * 2,
+          cornerRadius * 2
+      );
+      SetWindowRgn(hwnd, hRgn, TRUE);
+      
       return 0;
     }
 
