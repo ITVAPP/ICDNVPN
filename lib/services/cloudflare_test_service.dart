@@ -235,4 +235,92 @@ class CloudflareTestService {
     
     return servers;
   }
+
+  // 批量测试IP延迟
+  static Future<Map<String, int>> testLatency(List<String> ips) async {
+    final latencyMap = <String, int>{};
+    
+    print('开始测试 ${ips.length} 个IP的延迟...');
+    
+    // 并发测试所有IP
+    final futures = <Future>[];
+    
+    for (final ip in ips) {
+      futures.add(_testSingleIpLatency(ip).then((latency) {
+        latencyMap[ip] = latency;
+        print('IP $ip 延迟: ${latency}ms');
+      }).catchError((e) {
+        print('测试 IP $ip 失败: $e');
+        latencyMap[ip] = 999; // 失败时设置为最大延迟
+      }));
+    }
+    
+    // 等待所有测试完成
+    await Future.wait(futures);
+    
+    print('延迟测试完成，成功测试 ${latencyMap.length} 个IP');
+    
+    return latencyMap;
+  }
+  
+  // 测试单个IP的延迟
+  static Future<int> _testSingleIpLatency(String ip) async {
+    try {
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 5);
+      
+      // 测试3次取平均值
+      final latencies = <int>[];
+      
+      for (int i = 0; i < 3; i++) {
+        final startTime = DateTime.now();
+        
+        try {
+          // 使用Cloudflare的测试端点
+          final uri = Uri(
+            scheme: 'https',
+            host: ip,
+            port: 443,
+            path: '/cdn-cgi/trace',
+          );
+          
+          final request = await httpClient.getUrl(uri);
+          // 设置SNI
+          request.headers.set('Host', 'cloudflare.com');
+          
+          final response = await request.close();
+          await response.drain(); // 读取并丢弃响应内容
+          
+          final endTime = DateTime.now();
+          final latency = endTime.difference(startTime).inMilliseconds;
+          
+          if (response.statusCode == 200) {
+            latencies.add(latency);
+          }
+        } catch (e) {
+          // 单次测试失败，继续下一次
+        }
+        
+        // 间隔一下再测试
+        if (i < 2) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+      }
+      
+      httpClient.close();
+      
+      // 如果所有测试都失败，返回最大延迟
+      if (latencies.isEmpty) {
+        return 999;
+      }
+      
+      // 返回平均延迟
+      final avgLatency = latencies.reduce((a, b) => a + b) ~/ latencies.length;
+      return avgLatency;
+      
+    } catch (e) {
+      print('测试IP $ip 延迟失败: $e');
+      return 999;
+    }
+  }
 }
