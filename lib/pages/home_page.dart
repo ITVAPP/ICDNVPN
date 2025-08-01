@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/server_provider.dart';
 import '../models/server_model.dart';
-import '../services/speed_test_service.dart'; 
+import '../services/cloudflare_test_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -168,7 +168,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Text(
               '• $_connectedTime',
               style: TextStyle(
-                                              color: Colors.green[700],
+                color: Colors.green[700],
                 fontSize: 12,
               ),
             ),
@@ -327,7 +327,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           server.location,
                           style: TextStyle(
                             fontSize: 14,
-                                                          color: Colors.grey[600],
+                            color: Colors.grey[600],
                           ),
                         ),
                       ],
@@ -573,7 +573,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 }
 
-// 速度测试对话框
+// 速度测试对话框 - 使用统一的testLatency方法
 class _SpeedTestDialog extends StatefulWidget {
   @override
   State<_SpeedTestDialog> createState() => _SpeedTestDialogState();
@@ -591,13 +591,25 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
   
   Future<void> _runSpeedTest() async {
     try {
-      final results = await SpeedTestService.runSpeedTest(
-        isConnected: true,
-      );
+      final connectionProvider = context.read<ConnectionProvider>();
+      final currentServer = connectionProvider.currentServer;
+      
+      if (currentServer == null) {
+        throw '未找到当前连接的服务器';
+      }
+      
+      // 使用统一的testLatency方法测试当前服务器
+      final latencyMap = await CloudflareTestService.testLatency([currentServer.ip]);
+      final latency = latencyMap[currentServer.ip] ?? 999;
       
       if (mounted) {
         setState(() {
-          _testResults = results;
+          _testResults = {
+            'success': true,
+            'latency': latency,
+            'serverName': currentServer.name,
+            'serverLocation': currentServer.location,
+          };
           _isTesting = false;
         });
       }
@@ -621,7 +633,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
         children: const [
           Icon(Icons.speed, color: Colors.blue),
           SizedBox(width: 8),
-          Text('连接速度测试'),
+          Text('连接延迟测试'),
         ],
       ),
       content: SizedBox(
@@ -632,7 +644,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('正在测试连接速度...'),
+                Text('正在测试连接延迟...'),
                 SizedBox(height: 8),
                 Text(
                   '这可能需要几秒钟',
@@ -645,18 +657,32 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (_testResults!['success'] == true) ...[
+                    Icon(
+                      Icons.check_circle,
+                      size: 48,
+                      color: Colors.green[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _testResults!['serverName'] ?? '当前服务器',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      _testResults!['serverLocation'] ?? '',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     _buildResultItem(
                       icon: Icons.network_ping,
                       label: '延迟',
                       value: '${_testResults!['latency']} ms',
                       color: _getPingColor(_testResults!['latency']),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildResultItem(
-                      icon: Icons.download,
-                      label: '下载速度',
-                      value: '${_testResults!['downloadSpeed'].toStringAsFixed(2)} MB/s',
-                      color: Colors.blue,
                     ),
                   ] else ...[
                     Icon(
