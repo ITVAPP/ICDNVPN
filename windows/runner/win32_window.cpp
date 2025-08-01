@@ -280,25 +280,6 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
-      
-    // 处理无边框窗口的拖动
-    case WM_NCHITTEST: {
-      LRESULT hit = DefWindowProc(hwnd, message, wparam, lparam);
-      if (hit == HTCLIENT) {
-        // 允许通过窗口客户区拖动
-        // 您可以根据需要调整这个逻辑，比如只允许顶部区域拖动
-        POINT pt;
-        pt.x = GET_X_LPARAM(lparam);
-        pt.y = GET_Y_LPARAM(lparam);
-        ScreenToClient(hwnd, &pt);
-        
-        // 只允许顶部 30 像素区域拖动（模拟标题栏）
-        if (pt.y < 30) {
-          return HTCAPTION;
-        }
-      }
-      return hit;
-    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
