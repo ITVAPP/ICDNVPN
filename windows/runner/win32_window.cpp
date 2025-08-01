@@ -128,12 +128,12 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 使用标准窗口样式，但移除边框以支持圆角
-  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME | WS_BORDER);
+  // 使用标准窗口样式，完全移除边框和调整大小边框
+  const DWORD window_style = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME | WS_SYSMENU);
   
   // 创建窗口，使用扩展样式支持圆角
   HWND window = CreateWindowEx(
-      WS_EX_APPWINDOW,  // 移除了 WS_EX_WINDOWEDGE
+      WS_EX_APPWINDOW,  // 移除了 WS_EX_WINDOWEDGE 和其他可能产生边框的扩展样式
       window_class,
       title.c_str(),
       window_style,
@@ -150,7 +150,7 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
-  // 设置窗口圆角（Windows 11）
+  // 设置窗口圆角和移除边框（Windows 11）
   HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
   if (dwmapi) {
     typedef HRESULT (WINAPI *DwmSetWindowAttributeFunc)(HWND, DWORD, LPCVOID, DWORD);
@@ -161,6 +161,14 @@ bool Win32Window::Create(const std::wstring& title,
       // 设置圆角样式
       DWORD cornerPreference = 2; // DWMWCP_ROUND
       DwmSetWindowAttributeProc(window, 33, &cornerPreference, sizeof(cornerPreference));
+      
+      // 移除边框颜色（设置为透明）
+      DWORD borderColor = 0xFFFFFFFE; // DWMWA_BORDER_COLOR 设为透明
+      DwmSetWindowAttributeProc(window, 34, &borderColor, sizeof(borderColor));
+      
+      // 禁用非客户区渲染
+      BOOL value = TRUE;
+      DwmSetWindowAttributeProc(window, 2, &value, sizeof(value)); // DWMWA_NCRENDERING_POLICY
     }
     FreeLibrary(dwmapi);
   }
