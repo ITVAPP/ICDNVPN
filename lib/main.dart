@@ -292,7 +292,28 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
     
     if (shouldExit == true) {
-      // 用户选择退出，清理资源
+      // 显示退出进度对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => WillPopScope(
+            onWillPop: () async => false,
+            child: AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(AppLocalizations.of(context).disconnecting),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      
+      // 清理资源
       try {
         final connectionProvider = context.read<ConnectionProvider>();
         
