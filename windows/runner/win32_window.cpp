@@ -264,7 +264,7 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       
       // 窗口大小改变时更新圆角
-      if (wparam == SIZE_RESTORED || wparam == SIZE_RESIZED) {
+      if (wparam == SIZE_RESTORED) {
         RECT window_rect;
         GetWindowRect(hwnd, &window_rect);
         int width = window_rect.right - window_rect.left;
