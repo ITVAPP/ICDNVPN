@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocaleProvider extends ChangeNotifier {
-  static const String _localeKey = 'app_locale'; // 修复：移除星号，使用下划线命名
+  static const String _localeKey = 'app_locale';
   Locale? _locale;
   
   Locale? get locale => _locale;
@@ -22,8 +22,13 @@ class LocaleProvider extends ChangeNotifier {
       } else {
         _locale = Locale(localeCode);
       }
-      notifyListeners();
+    } else {
+      // 如果没有保存的语言偏好，默认使用中文
+      _locale = const Locale('zh', 'CN');
+      // 保存默认选择
+      await prefs.setString(_localeKey, 'zh_CN');
     }
+    notifyListeners();
   }
   
   Future<void> setLocale(Locale locale) async {
