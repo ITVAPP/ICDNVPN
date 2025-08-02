@@ -237,10 +237,14 @@ class ServerProvider with ChangeNotifier {
   final String _storageKey = 'servers';
   bool _isInitializing = false;
   String _initMessage = '';
+  String _initDetail = ''; // 新增详情字段
+  double _progress = 0.0; // 新增进度字段
   
   List<ServerModel> get servers => _servers;
   bool get isInitializing => _isInitializing;
   String get initMessage => _initMessage;
+  String get initDetail => _initDetail; // 新增getter
+  double get progress => _progress; // 新增getter
 
   ServerProvider() {
     _loadServers();
@@ -281,13 +285,12 @@ class ServerProvider with ChangeNotifier {
   Future<void> refreshFromCloudflare() async {
     _isInitializing = true;
     _initMessage = '正在获取最优节点...';
+    _initDetail = '准备测试环境';
+    _progress = 0.0;
     notifyListeners();
 
     try {
       print('开始从Cloudflare获取节点');
-      
-      _initMessage = '正在测试节点延迟...';
-      notifyListeners();
       
       // 创建 StreamController
       final controller = StreamController<TestProgress>();
@@ -296,9 +299,11 @@ class ServerProvider with ChangeNotifier {
       final completer = Completer<List<ServerModel>>();
       final subscription = controller.stream.listen(
         (progress) {
-          // 更新进度消息
+          // 更新进度消息 - 使用本地化消息
           if (!progress.hasError) {
-            _initMessage = progress.message;
+            _initMessage = _getLocalizedMessage(progress);
+            _initDetail = _getLocalizedDetail(progress);
+            _progress = progress.progress;
             notifyListeners();
           }
           
@@ -338,11 +343,13 @@ class ServerProvider with ChangeNotifier {
       await _saveServers();
       
       _initMessage = '成功获取 ${_servers.length} 个节点';
+      _progress = 1.0;
       print('成功获取 ${_servers.length} 个节点');
       
     } catch (e) {
       print('获取节点失败: $e');
       _initMessage = '获取节点失败: $e';
+      _progress = 0.0;
       // 清空服务器列表
       _servers.clear();
       await _saveServers();
@@ -350,7 +357,52 @@ class ServerProvider with ChangeNotifier {
       await Future.delayed(const Duration(seconds: 1));
       _isInitializing = false;
       _initMessage = '';
+      _initDetail = '';
+      _progress = 0.0;
       notifyListeners();
+    }
+  }
+
+  // 获取本地化的消息
+  String _getLocalizedMessage(TestProgress progress) {
+    // 这里简化处理，实际使用时需要通过context获取本地化
+    switch (progress.messageKey) {
+      case 'preparingTestEnvironment':
+        return '准备测试环境';
+      case 'generatingTestIPs':
+        return '生成测试IP';
+      case 'testingDelay':
+        return '测试延迟';
+      case 'testingDownloadSpeed':
+        return '测试下载速度';
+      case 'testCompleted':
+        return '测试完成';
+      default:
+        return progress.messageKey;
+    }
+  }
+  
+  // 获取本地化的详情
+  String _getLocalizedDetail(TestProgress progress) {
+    if (progress.detailKey == null) return '';
+    
+    switch (progress.detailKey!) {
+      case 'initializing':
+        return '正在初始化';
+      case 'startingSpeedTest':
+        return '开始测速';
+      case 'ipRanges':
+        final count = progress.detailParams?['count'] ?? 0;
+        return '从 $count 个IP段采样';
+      case 'nodeProgress':
+        final current = progress.detailParams?['current'] ?? 0;
+        final total = progress.detailParams?['total'] ?? 0;
+        return '$current/$total';
+      case 'foundQualityNodes':
+        final count = progress.detailParams?['count'] ?? 0;
+        return '找到 $count 个优质节点';
+      default:
+        return progress.detailKey!;
     }
   }
 

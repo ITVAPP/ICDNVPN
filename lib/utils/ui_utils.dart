@@ -27,7 +27,7 @@ class UIUtils {
     return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
   
-  /// 构建国旗图标组件 - 圆形设计
+  /// 构建国旗图标组件 - 圆形设计（纯色+描边）
   static Widget buildCountryFlag(String countryCode, {double size = 30}) {
     final flagData = _getFlagData(countryCode);
     
@@ -35,17 +35,24 @@ class UIUtils {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: flagData['colors'] as List<Color>,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: (flagData['colors'] as List<Color>)[0], // 使用纯色，不使用渐变
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withOpacity(0.8), // 白色描边
+          width: 2,
         ),
-        shape: BoxShape.circle, // 改为圆形
         boxShadow: [
+          // 外层阴影，增强立体感
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+          // 内层阴影，使描边更明显
           BoxShadow(
             color: (flagData['colors'] as List<Color>)[0].withOpacity(0.4),
             blurRadius: 8,
-            offset: const Offset(0, 3),
+            spreadRadius: -2,
           ),
         ],
       ),
@@ -53,14 +60,14 @@ class UIUtils {
         child: Text(
           flagData['code'] as String,
           style: TextStyle(
-            fontSize: size * 0.35, // 稍微调小字体以适应圆形
+            fontSize: size * 0.35,
             fontWeight: FontWeight.bold,
             color: Colors.white,
             shadows: [
               Shadow(
-                color: Colors.black.withOpacity(0.4),
+                color: Colors.black.withOpacity(0.5),
                 offset: const Offset(1, 1),
-                blurRadius: 3,
+                blurRadius: 2,
               ),
             ],
           ),

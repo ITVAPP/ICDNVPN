@@ -543,7 +543,8 @@ class CloudflareTestService {
           subProgress: (i + 1) / downloadTestCount,
         ));
         
-        final downloadSpeed = await _testDownloadSpeed(server.ip, server.port);
+        // 使用443端口进行下载测试（与实际连接一致）
+        final downloadSpeed = await _testDownloadSpeed(server.ip, 443);
         server.downloadSpeed = downloadSpeed;
         
         await _log.info('服务器 ${server.ip} - 下载速度: ${downloadSpeed.toStringAsFixed(2)} MB/s', tag: _logTag);
@@ -884,42 +885,56 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版本）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
-    const int pingTimes = 3; // 测试次数（保留用户设置）
-    int successCount = 0;
-    int totalLatency = 0;
+    const int pingTimes = 4; // 测试4次（与CloudflareScanner一致）
+    final List<int> latencies = [];
     
-    // 进行多次测试（与开源项目一致）
     for (int i = 0; i < pingTimes; i++) {
+      final stopwatch = Stopwatch()..start();
+      
       try {
-        final stopwatch = Stopwatch()..start();
-        
-        // 简单的TCP连接测试（与开源项目一致）
+        // 创建TCP连接
         final socket = await Socket.connect(
           ip,
           testPort,
-          timeout: _tcpTimeout,  // 1秒超时（与开源项目一致）
+          timeout: _tcpTimeout, // 1秒超时
         );
         
+        // 立即停止计时
         stopwatch.stop();
+        
+        // 立即关闭连接
         socket.destroy();
         
+        // 记录延迟
         final latency = stopwatch.elapsedMilliseconds;
         if (latency > 0) {
-          successCount++;
-          totalLatency += latency;
+          latencies.add(latency);
         }
+        
+        // 测试间隔200ms，避免触发限流
+        if (i < pingTimes - 1) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+        
       } catch (e) {
-        // 连接失败，继续下一次测试
-        continue;
+        // 连接失败
+        latencies.add(999);
       }
     }
     
-    // 计算平均延迟和丢包率（与开源项目一致）
+    // 计算统计数据
+    final successCount = latencies.where((l) => l < 999).length;
     final lossRate = (pingTimes - successCount) / pingTimes.toDouble();
-    final avgLatency = successCount > 0 ? totalLatency ~/ successCount : 999;
+    
+    // 计算平均延迟
+    int avgLatency = 999;
+    if (successCount > 0) {
+      final validLatencies = latencies.where((l) => l < 999).toList();
+      avgLatency = validLatencies.reduce((a, b) => a + b) ~/ validLatencies.length;
+    }
     
     return {
       'ip': ip,
@@ -927,7 +942,7 @@ class CloudflareTestService {
       'lossRate': lossRate,
       'sent': pingTimes,
       'received': successCount,
-      'colo': '', // TCPing模式无法获取地区信息
+      'colo': '',
     };
   }
   
@@ -946,82 +961,68 @@ class CloudflareTestService {
     return '';
   }
   
-  // 下载速度测试
+  // 下载速度测试（修复版本）
   static Future<double> _testDownloadSpeed(String ip, int port) async {
     try {
-      // 创建自定义的 HttpClient 以支持 SNI
+      await _log.debug('开始下载测试 $ip:$port', tag: _logTag);
+      
+      // 创建 HttpClient
       final httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(seconds: 5);
+      httpClient.connectionTimeout = const Duration(seconds: 10);
       
-      // 支持 SNI（Server Name Indication）
-      httpClient.badCertificateCallback = (cert, host, port) {
-        // 在测试环境中接受自签名证书
-        return true;
-      };
+      // 忽略SSL证书验证（测试环境需要）
+      httpClient.badCertificateCallback = (cert, host, port) => true;
       
-      // 解析测试URL
-      final testUri = Uri.parse(_downloadTestUrl);
-      
-      // 创建直接连接到IP的URI
-      final directUri = Uri(
-        scheme: testUri.scheme,
+      // 使用Cloudflare标准的2MB下载测试地址
+      final uri = Uri(
+        scheme: 'https',
         host: ip,
         port: port,
-        path: testUri.path,
-        query: testUri.query,
+        path: '/__down',
+        queryParameters: {'bytes': '2000000'}, // 2MB
       );
       
-      // 创建请求
-      final request = await httpClient.getUrl(directUri);
+      // 创建GET请求
+      final request = await httpClient.getUrl(uri);
       
       // 设置必要的请求头
-      request.headers.set('Host', testUri.host); // 重要：设置正确的Host
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36');
+      request.headers.set('Host', 'speed.cloudflare.com');
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      request.headers.set('Accept', '*/*');
       
       // 开始计时
       final startTime = DateTime.now();
+      
+      // 发送请求
       final response = await request.close();
       
       // 检查响应状态
       if (response.statusCode != 200) {
-        // 如果是重定向，尝试跟随
-        if (response.statusCode >= 300 && response.statusCode < 400) {
-          final location = response.headers.value('location');
-          if (location != null) {
-            await _log.debug('下载测试重定向到: $location', tag: _logTag);
-          }
-        }
-        await _log.warn('下载测试失败，HTTP状态码: ${response.statusCode}', tag: _logTag);
+        await _log.warn('下载响应状态码: ${response.statusCode}', tag: _logTag);
         httpClient.close();
         return 0.0;
       }
       
-      // 下载数据并计算速度
+      // 读取响应数据
       int totalBytes = 0;
-      final endTime = startTime.add(_downloadTimeout);
-      
-      // 使用流式读取，避免内存占用过大
       await for (final chunk in response) {
         totalBytes += chunk.length;
-        
-        // 检查是否超时
-        if (DateTime.now().isAfter(endTime)) {
-          break;
-        }
       }
       
+      // 计算下载时间
       final duration = DateTime.now().difference(startTime);
       httpClient.close();
       
       // 计算速度（MB/s）
       if (duration.inMilliseconds > 0 && totalBytes > 0) {
-        final speedMBps = (totalBytes / 1024 / 1024) / (duration.inMilliseconds / 1000);
+        final speedMBps = (totalBytes / 1024.0 / 1024.0) / (duration.inMilliseconds / 1000.0);
+        await _log.info('下载完成: ${(totalBytes / 1024.0 / 1024.0).toStringAsFixed(2)}MB, 耗时: ${duration.inMilliseconds}ms, 速度: ${speedMBps.toStringAsFixed(2)}MB/s', tag: _logTag);
         return speedMBps;
       }
       
       return 0.0;
     } catch (e) {
-      await _log.warn('下载测试失败: $e', tag: _logTag);
+      await _log.warn('下载测试失败: ${e.toString()}', tag: _logTag);
       return 0.0;
     }
   }

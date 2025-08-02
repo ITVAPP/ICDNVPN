@@ -177,16 +177,40 @@ class _ServersPageState extends State<ServersPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: serverProvider.progress,
+                          strokeWidth: 4,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).primaryColor,
+                          ),
+                        ),
+                        Text(
+                          '${(serverProvider.progress * 100).round()}%',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                   Text(
                     serverProvider.initMessage,
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    l10n.gettingNodes,
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    serverProvider.initDetail,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -468,20 +492,10 @@ class _ServerListItemState extends State<ServerListItem>
                                     fontWeight: widget.isSelected
                                       ? FontWeight.bold
                                       : FontWeight.w600,
+                                    // 修复：确保选中时文字颜色在深色主题下可见
                                     color: widget.isSelected
                                       ? theme.primaryColor
-                                      : null,
-                                    shadows: widget.isSelected
-                                      ? [
-                                          Shadow(
-                                            color: theme.brightness == Brightness.dark
-                                              ? Colors.black54
-                                              : Colors.white70,
-                                            blurRadius: 2,
-                                            offset: const Offset(1, 1),
-                                          ),
-                                        ]
-                                      : null,
+                                      : theme.textTheme.bodyLarge?.color,
                                   ),
                                 ),
                               ),
@@ -524,17 +538,6 @@ class _ServerListItemState extends State<ServerListItem>
                                   color: widget.isSelected
                                     ? theme.primaryColor
                                     : Colors.grey[600],
-                                  shadows: widget.isSelected
-                                    ? [
-                                        Shadow(
-                                          color: theme.brightness == Brightness.dark
-                                            ? Colors.black54
-                                            : Colors.white70,
-                                          blurRadius: 2,
-                                          offset: const Offset(0.5, 0.5),
-                                        ),
-                                      ]
-                                    : null,
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -550,24 +553,6 @@ class _ServerListItemState extends State<ServerListItem>
                                   fontSize: 13,
                                   color: UIUtils.getPingColor(widget.server.ping),
                                   fontWeight: FontWeight.w600,
-                                  shadows: widget.isSelected
-                                    ? [
-                                        Shadow(
-                                          color: theme.brightness == Brightness.dark
-                                            ? Colors.black87
-                                            : Colors.white,
-                                          blurRadius: 3,
-                                          offset: const Offset(0, 0),
-                                        ),
-                                        Shadow(
-                                          color: theme.brightness == Brightness.dark
-                                            ? Colors.black54
-                                            : Colors.white70,
-                                          blurRadius: 2,
-                                          offset: const Offset(1, 1),
-                                        ),
-                                      ]
-                                    : null,
                                 ),
                               ),
                             ],
@@ -609,30 +594,6 @@ class _ServerListItemState extends State<ServerListItem>
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(2),
-              border: widget.isSelected && isActive
-                ? Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white.withOpacity(0.8)
-                      : Colors.black.withOpacity(0.3),
-                    width: 0.5,
-                  )
-                : null,
-              boxShadow: [
-                if (isActive && widget.isSelected)
-                  BoxShadow(
-                    color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.black.withOpacity(0.8)
-                      : Colors.white.withOpacity(0.8),
-                    spreadRadius: 1,
-                    blurRadius: 2,
-                  ),
-                if (isActive)
-                  BoxShadow(
-                    color: UIUtils.getPingColor(ping).withOpacity(0.5),
-                    blurRadius: 4,
-                    spreadRadius: 1,
-                  ),
-              ],
             ),
           );
         }),

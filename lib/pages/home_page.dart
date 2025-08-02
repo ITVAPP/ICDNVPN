@@ -338,11 +338,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ]
                     : isConnected
                       ? [
-                          Colors.green.shade400,
-                          Colors.green.shade600,
+                          Colors.red.shade400,     // 修复：已连接时显示红色（准备断开）
+                          Colors.red.shade600,
                         ]
                       : [
-                          Colors.blue.shade400,
+                          Colors.blue.shade400,     // 未连接时显示蓝色（准备连接）
                           Colors.blue.shade600,
                         ],
                 ),
@@ -350,7 +350,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   BoxShadow(
                     color: (_isProcessing 
                       ? (isConnected ? Colors.red : Colors.orange)
-                      : (isConnected ? Colors.green : Colors.blue)
+                      : (isConnected ? Colors.red : Colors.blue)     // 修复：已连接时阴影为红色
                     ).withOpacity(0.3),
                     blurRadius: 30,
                     spreadRadius: 10,
@@ -383,7 +383,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         duration: const Duration(milliseconds: 300),
                         child: Text(
                           _isProcessing 
-                            ? (isConnected ? l10n.disconnecting : l10n.connecting)
+                            ? (isConnected ? l10n.disconnecting : l10n.connecting)     // 修复：正确显示"正在断开"
                             : (isConnected ? l10n.clickToDisconnect : l10n.clickToConnect),
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),

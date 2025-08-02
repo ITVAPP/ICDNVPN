@@ -379,7 +379,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-// 分节标题组件
+// 分节标题组件 - 修复深色主题下的颜色问题
 class _SectionHeader extends StatelessWidget {
   final String title;
 
@@ -389,6 +389,8 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
@@ -396,7 +398,8 @@ class _SectionHeader extends StatelessWidget {
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
-          color: Theme.of(context).primaryColor,
+          // 修复：使用主题的文字颜色，而不是固定的主题色
+          color: theme.textTheme.titleMedium?.color ?? theme.colorScheme.onSurface,
         ),
       ),
     );
