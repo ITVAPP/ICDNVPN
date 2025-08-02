@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocaleProvider extends ChangeNotifier {
-  static const String _localeKey = 'app_locale';
+  static const String _localeKey = 'app_locale'; // 修复：移除星号，使用下划线命名
   Locale? _locale;
-
+  
   Locale? get locale => _locale;
-
+  
   LocaleProvider() {
     _loadLocale();
   }
-
+  
   Future<void> _loadLocale() async {
     final prefs = await SharedPreferences.getInstance();
     final localeCode = prefs.getString(_localeKey);
@@ -25,7 +25,7 @@ class LocaleProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
+  
   Future<void> setLocale(Locale locale) async {
     _locale = locale;
     
@@ -37,7 +37,7 @@ class LocaleProvider extends ChangeNotifier {
     await prefs.setString(_localeKey, localeCode);
     notifyListeners();
   }
-
+  
   void clearLocale() async {
     _locale = null;
     final prefs = await SharedPreferences.getInstance();
