@@ -287,6 +287,10 @@ class ServerProvider with ChangeNotifier {
     _initMessage = '正在获取最优节点...';
     _initDetail = '准备测试环境';
     _progress = 0.0;
+    
+    // 立即清空现有节点列表
+    _servers.clear();
+    await _saveServers();  // 立即保存到本地，确保清空缓存
     notifyListeners();
 
     try {
