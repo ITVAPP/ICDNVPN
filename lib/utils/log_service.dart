@@ -169,10 +169,4 @@ class LogService {
       // 静默处理
     }
   }
-  
-  /// 保留此方法以兼容 CloudflareTestService
-  /// 实际不执行任何操作
-  Future<void> cleanOldLogs({int keepDays = 7}) async {
-    // 空实现，保持接口兼容性
-  }
 }
