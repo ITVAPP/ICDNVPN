@@ -3,96 +3,15 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:path/path.dart' as path;
 import '../models/server_model.dart';
+import '../utils/log_service.dart';
 
 class CloudflareTestService {
-  // 日志文件
-  static File? _logFile;
-  static IOSink? _logSink;
+  // 日志标签
+  static const String _logTag = 'CloudflareTest';
   
-  // 初始化日志文件
-  static Future<void> _initLog() async {
-    try {
-      if (_logFile == null) {
-        // 获取日志目录（优先级：用户主目录 > 临时目录 > 当前目录）
-        Directory logDir;
-        
-        try {
-          // 尝试使用平台特定的目录
-          if (Platform.isWindows) {
-            final appData = Platform.environment['APPDATA'] ?? Platform.environment['USERPROFILE'];
-            if (appData != null) {
-              logDir = Directory(path.join(appData, 'CloudflareTest', 'logs'));
-            } else {
-              logDir = Directory(path.join(Directory.current.path, 'logs'));
-            }
-          } else if (Platform.isMacOS || Platform.isLinux) {
-            final home = Platform.environment['HOME'];
-            if (home != null) {
-              logDir = Directory(path.join(home, '.cloudflare_test', 'logs'));
-            } else {
-              logDir = Directory(path.join(Directory.current.path, 'logs'));
-            }
-          } else if (Platform.isAndroid || Platform.isIOS) {
-            // 移动平台使用临时目录
-            logDir = Directory(path.join(Directory.systemTemp.path, 'cloudflare_test', 'logs'));
-          } else {
-            // 其他平台使用当前目录
-            logDir = Directory(path.join(Directory.current.path, 'logs'));
-          }
-        } catch (e) {
-          // 如果上述都失败，使用当前目录
-          logDir = Directory(path.join(Directory.current.path, 'logs'));
-        }
-        
-        if (!await logDir.exists()) {
-          await logDir.create(recursive: true);
-        }
-        
-        // 创建带时间戳的日志文件
-        final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
-        _logFile = File(path.join(logDir.path, 'cloudflare_test_$timestamp.log'));
-        _logSink = _logFile!.openWrite(mode: FileMode.append);
-        
-        await _log('=== Cloudflare测试日志开始 ===');
-        await _log('日志文件: ${_logFile!.path}');
-        await _log('平台: ${Platform.operatingSystem}');
-        await _log('Dart版本: ${Platform.version}');
-      }
-    } catch (e) {
-      print('初始化日志失败: $e');
-      print('将仅使用控制台输出');
-    }
-  }
+  // 获取日志服务实例
+  static LogService get _log => LogService.instance;
   
-  // 写入日志（同时输出到控制台和文件）
-  static Future<void> _log(String message) async {
-    final timestamp = DateTime.now().toIso8601String();
-    final logMessage = '[$timestamp] $message';
-    
-    // 输出到控制台
-    print(logMessage);
-    
-    // 写入文件
-    try {
-      if (_logSink != null) {
-        _logSink!.writeln(logMessage);
-        await _logSink!.flush();
-      }
-    } catch (e) {
-      print('写入日志失败: $e');
-    }
-  }
-  
-  // 关闭日志文件
-  static Future<void> _closeLog() async {
-    try {
-      await _logSink?.close();
-      _logSink = null;
-      _logFile = null;
-    } catch (e) {
-      print('关闭日志失败: $e');
-    }
-  }
   // Cloudflare 官方 IP 段（2025年最新版本）- 直接定义为静态常量
   static const List<String> _cloudflareIpRanges = [
     '173.245.48.0/20',
@@ -130,43 +49,55 @@ class CloudflareTestService {
     required int testCount,
     String location = 'AUTO',
   }) async {
-    // 初始化日志
-    await _initLog();
+    // 初始化日志服务
+    await _log.init(
+      prefix: 'cloudflare_test',
+      enableFile: true,
+      enableConsole: true,
+    );
     
     try {
-      await _log('=== 开始测试 Cloudflare 节点 ===');
-      await _log('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location');
+      await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
+      await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
+      
+      // 显示日志保存位置
+      final logDir = _log.getLogDirectory();
+      final logFile = _log.getCurrentLogFile();
+      if (logDir != null) {
+        await _log.info('日志目录: $logDir', tag: _logTag);
+      }
+      if (logFile != null) {
+        await _log.info('当前日志文件: $logFile', tag: _logTag);
+      }
       
       // 显示使用的IP段
-      await _log('Cloudflare IP段列表:');
+      await _log.debug('Cloudflare IP段列表:', tag: _logTag);
       for (var i = 0; i < _cloudflareIpRanges.length; i++) {
-        await _log('  ${i + 1}. ${_cloudflareIpRanges[i]}');
+        await _log.debug('  ${i + 1}. ${_cloudflareIpRanges[i]}', tag: _logTag);
       }
       
       // 从 IP 段中采样（按 /24 段采样，确保覆盖面）
-      // 采样更多 IP 以确保能找到足够的优质节点
       final targetSampleCount = testCount * 5 > 200 ? 200 : testCount * 5;
-      await _log('目标采样数量: $targetSampleCount');
+      await _log.info('目标采样数量: $targetSampleCount', tag: _logTag);
       
-      final sampleIps = await _sampleIpsFromRanges(targetSampleCount); // 最多测试 200 个
-      await _log('从 IP 段中采样了 ${sampleIps.length} 个 IP');
+      final sampleIps = await _sampleIpsFromRanges(targetSampleCount);
+      await _log.info('从 IP 段中采样了 ${sampleIps.length} 个 IP', tag: _logTag);
       
       if (sampleIps.isEmpty) {
-        await _log('错误：无法生成采样IP');
-        await _closeLog();
+        await _log.error('无法生成采样IP', tag: _logTag);
         throw '无法生成测试IP，请检查配置';
       }
       
       // 记录前10个采样IP作为示例
       if (sampleIps.isNotEmpty) {
         final examples = sampleIps.take(10).join(', ');
-        await _log('采样IP示例: $examples');
+        await _log.debug('采样IP示例: $examples', tag: _logTag);
       }
       
       // 批量测试延迟
-      await _log('开始批量测试延迟...');
+      await _log.info('开始批量测试延迟...', tag: _logTag);
       final latencyMap = await testLatency(sampleIps);
-      await _log('延迟测试完成，获得 ${latencyMap.length} 个结果');
+      await _log.info('延迟测试完成，获得 ${latencyMap.length} 个结果', tag: _logTag);
       
       // 统计延迟分布
       final latencyStats = <String, int>{};
@@ -185,13 +116,12 @@ class CloudflareTestService {
           latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
         }
       }
-      await _log('延迟分布: $latencyStats');
+      await _log.info('延迟分布: $latencyStats', tag: _logTag);
       
       // 筛选符合条件的服务器
       final validServers = <ServerModel>[];
       for (final entry in latencyMap.entries) {
         if (entry.value <= maxLatency) {
-          // 根据IP地址判断大概位置（简化版）
           String detectedLocation = _detectLocationFromIp(entry.key);
           
           validServers.add(ServerModel(
@@ -205,42 +135,41 @@ class CloudflareTestService {
         }
       }
       
-      await _log('筛选后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms）');
+      await _log.info('筛选后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms）', tag: _logTag);
       
       // 按延迟排序
       validServers.sort((a, b) => a.ping.compareTo(b.ping));
       
       if (validServers.isEmpty) {
-        await _log('错误：未找到符合条件的节点');
-        await _log('建议：');
-        await _log('  1. 检查网络连接是否正常');
-        await _log('  2. 降低延迟要求（当前: $maxLatency ms）');
-        await _log('  3. 增加测试数量（当前: $testCount）');
-        await _log('  4. 检查防火墙是否阻止了443端口');
-        await _closeLog();
+        await _log.error('未找到符合条件的节点', tag: _logTag);
+        await _log.warn('建议：', tag: _logTag);
+        await _log.warn('  1. 检查网络连接是否正常', tag: _logTag);
+        await _log.warn('  2. 降低延迟要求（当前: $maxLatency ms）', tag: _logTag);
+        await _log.warn('  3. 增加测试数量（当前: $testCount）', tag: _logTag);
+        await _log.warn('  4. 检查防火墙是否阻止了443端口', tag: _logTag);
         throw '未找到符合条件的节点\n请检查网络连接或降低筛选要求';
       }
       
       // 记录最优的几个节点
-      await _log('找到 ${validServers.length} 个符合条件的节点');
+      await _log.info('找到 ${validServers.length} 个符合条件的节点', tag: _logTag);
       final topNodes = validServers.take(5);
       for (final node in topNodes) {
-        await _log('优质节点: ${node.ip} - ${node.ping}ms - ${node.location}');
+        await _log.info('优质节点: ${node.ip} - ${node.ping}ms - ${node.location}', tag: _logTag);
       }
       
       // 返回请求的数量
       final result = validServers.take(count).toList();
-      await _log('返回 ${result.length} 个节点');
-      await _log('=== 测试完成 ===');
-      await _closeLog();
+      await _log.info('返回 ${result.length} 个节点', tag: _logTag);
+      await _log.info('=== 测试完成 ===', tag: _logTag);
+      
+      // 清理超过7天的旧日志
+      await _log.cleanOldLogs(keepDays: 7);
       
       return result;
       
-    } catch (e) {
-      await _log('Cloudflare 测试失败: $e');
-      await _log('错误堆栈: ${StackTrace.current}');
-      await _closeLog();
-      rethrow; // 直接抛出异常，不再使用备用服务器
+    } catch (e, stackTrace) {
+      await _log.error('Cloudflare 测试失败', tag: _logTag, error: e, stackTrace: stackTrace);
+      rethrow;
     }
   }
   
@@ -362,7 +291,7 @@ class CloudflareTestService {
     try {
       final parts = cidr.split('/');
       if (parts.length != 2) {
-        _log('无效的CIDR格式: $cidr');
+        _log.warn('无效的CIDR格式: $cidr', tag: _logTag);
         return ips;
       }
       
@@ -379,7 +308,7 @@ class CloudflareTestService {
       }).toList();
       
       if (ipParts.length != 4) {
-        _log('无效的IP格式: $baseIp');
+        _log.warn('无效的IP格式: $baseIp', tag: _logTag);
         return ips;
       }
       
@@ -446,7 +375,7 @@ class CloudflareTestService {
         currentIp = nextIp;
       }
     } catch (e) {
-      _log('解析 CIDR $cidr 失败: $e'); // 不使用await
+      _log.error('解析 CIDR $cidr 失败', tag: _logTag, error: e);
     }
     
     return ips;
@@ -458,7 +387,7 @@ class CloudflareTestService {
     
     // 使用内置的 Cloudflare IP 段常量
     final cloudflareIpRanges = _cloudflareIpRanges;
-    await _log('使用 ${cloudflareIpRanges.length} 个内置IP段');
+    await _log.debug('使用 ${cloudflareIpRanges.length} 个内置IP段', tag: _logTag);
     
     // 第一轮：每个 CIDR 按 /24 段采样
     for (final range in cloudflareIpRanges) {
@@ -470,11 +399,11 @@ class CloudflareTestService {
       }
     }
     
-    await _log('第一轮采样获得 ${ips.length} 个IP');
+    await _log.debug('第一轮采样获得 ${ips.length} 个IP', tag: _logTag);
     
     // 如果第一轮采样不够，进行第二轮随机补充
     if (ips.length < targetCount) {
-      await _log('第一轮采样不足，需要 $targetCount 个，继续随机补充...');
+      await _log.debug('第一轮采样不足，需要 $targetCount 个，继续随机补充...', tag: _logTag);
       final random = Random();
       final additionalNeeded = targetCount - ips.length;
       
@@ -484,7 +413,7 @@ class CloudflareTestService {
         return prefix <= 18;  // 选择 /18 及更大的段进行额外采样
       }).toList();
       
-      await _log('从 ${largeRanges.length} 个大IP段中额外采样');
+      await _log.debug('从 ${largeRanges.length} 个大IP段中额外采样', tag: _logTag);
       
       for (final range in largeRanges) {
         final parts = range.split('/');
@@ -521,7 +450,7 @@ class CloudflareTestService {
               }
             }
           } catch (e) {
-            await _log('生成随机IP失败: $e');
+            await _log.warn('生成随机IP失败: $e', tag: _logTag);
           }
         }
       }
@@ -530,7 +459,7 @@ class CloudflareTestService {
     // 打乱顺序
     ips.shuffle();
     
-    await _log('总共采样了 ${ips.length} 个IP进行测试');
+    await _log.info('总共采样了 ${ips.length} 个IP进行测试', tag: _logTag);
     
     return ips.take(targetCount).toList();
   }
@@ -540,11 +469,11 @@ class CloudflareTestService {
     final latencyMap = <String, int>{};
     
     if (ips.isEmpty) {
-      await _log('警告：没有IP需要测试');
+      await _log.warn('没有IP需要测试', tag: _logTag);
       return latencyMap;
     }
     
-    await _log('开始测试 ${ips.length} 个IP的延迟...');
+    await _log.info('开始测试 ${ips.length} 个IP的延迟...', tag: _logTag);
     
     // 限制并发数量，避免过多连接
     const batchSize = 20;
@@ -555,21 +484,21 @@ class CloudflareTestService {
       final batch = ips.skip(i).take(batchSize).toList();
       final futures = <Future>[];
       
-      await _log('测试批次 ${(i / batchSize).floor() + 1}/${((ips.length - 1) / batchSize).floor() + 1}，包含 ${batch.length} 个IP');
+      await _log.debug('测试批次 ${(i / batchSize).floor() + 1}/${((ips.length - 1) / batchSize).floor() + 1}，包含 ${batch.length} 个IP', tag: _logTag);
       
       for (final ip in batch) {
         futures.add(_testSingleIpLatency(ip).then((latency) {
           latencyMap[ip] = latency;
           if (latency < 999) {
             successCount++;
-            _log('✓ IP $ip 延迟: ${latency}ms'); // 不使用await
+            _log.debug('✓ IP $ip 延迟: ${latency}ms', tag: _logTag);
           } else {
             failCount++;
           }
         }).catchError((e) {
           failCount++;
           latencyMap[ip] = 999; // 失败时设置为最大延迟
-          _log('× IP $ip 测试异常: $e');
+          _log.debug('× IP $ip 测试异常: $e', tag: _logTag);
           return null;
         }));
       }
@@ -578,31 +507,31 @@ class CloudflareTestService {
       try {
         await Future.wait(futures);
       } catch (e) {
-        await _log('批次测试出现异常: $e');
+        await _log.warn('批次测试出现异常: $e', tag: _logTag);
       }
       
-      await _log('当前进度: 成功 $successCount，失败 $failCount');
+      await _log.debug('当前进度: 成功 $successCount，失败 $failCount', tag: _logTag);
       
       // 如果已经找到足够的低延迟节点，可以提前结束
       final goodNodes = latencyMap.values.where((latency) => latency < 200).length;
       if (goodNodes >= 10) {
-        await _log('已找到 $goodNodes 个优质节点（<200ms），提前结束测试');
+        await _log.info('已找到 $goodNodes 个优质节点（<200ms），提前结束测试', tag: _logTag);
         break;
       }
       
       // 如果失败率太高，给出警告
       if (failCount > successCount && i > batchSize * 2) {
-        await _log('警告：失败率过高（失败 $failCount，成功 $successCount），可能存在网络问题');
+        await _log.warn('失败率过高（失败 $failCount，成功 $successCount），可能存在网络问题', tag: _logTag);
       }
     }
     
-    await _log('延迟测试完成，成功测试 ${latencyMap.length} 个IP（成功: $successCount，失败: $failCount）');
+    await _log.info('延迟测试完成，成功测试 ${latencyMap.length} 个IP（成功: $successCount，失败: $failCount）', tag: _logTag);
     
     if (successCount == 0) {
-      await _log('错误：所有IP测试都失败了，请检查：');
-      await _log('  1. 网络连接是否正常');
-      await _log('  2. 防火墙是否阻止了443端口');
-      await _log('  3. DNS解析是否正常');
+      await _log.error('所有IP测试都失败了，请检查：', tag: _logTag);
+      await _log.error('  1. 网络连接是否正常', tag: _logTag);
+      await _log.error('  2. 防火墙是否阻止了443端口', tag: _logTag);
+      await _log.error('  3. DNS解析是否正常', tag: _logTag);
     }
     
     return latencyMap;
@@ -643,12 +572,12 @@ class CloudflareTestService {
       socket?.destroy();
       
       // 记录Socket连接失败的详细信息
-      await _log('× Socket连接 $ip:443 失败: ${e.runtimeType} - $e');
+      await _log.debug('× Socket连接 $ip:443 失败: ${e.runtimeType} - $e', tag: _logTag);
       
       // 如果Socket连接失败，尝试HTTP方式
       HttpClient? httpClient;
       try {
-        await _log('尝试HTTP方式测试 $ip');
+        await _log.debug('尝试HTTP方式测试 $ip', tag: _logTag);
         httpClient = HttpClient();
         httpClient.connectionTimeout = const Duration(seconds: 3);
         httpClient.badCertificateCallback = (cert, host, port) => true;
@@ -662,7 +591,7 @@ class CloudflareTestService {
           path: '/cdn-cgi/trace',
         );
         
-        await _log('请求URL: $uri');
+        await _log.debug('请求URL: $uri', tag: _logTag);
         
         final request = await httpClient.getUrl(uri);
         request.headers.set('Host', 'cloudflare.com');
@@ -677,16 +606,16 @@ class CloudflareTestService {
         httpClient.close();
         
         if (response.statusCode == 200 || response.statusCode == 403) {
-          await _log('✓ HTTP测试 $ip 成功，状态码: ${response.statusCode}，延迟: ${latency}ms');
+          await _log.debug('✓ HTTP测试 $ip 成功，状态码: ${response.statusCode}，延迟: ${latency}ms', tag: _logTag);
           return latency;
         }
         
-        await _log('× HTTP测试 $ip 返回异常状态码: ${response.statusCode}');
+        await _log.debug('× HTTP测试 $ip 返回异常状态码: ${response.statusCode}', tag: _logTag);
         return 999;
       } catch (e2) {
         // 确保httpClient被关闭
         httpClient?.close();
-        await _log('× HTTP测试 $ip 失败: ${e2.runtimeType} - $e2');
+        await _log.debug('× HTTP测试 $ip 失败: ${e2.runtimeType} - $e2', tag: _logTag);
         return 999;
       }
     }
