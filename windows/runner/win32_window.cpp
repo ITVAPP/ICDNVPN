@@ -5,6 +5,15 @@
 
 #include "resource.h"
 
+// 定义坐标提取宏（通常在 windowsx.h 中）
+// 这些宏用于从 LPARAM 中提取鼠标坐标
+#ifndef GET_X_LPARAM
+#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
+#endif
+#ifndef GET_Y_LPARAM
+#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
+#endif
+
 namespace {
 
 /// Window attribute that enables dark mode window decorations.
