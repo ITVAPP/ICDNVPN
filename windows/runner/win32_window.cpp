@@ -2,10 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
-#include <fstream>
 #include "resource.h"
-#include <filesystem>
-#include "app_links/app_links_plugin_c_api.h"
 
 namespace {
 
@@ -99,8 +96,7 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    // 修改：使用 NULL_BRUSH 防止系统绘制背景
-    window_class.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
+    window_class.hbrBackground = nullptr;
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -124,14 +120,11 @@ Win32Window::~Win32Window() {
 }
 
 bool Win32Window::SendAppLinkToInstance(const std::wstring& title) {
-    // Find our exact window
+    // 简单的单实例检测实现（不依赖 app_links）
     HWND hwnd = ::FindWindow(kWindowClassName, title.c_str());
 
     if (hwnd) {
-        // Dispatch new link to current window
-        SendAppLink(hwnd);
-
-        // (Optional) Restore our window to front in same state
+        // 激活已存在的窗口
         WINDOWPLACEMENT place = { sizeof(WINDOWPLACEMENT) };
         GetWindowPlacement(hwnd, &place);
 
@@ -147,11 +140,9 @@ bool Win32Window::SendAppLinkToInstance(const std::wstring& title) {
             break;
         }
 
-        SetWindowPos(0, HWND_TOP, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
         SetForegroundWindow(hwnd);
-        // END Restore
 
-        // Window has been found, don't create another one.
         return true;
     }
 
@@ -159,20 +150,8 @@ bool Win32Window::SendAppLinkToInstance(const std::wstring& title) {
 }
 
 void Win32Window::readPlacement(HWND hwnd) {
-    WINDOWPLACEMENT windowsPlacement{};
-    wchar_t appDataPath[MAX_PATH];
-    GetEnvironmentVariableW(L"APPDATA", appDataPath, MAX_PATH);
-    std::wstring path{appDataPath};
-    path += L"\\com.github.pacalini\\pica_comic";
-    if (!std::filesystem::exists(path)) {
-        std::filesystem::create_directories(path);
-    }
-    path += L"\\location.data";
-    std::ifstream file{path, std::ios::binary};
-    if (file.good()) {
-        file.read(reinterpret_cast<char*>(&windowsPlacement), sizeof(WINDOWPLACEMENT));
-        SetWindowPlacement(hwnd, &windowsPlacement);
-    }
+    // 简化版本：暂时不实现窗口位置记忆功能
+    // 如需此功能，可以使用 Windows API 替代 std::filesystem
 }
 
 bool Win32Window::Create(const std::wstring& title,
@@ -305,10 +284,6 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
     
-    // 添加：阻止系统擦除背景
-    case WM_ERASEBKGND:
-      return 1;
-
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
