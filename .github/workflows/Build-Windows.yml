@@ -8,7 +8,6 @@ on:
         required: false
         default: '1.0.0'
         type: string
-
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -81,10 +80,43 @@ jobs:
         # 创建发布目录
         New-Item -ItemType Directory -Force -Path "release"
         
-        # 压缩所有文件
-        Compress-Archive -Path "$buildPath\*" -DestinationPath "release\$outputName.zip"
+        # 创建带版本号的临时目录
+        $tempDir = "release\$outputName"
+        New-Item -ItemType Directory -Force -Path $tempDir
+        
+        # 复制所有必要文件到临时目录
+        Write-Host "Copying application files..."
+        
+        # 复制主程序和运行时文件
+        Copy-Item "$buildPath\*.exe" -Destination $tempDir -Force
+        Copy-Item "$buildPath\*.dll" -Destination $tempDir -Force
+        
+        # 复制 flutter_assets 目录（必要的资源文件）
+        if (Test-Path "$buildPath\data\flutter_assets") {
+            Copy-Item "$buildPath\data" -Destination $tempDir -Recurse -Force
+            Write-Host "✓ Copied flutter_assets"
+        }
+        
+        # 复制 v2ray 目录
+        if (Test-Path "$buildPath\v2ray") {
+            Copy-Item "$buildPath\v2ray" -Destination $tempDir -Recurse -Force
+            Write-Host "✓ Copied v2ray directory"
+        }
+        
+        # 复制其他必要文件（如果存在）
+        if (Test-Path "$buildPath\*.json") {
+            Copy-Item "$buildPath\*.json" -Destination $tempDir -Force
+        }
+        
+        # 创建压缩包（包含版本号文件夹）
+        Write-Host "Creating archive..."
+        Compress-Archive -Path $tempDir -DestinationPath "release\$outputName.zip" -Force
+        
+        # 清理临时目录
+        Remove-Item -Path $tempDir -Recurse -Force
         
         Write-Host "Package created: $outputName.zip"
+        Write-Host "Archive structure: $outputName/[application files]"
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
