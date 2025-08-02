@@ -301,6 +301,7 @@ class CloudflareTestService {
   static Stream<TestProgress> testServersWithProgress({
     required int count,
     required int maxLatency,
+    required int speed,
     required int testCount,
     String location = 'AUTO',
     bool useHttping = false,
@@ -314,6 +315,7 @@ class CloudflareTestService {
       controller: controller,
       count: count,
       maxLatency: maxLatency,
+      speed: speed,
       testCount: testCount,
       location: location,
       useHttping: useHttping,
@@ -1182,6 +1184,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     final stream = CloudflareTestService.testServersWithProgress(
       count: 6,
       maxLatency: 300,
+      speed: 5,
       testCount: 500,
       location: 'AUTO',
       useHttping: false, // 使用TCPing
