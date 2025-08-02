@@ -49,26 +49,9 @@ class CloudflareTestService {
     required int testCount,
     String location = 'AUTO',
   }) async {
-    // 初始化日志服务
-    await _log.init(
-      prefix: 'cloudflare_test',
-      enableFile: true,
-      enableConsole: true,
-    );
-    
     try {
       await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
       await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
-      
-      // 显示日志保存位置
-      final logDir = _log.getLogDirectory();
-      final logFile = _log.getCurrentLogFile();
-      if (logDir != null) {
-        await _log.info('日志目录: $logDir', tag: _logTag);
-      }
-      if (logFile != null) {
-        await _log.info('当前日志文件: $logFile', tag: _logTag);
-      }
       
       // 显示使用的IP段
       await _log.debug('Cloudflare IP段列表:', tag: _logTag);
@@ -161,9 +144,6 @@ class CloudflareTestService {
       final result = validServers.take(count).toList();
       await _log.info('返回 ${result.length} 个节点', tag: _logTag);
       await _log.info('=== 测试完成 ===', tag: _logTag);
-      
-      // 清理超过7天的旧日志
-      await _log.cleanOldLogs(keepDays: 7);
       
       return result;
       
