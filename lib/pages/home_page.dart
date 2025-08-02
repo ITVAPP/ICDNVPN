@@ -205,8 +205,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       const SizedBox(height: 40),
                       
                       // 服务器信息卡片
-                      if (currentServer != null)
-                        _buildServerInfoCard(currentServer, isConnected, l10n),
+                      SlideTransition(
+                        position: _slideAnimation,
+                        child: currentServer != null
+                          ? _buildServerInfoCard(currentServer, isConnected, l10n)
+                          : _buildEmptyServerCard(l10n),  // 显示空节点卡片
+                      ),
                       
                       // 流量统计卡片
                       if (isConnected) ...[
@@ -328,21 +332,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 gradient: RadialGradient(
                   colors: _isProcessing
                     ? isConnected
-                      ? [
+                      ? [  // 已连接，正在断开 - 红色
                           Colors.red.shade400,
                           Colors.red.shade600,
                         ]
-                      : [
+                      : [  // 未连接，正在连接 - 橙色
                           Colors.orange.shade400,
                           Colors.orange.shade600,
                         ]
                     : isConnected
-                      ? [
-                          Colors.red.shade400,     // 修复：已连接时显示红色（准备断开）
-                          Colors.red.shade600,
+                      ? [  // 已连接，准备断开 - 绿色
+                          Colors.green.shade400,
+                          Colors.green.shade600,
                         ]
-                      : [
-                          Colors.blue.shade400,     // 未连接时显示蓝色（准备连接）
+                      : [  // 未连接，准备连接 - 蓝色
+                          Colors.blue.shade400,
                           Colors.blue.shade600,
                         ],
                 ),
@@ -350,7 +354,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   BoxShadow(
                     color: (_isProcessing 
                       ? (isConnected ? Colors.red : Colors.orange)
-                      : (isConnected ? Colors.red : Colors.blue)     // 修复：已连接时阴影为红色
+                      : (isConnected ? Colors.green : Colors.blue)
                     ).withOpacity(0.3),
                     blurRadius: 30,
                     spreadRadius: 10,
@@ -462,6 +466,51 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               // 延迟指示器
               _buildPingIndicator(server.ping, isConnected),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyServerCard(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.dividerColor,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.brightness == Brightness.dark
+              ? Colors.black.withOpacity(0.2)
+              : Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: theme.hintColor,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            l10n.noNodesHint,
+            style: TextStyle(
+              fontSize: 16,
+              color: theme.hintColor,
+            ),
           ),
         ],
       ),
