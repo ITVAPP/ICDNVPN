@@ -86,6 +86,23 @@ class MyApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
             ],
             supportedLocales: AppLocalizations.supportedLocales,
+            // 添加语言解析回调，确保默认使用中文
+            localeResolutionCallback: (locale, supportedLocales) {
+              // 如果用户没有设置语言偏好，返回中文
+              if (localeProvider.locale == null) {
+                return const Locale('zh', 'CN');
+              }
+              
+              // 检查是否支持用户的语言
+              for (final supportedLocale in supportedLocales) {
+                if (supportedLocale.languageCode == locale?.languageCode) {
+                  return supportedLocale;
+                }
+              }
+              
+              // 如果不支持，返回中文
+              return const Locale('zh', 'CN');
+            },
             home: const MainScreen(),
           );
         },
