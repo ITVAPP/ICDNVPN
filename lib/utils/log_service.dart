@@ -16,6 +16,9 @@ class LogService {
   IOSink? _logSink;
   String? _logDir;
   
+  // 初始化标志
+  bool _initialized = false;
+  
   /// 初始化日志服务
   /// CloudflareTestService 调用的接口
   Future<void> init({
@@ -23,6 +26,9 @@ class LogService {
     required bool enableFile,
     required bool enableConsole,
   }) async {
+    // 设置初始化标志
+    _initialized = true;
+    
     // 这里只使用 enableFile 参数，忽略 enableConsole（根据您的要求不输出到控制台）
     if (!enabled || !enableFile) return;
     
@@ -103,6 +109,15 @@ class LogService {
   /// 统一的日志记录方法
   Future<void> _log(String level, String message, String? tag) async {
     if (!enabled) return;
+    
+    // 自动初始化：如果未初始化且日志流为空，则自动初始化
+    if (!_initialized && _logSink == null) {
+      await init(
+        prefix: 'app',
+        enableFile: true,
+        enableConsole: false,
+      );
+    }
     
     final timestamp = DateTime.now().toIso8601String();
     final tagStr = tag != null ? '[$tag]' : '';
