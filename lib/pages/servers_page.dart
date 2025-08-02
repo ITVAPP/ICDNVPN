@@ -167,6 +167,8 @@ class _ServersPageState extends State<ServersPage> {
             tooltip: l10n.fromCloudflare,
             onPressed: () => _addCloudflareServer(context),
           ),
+          // 添加右边距
+          const SizedBox(width: 5),
         ],
       ),
       body: Consumer2<ServerProvider, ConnectionProvider>(
