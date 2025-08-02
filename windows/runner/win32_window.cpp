@@ -18,6 +18,16 @@ namespace {
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
 
+// 菜单样式常量（Windows 2000+）
+#ifndef MNS_FADE
+#define MNS_FADE 0x00200000
+#endif
+
+// 标准图标常量
+#ifndef OIC_ERROR
+#define OIC_ERROR 32513
+#endif
+
 // 托盘图标消息
 #define WM_TRAYICON (WM_USER + 1)
 
@@ -207,13 +217,13 @@ bool Win32Window::SendAppLinkToInstance(const std::wstring& title) {
         // 根据当前状态恢复窗口
         switch (place.showCmd) {
         case SW_SHOWMAXIMIZED:
-            ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+            ::ShowWindow(hwnd, SW_SHOWMAXIMIZED);
             break;
         case SW_SHOWMINIMIZED:
-            ShowWindow(hwnd, SW_RESTORE);
+            ::ShowWindow(hwnd, SW_RESTORE);
             break;
         default:
-            ShowWindow(hwnd, SW_NORMAL);
+            ::ShowWindow(hwnd, SW_NORMAL);
             break;
         }
 
@@ -350,7 +360,7 @@ void Win32Window::ApplyRoundedCorners(HWND hwnd, int width, int height) {
 }
 
 bool Win32Window::Show() {
-    return ShowWindow(window_handle_, SW_SHOWNORMAL);
+    return ::ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
 // 静态窗口过程
@@ -445,7 +455,7 @@ LRESULT Win32Window::MessageHandler(HWND hwnd,
             return 0;
             
         case WM_CLOSE:
-            ShowWindow(false);
+            this->ShowWindow(false);
             AddTrayIcon();
             return 0;
             
@@ -503,7 +513,7 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
 
     switch (lparam) {
         case WM_LBUTTONUP:
-            ShowWindow(true);
+            this->ShowWindow(true);
             ::SetForegroundWindow(window_handle_);
             break;
         case WM_RBUTTONUP: {
@@ -588,7 +598,7 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             DestroyMenu(menu);
 
             if (cmd == 1) {
-                ShowWindow(true);
+                this->ShowWindow(true);
                 ::SetForegroundWindow(window_handle_);
             } else if (cmd == 2) {
                 RemoveTrayIcon();
