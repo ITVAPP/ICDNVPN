@@ -177,15 +177,15 @@ class CloudflareTestService {
           scheme: 'http',
           host: ip,
           port: port,
-          path: '/',
+          path: '/cdn-cgi/trace',  // 修改：使用Cloudflare的trace端点而不是根路径
         );
         
         await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: $uri', tag: _logTag);
         
         final stopwatch = Stopwatch()..start();
         
-        // 使用HEAD请求减少数据传输
-        final request = await httpClient.headUrl(uri);
+        // 使用GET请求（修改：trace端点需要GET而不是HEAD）
+        final request = await httpClient.getUrl(uri);
         request.headers.set('Host', 'cloudflare.com');
         request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         request.headers.set('Accept', '*/*');
