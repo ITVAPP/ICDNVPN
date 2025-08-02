@@ -12,6 +12,10 @@ class CloudflareTestService {
   // 获取日志服务实例
   static LogService get _log => LogService.instance;
   
+  // 添加缺失的常量定义
+  static const int _defaultPort = 443; // HTTPS 标准端口
+  static const Duration _tcpTimeout = Duration(seconds: 1); // TCP连接超时时间
+  
   // Cloudflare 官方 IP 段（2025年最新版本）- 直接定义为静态常量
   static const List<String> _cloudflareIpRanges = [
     '173.245.48.0/20',
@@ -52,6 +56,9 @@ class CloudflareTestService {
     try {
       await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
       await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
+      
+      // 定义测试端口（使用HTTPS标准端口）
+      const int testPort = 443;
       
       // 显示使用的IP段
       await _log.debug('Cloudflare IP段列表:', tag: _logTag);
@@ -107,15 +114,16 @@ class CloudflareTestService {
       final validServers = <ServerModel>[];
       for (final entry in latencyMap.entries) {
         if (entry.value > 0 && entry.value <= maxLatency) {
+          // 修正：使用正确的变量名和方法名
           String detectedLocation = _detectLocationFromIp(entry.key);
           
           validServers.add(ServerModel(
             id: '${DateTime.now().millisecondsSinceEpoch}_${entry.key.replaceAll('.', '')}',
-            name: result.ip,
-            location: location == 'AUTO' ? _detectLocation(result.ip) : location,
-            ip: result.ip,
-            port: testPort,  // 使用配置的端口
-            ping: result.latency,
+            name: entry.key,  // 修正：使用 entry.key 作为名称
+            location: location == 'AUTO' ? detectedLocation : location,  // 修正：使用 detectedLocation
+            ip: entry.key,    // 修正：使用 entry.key
+            port: testPort,   // 使用配置的端口
+            ping: entry.value, // 修正：使用 entry.value
           ));
         }
       }
