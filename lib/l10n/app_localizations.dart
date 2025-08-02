@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
-// 本地化基础类
-abstract class AppLocalizations {
+// 本地化基类 - 使用Map存储翻译
+class AppLocalizations {
+  final Map<String, String> _translations;
+  
+  AppLocalizations(this._translations);
+  
   static AppLocalizations of(BuildContext context) {
     return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
   }
@@ -9,129 +13,134 @@ abstract class AppLocalizations {
   static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
   
   static const List<Locale> supportedLocales = [
+    Locale('zh', 'CN'),  // 中文作为第一个（默认）
     Locale('en', 'US'),
-    Locale('zh', 'CN'),
     Locale('zh', 'TW'),
     Locale('es', 'ES'),
     Locale('ru', 'RU'),
     Locale('ar', 'SA'),
   ];
-
+  
+  // 获取翻译，如果不存在则返回中文
+  String _get(String key) {
+    return _translations[key] ?? _zhCnTranslations[key] ?? key;
+  }
+  
   // 通用
-  String get appName;
-  String get home;
-  String get servers;
-  String get settings;
-  String get connect;
-  String get disconnect;
-  String get connected;
-  String get disconnected;
-  String get connecting;
-  String get disconnecting;
-  String get close; // 新增
+  String get appName => _get('appName');
+  String get home => _get('home');
+  String get servers => _get('servers');
+  String get settings => _get('settings');
+  String get connect => _get('connect');
+  String get disconnect => _get('disconnect');
+  String get connected => _get('connected');
+  String get disconnected => _get('disconnected');
+  String get connecting => _get('connecting');
+  String get disconnecting => _get('disconnecting');
+  String get close => _get('close');
   
   // 主页
-  String get clickToConnect;
-  String get clickToDisconnect;
-  String get currentServer;
-  String get selectServer;
-  String get upload;
-  String get download;
-  String get autoSelectNode;
-  String get speedTest;
-  String get refresh;
-  String get protected;
-  String get unprotected;
+  String get clickToConnect => _get('clickToConnect');
+  String get clickToDisconnect => _get('clickToDisconnect');
+  String get currentServer => _get('currentServer');
+  String get selectServer => _get('selectServer');
+  String get upload => _get('upload');
+  String get download => _get('download');
+  String get autoSelectNode => _get('autoSelectNode');
+  String get speedTest => _get('speedTest');
+  String get refresh => _get('refresh');
+  String get protected => _get('protected');
+  String get unprotected => _get('unprotected');
   
   // 服务器页面
-  String get serverList;
-  String get addServer;
-  String get deleteServer;
-  String get testLatency;
-  String get sortAscending;
-  String get sortDescending;
-  String get fromCloudflare;
-  String get resetServerList;
-  String get noServers;
-  String get confirmDelete;
-  String get confirmReset;
-  String get latency;
-  String get location;
-  String get cfNode;
+  String get serverList => _get('serverList');
+  String get addServer => _get('addServer');
+  String get deleteServer => _get('deleteServer');
+  String get testLatency => _get('testLatency');
+  String get sortAscending => _get('sortAscending');
+  String get sortDescending => _get('sortDescending');
+  String get fromCloudflare => _get('fromCloudflare');
+  String get resetServerList => _get('resetServerList');
+  String get noServers => _get('noServers');
+  String get confirmDelete => _get('confirmDelete');
+  String get confirmReset => _get('confirmReset');
+  String get latency => _get('latency');
+  String get location => _get('location');
+  String get cfNode => _get('cfNode');
   
   // 添加服务器
-  String get addFromCloudflare;
-  String get autoGetBestNodes;
-  String get manualAdd;
-  String get inputServerInfo;
-  String get scanQrCode;
-  String get importFromQrCode;
-  String get importFromClipboard;
-  String get pasteServerConfig;
-  String get diagnosticTool;
+  String get addFromCloudflare => _get('addFromCloudflare');
+  String get autoGetBestNodes => _get('autoGetBestNodes');
+  String get manualAdd => _get('manualAdd');
+  String get inputServerInfo => _get('inputServerInfo');
+  String get scanQrCode => _get('scanQrCode');
+  String get importFromQrCode => _get('importFromQrCode');
+  String get importFromClipboard => _get('importFromClipboard');
+  String get pasteServerConfig => _get('pasteServerConfig');
+  String get diagnosticTool => _get('diagnosticTool');
   
   // 设置页面
-  String get generalSettings;
-  String get networkSettings;
-  String get about;
-  String get autoStart;
-  String get autoStartDesc;
-  String get autoConnect;
-  String get autoConnectDesc;
-  String get tunMode;
-  String get tunModeDesc;
-  String get proxyMode;
-  String get globalProxy;
-  String get routeSettings;
-  String get configureRules;
-  String get currentVersion;
-  String get checkUpdate;
-  String get officialWebsite;
-  String get contactEmail;
-  String get privacyPolicy;
-  String get clearCache;
-  String get cacheCleared;
-  String get language;
-  String get theme;
-  String get systemTheme;
-  String get lightTheme;
-  String get darkTheme;
+  String get generalSettings => _get('generalSettings');
+  String get networkSettings => _get('networkSettings');
+  String get about => _get('about');
+  String get autoStart => _get('autoStart');
+  String get autoStartDesc => _get('autoStartDesc');
+  String get autoConnect => _get('autoConnect');
+  String get autoConnectDesc => _get('autoConnectDesc');
+  String get tunMode => _get('tunMode');
+  String get tunModeDesc => _get('tunModeDesc');
+  String get proxyMode => _get('proxyMode');
+  String get globalProxy => _get('globalProxy');
+  String get routeSettings => _get('routeSettings');
+  String get configureRules => _get('configureRules');
+  String get currentVersion => _get('currentVersion');
+  String get checkUpdate => _get('checkUpdate');
+  String get officialWebsite => _get('officialWebsite');
+  String get contactEmail => _get('contactEmail');
+  String get privacyPolicy => _get('privacyPolicy');
+  String get clearCache => _get('clearCache');
+  String get cacheCleared => _get('cacheCleared');
+  String get language => _get('language');
+  String get theme => _get('theme');
+  String get systemTheme => _get('systemTheme');
+  String get lightTheme => _get('lightTheme');
+  String get darkTheme => _get('darkTheme');
   
   // 消息
-  String get operationFailed;
-  String get testingLatency;
-  String get gettingNodes;
-  String get noAvailableServer;
-  String get alreadyLatestVersion;
-  String get serverAdded;
-  String get serverDeleted;
-  String get allServersDeleted;
+  String get operationFailed => _get('operationFailed');
+  String get testingLatency => _get('testingLatency');
+  String get gettingNodes => _get('gettingNodes');
+  String get noAvailableServer => _get('noAvailableServer');
+  String get alreadyLatestVersion => _get('alreadyLatestVersion');
+  String get serverAdded => _get('serverAdded');
+  String get serverDeleted => _get('serverDeleted');
+  String get allServersDeleted => _get('allServersDeleted');
   
   // Cloudflare测试
-  String get nodeCount;
-  String get maxLatency;
-  String get minSpeed;
-  String get testSamples;
-  String get startTest;
-  String get testing;
-  String get testCompleted;
-  String get testFailed;
-  String get preparing;
-  String get connectingNodes;
-  String get processingResults;
+  String get nodeCount => _get('nodeCount');
+  String get maxLatency => _get('maxLatency');
+  String get minSpeed => _get('minSpeed');
+  String get testSamples => _get('testSamples');
+  String get startTest => _get('startTest');
+  String get testing => _get('testing');
+  String get testCompleted => _get('testCompleted');
+  String get testFailed => _get('testFailed');
+  String get preparing => _get('preparing');
+  String get connectingNodes => _get('connectingNodes');
+  String get processingResults => _get('processingResults');
   
   // 诊断
-  String get runDiagnostics;
-  String get diagnosticResults;
-  String get fileCheck;
-  String get networkTest;
-  String get systemInfo;
+  String get runDiagnostics => _get('runDiagnostics');
+  String get diagnosticResults => _get('diagnosticResults');
+  String get fileCheck => _get('fileCheck');
+  String get networkTest => _get('networkTest');
+  String get systemInfo => _get('systemInfo');
   
   // 退出确认
-  String get confirmExit;
-  String get confirmExitDesc;
-  String get minimize;
-  String get exitApp;
+  String get confirmExit => _get('confirmExit');
+  String get confirmExitDesc => _get('confirmExitDesc');
+  String get minimize => _get('minimize');
+  String get exitApp => _get('exitApp');
 }
 
 // 本地化委托
@@ -146,250 +155,236 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
-    // 根据语言代码加载对应的本地化实现
+    Map<String, String> translations;
+    
+    // 根据语言代码选择翻译
     switch (locale.languageCode) {
       case 'zh':
         if (locale.countryCode == 'TW') {
-          return AppLocalizationsZhTw();
+          translations = _zhTwTranslations;
+        } else {
+          translations = _zhCnTranslations;
         }
-        return AppLocalizationsZhCn();
-      case 'es':
-        return AppLocalizationsEs();
-      case 'ru':
-        return AppLocalizationsRu();
-      case 'ar':
-        return AppLocalizationsAr();
+        break;
       case 'en':
+        translations = _enTranslations;
+        break;
+      case 'es':
+        translations = _esTranslations;
+        break;
+      case 'ru':
+        translations = _ruTranslations;
+        break;
+      case 'ar':
+        translations = _arTranslations;
+        break;
       default:
-        return AppLocalizationsEn();
+        translations = _zhCnTranslations; // 默认中文
     }
+    
+    return AppLocalizations(translations);
   }
 
   @override
   bool shouldReload(covariant LocalizationsDelegate<AppLocalizations> old) => false;
 }
 
-// 英语
-class AppLocalizationsEn extends AppLocalizations {
+// 简体中文翻译（完整版，作为默认回退）
+const Map<String, String> _zhCnTranslations = {
   // 通用
-  @override String get appName => 'CFVPN';
-  @override String get home => 'Home';
-  @override String get servers => 'Servers';
-  @override String get settings => 'Settings';
-  @override String get connect => 'Connect';
-  @override String get disconnect => 'Disconnect';
-  @override String get connected => 'Connected';
-  @override String get disconnected => 'Disconnected';
-  @override String get connecting => 'Connecting...';
-  @override String get disconnecting => 'Disconnecting...';
-  @override String get close => 'Close'; // 新增
-  // ... 其他翻译
-  
-  // 退出确认
-  @override String get confirmExit => 'Exit Confirmation';
-  @override String get confirmExitDesc => 'Choose an action:';
-  @override String get minimize => 'Minimize to Tray';
-  @override String get exitApp => 'Exit Application';
-}
-
-// 简体中文
-class AppLocalizationsZhCn extends AppLocalizations {
-  // 通用
-  @override String get appName => 'CFVPN';
-  @override String get home => '首页';
-  @override String get servers => '服务器';
-  @override String get settings => '设置';
-  @override String get connect => '连接';
-  @override String get disconnect => '断开';
-  @override String get connected => '已连接';
-  @override String get disconnected => '未连接';
-  @override String get connecting => '正在连接...';
-  @override String get disconnecting => '正在断开...';
-  @override String get close => '关闭'; // 新增
+  'appName': 'CFVPN',
+  'home': '首页',
+  'servers': '服务器',
+  'settings': '设置',
+  'connect': '连接',
+  'disconnect': '断开',
+  'connected': '已连接',
+  'disconnected': '未连接',
+  'connecting': '正在连接...',
+  'disconnecting': '正在断开...',
+  'close': '关闭',
   
   // 主页
-  @override String get clickToConnect => '点击连接';
-  @override String get clickToDisconnect => '点击断开';
-  @override String get currentServer => '当前服务器';
-  @override String get selectServer => '选择服务器';
-  @override String get upload => '上传';
-  @override String get download => '下载';
-  @override String get autoSelectNode => '优选节点';
-  @override String get speedTest => '测速';
-  @override String get refresh => '刷新';
-  @override String get protected => '已保护';
-  @override String get unprotected => '未保护';
+  'clickToConnect': '点击连接',
+  'clickToDisconnect': '点击断开',
+  'currentServer': '当前服务器',
+  'selectServer': '选择服务器',
+  'upload': '上传',
+  'download': '下载',
+  'autoSelectNode': '优选节点',
+  'speedTest': '测速',
+  'refresh': '刷新',
+  'protected': '已保护',
+  'unprotected': '未保护',
   
   // 服务器页面
-  @override String get serverList => '服务器列表';
-  @override String get addServer => '添加服务器';
-  @override String get deleteServer => '删除服务器';
-  @override String get testLatency => '测试延迟';
-  @override String get sortAscending => '延迟从低到高';
-  @override String get sortDescending => '延迟从高到低';
-  @override String get fromCloudflare => '从Cloudflare添加';
-  @override String get resetServerList => '重置服务器列表';
-  @override String get noServers => '暂无服务器';
-  @override String get confirmDelete => '确认删除';
-  @override String get confirmReset => '这将清空所有服务器并重新从Cloudflare获取，确定继续吗？';
-  @override String get latency => '延迟';
-  @override String get location => '位置';
-  @override String get cfNode => 'CF节点';
+  'serverList': '服务器列表',
+  'addServer': '添加服务器',
+  'deleteServer': '删除服务器',
+  'testLatency': '测试延迟',
+  'sortAscending': '延迟从低到高',
+  'sortDescending': '延迟从高到低',
+  'fromCloudflare': '从Cloudflare添加',
+  'resetServerList': '重置服务器列表',
+  'noServers': '暂无服务器',
+  'confirmDelete': '确认删除',
+  'confirmReset': '这将清空所有服务器并重新从Cloudflare获取，确定继续吗？',
+  'latency': '延迟',
+  'location': '位置',
+  'cfNode': 'CF节点',
   
   // 添加服务器
-  @override String get addFromCloudflare => '从 Cloudflare 添加';
-  @override String get autoGetBestNodes => '自动获取最优节点';
-  @override String get manualAdd => '手动添加';
-  @override String get inputServerInfo => '输入服务器信息';
-  @override String get scanQrCode => '扫描二维码';
-  @override String get importFromQrCode => '从二维码导入配置';
-  @override String get importFromClipboard => '从剪贴板导入';
-  @override String get pasteServerConfig => '粘贴服务器配置';
-  @override String get diagnosticTool => '诊断工具';
+  'addFromCloudflare': '从 Cloudflare 添加',
+  'autoGetBestNodes': '自动获取最优节点',
+  'manualAdd': '手动添加',
+  'inputServerInfo': '输入服务器信息',
+  'scanQrCode': '扫描二维码',
+  'importFromQrCode': '从二维码导入配置',
+  'importFromClipboard': '从剪贴板导入',
+  'pasteServerConfig': '粘贴服务器配置',
+  'diagnosticTool': '诊断工具',
   
   // 设置页面
-  @override String get generalSettings => '通用设置';
-  @override String get networkSettings => '网络设置';
-  @override String get about => '关于';
-  @override String get autoStart => '开机自启';
-  @override String get autoStartDesc => '系统启动时自动运行';
-  @override String get autoConnect => '自动连接';
-  @override String get autoConnectDesc => '启动应用时自动连接';
-  @override String get tunMode => 'TUN 模式';
-  @override String get tunModeDesc => '使用 TUN 虚拟网卡实现全局代理';
-  @override String get proxyMode => '代理模式';
-  @override String get globalProxy => '全局代理';
-  @override String get routeSettings => '路由设置';
-  @override String get configureRules => '配置分流规则';
-  @override String get currentVersion => '当前版本';
-  @override String get checkUpdate => '检查更新';
-  @override String get officialWebsite => '官方网站';
-  @override String get contactEmail => '联系邮箱';
-  @override String get privacyPolicy => '隐私政策';
-  @override String get clearCache => '清除缓存';
-  @override String get cacheCleared => '缓存已清除';
-  @override String get language => '语言';
-  @override String get theme => '主题';
-  @override String get systemTheme => '跟随系统';
-  @override String get lightTheme => '浅色';
-  @override String get darkTheme => '深色';
+  'generalSettings': '通用设置',
+  'networkSettings': '网络设置',
+  'about': '关于',
+  'autoStart': '开机自启',
+  'autoStartDesc': '系统启动时自动运行',
+  'autoConnect': '自动连接',
+  'autoConnectDesc': '启动应用时自动连接',
+  'tunMode': 'TUN 模式',
+  'tunModeDesc': '使用 TUN 虚拟网卡实现全局代理',
+  'proxyMode': '代理模式',
+  'globalProxy': '全局代理',
+  'routeSettings': '路由设置',
+  'configureRules': '配置分流规则',
+  'currentVersion': '当前版本',
+  'checkUpdate': '检查更新',
+  'officialWebsite': '官方网站',
+  'contactEmail': '联系邮箱',
+  'privacyPolicy': '隐私政策',
+  'clearCache': '清除缓存',
+  'cacheCleared': '缓存已清除',
+  'language': '语言',
+  'theme': '主题',
+  'systemTheme': '跟随系统',
+  'lightTheme': '浅色',
+  'darkTheme': '深色',
   
   // 消息
-  @override String get operationFailed => '操作失败';
-  @override String get testingLatency => '正在测试延迟...';
-  @override String get gettingNodes => '正在获取节点...';
-  @override String get noAvailableServer => '没有可用的服务器';
-  @override String get alreadyLatestVersion => '已是最新版本';
-  @override String get serverAdded => '服务器已添加';
-  @override String get serverDeleted => '服务器已删除';
-  @override String get allServersDeleted => '所有服务器已删除';
+  'operationFailed': '操作失败',
+  'testingLatency': '正在测试延迟...',
+  'gettingNodes': '正在获取节点...',
+  'noAvailableServer': '没有可用的服务器',
+  'alreadyLatestVersion': '已是最新版本',
+  'serverAdded': '服务器已添加',
+  'serverDeleted': '服务器已删除',
+  'allServersDeleted': '所有服务器已删除',
   
   // Cloudflare测试
-  @override String get nodeCount => '添加数量';
-  @override String get maxLatency => '延迟上限';
-  @override String get minSpeed => '最低网速';
-  @override String get testSamples => '测试样本数';
-  @override String get startTest => '开始测试';
-  @override String get testing => '测试中';
-  @override String get testCompleted => '测试完成';
-  @override String get testFailed => '测试失败';
-  @override String get preparing => '正在准备...';
-  @override String get connectingNodes => '正在连接节点...';
-  @override String get processingResults => '正在处理结果...';
+  'nodeCount': '添加数量',
+  'maxLatency': '延迟上限',
+  'minSpeed': '最低网速',
+  'testSamples': '测试样本数',
+  'startTest': '开始测试',
+  'testing': '测试中',
+  'testCompleted': '测试完成',
+  'testFailed': '测试失败',
+  'preparing': '正在准备...',
+  'connectingNodes': '正在连接节点...',
+  'processingResults': '正在处理结果...',
   
   // 诊断
-  @override String get runDiagnostics => '运行诊断';
-  @override String get diagnosticResults => '诊断结果';
-  @override String get fileCheck => '文件检查';
-  @override String get networkTest => '网络测试';
-  @override String get systemInfo => '系统信息';
+  'runDiagnostics': '运行诊断',
+  'diagnosticResults': '诊断结果',
+  'fileCheck': '文件检查',
+  'networkTest': '网络测试',
+  'systemInfo': '系统信息',
   
   // 退出确认
-  @override String get confirmExit => '退出确认';
-  @override String get confirmExitDesc => '请选择操作：';
-  @override String get minimize => '最小化到托盘';
-  @override String get exitApp => '退出应用';
-}
+  'confirmExit': '退出确认',
+  'confirmExitDesc': '请选择操作：',
+  'minimize': '最小化到托盘',
+  'exitApp': '退出应用',
+};
 
-// 繁体中文
-class AppLocalizationsZhTw extends AppLocalizations {
-  // 通用
-  @override String get appName => 'CFVPN';
-  @override String get home => '首頁';
-  @override String get servers => '伺服器';
-  @override String get settings => '設定';
-  @override String get connect => '連接';
-  @override String get disconnect => '斷開';
-  @override String get connected => '已連接';
-  @override String get disconnected => '未連接';
-  @override String get connecting => '正在連接...';
-  @override String get disconnecting => '正在斷開...';
-  @override String get close => '關閉'; // 新增
-  // ... 其他翻译
-  
-  // 退出确认
-  @override String get confirmExit => '退出確認';
-  @override String get confirmExitDesc => '請選擇操作：';
-  @override String get minimize => '最小化到系統匣';
-  @override String get exitApp => '退出應用';
-}
+// 英语翻译（只包含已翻译的部分）
+const Map<String, String> _enTranslations = {
+  'appName': 'CFVPN',
+  'home': 'Home',
+  'servers': 'Servers',
+  'settings': 'Settings',
+  'connect': 'Connect',
+  'disconnect': 'Disconnect',
+  'connected': 'Connected',
+  'disconnected': 'Disconnected',
+  'connecting': 'Connecting...',
+  'disconnecting': 'Disconnecting...',
+  'close': 'Close',
+  'confirmExit': 'Exit Confirmation',
+  'confirmExitDesc': 'Choose an action:',
+  'minimize': 'Minimize to Tray',
+  'exitApp': 'Exit Application',
+  // 未翻译的会自动使用中文
+};
 
-// 西班牙语
-class AppLocalizationsEs extends AppLocalizationsEn {
-  @override String get appName => 'CFVPN';
-  @override String get home => 'Inicio';
-  @override String get servers => 'Servidores';
-  @override String get settings => 'Ajustes';
-  @override String get connect => 'Conectar';
-  @override String get disconnect => 'Desconectar';
-  @override String get connected => 'Conectado';
-  @override String get disconnected => 'Desconectado';
-  @override String get close => 'Cerrar'; // 新增
-  // ... 其他翻译
-  
-  // 退出确认
-  @override String get confirmExit => 'Confirmar salida';
-  @override String get confirmExitDesc => 'Elige una acción:';
-  @override String get minimize => 'Minimizar a la bandeja';
-  @override String get exitApp => 'Salir de la aplicación';
-}
+// 繁体中文（只包含与简体不同的部分）
+const Map<String, String> _zhTwTranslations = {
+  'home': '首頁',
+  'servers': '伺服器',
+  'settings': '設定',
+  'close': '關閉',
+  'confirmExit': '退出確認',
+  'confirmExitDesc': '請選擇操作：',
+  'minimize': '最小化到系統匣',
+  'exitApp': '退出應用',
+  // 其他使用简体中文
+};
 
-// 俄语
-class AppLocalizationsRu extends AppLocalizationsEn {
-  @override String get appName => 'CFVPN';
-  @override String get home => 'Главная';
-  @override String get servers => 'Серверы';
-  @override String get settings => 'Настройки';
-  @override String get connect => 'Подключить';
-  @override String get disconnect => 'Отключить';
-  @override String get connected => 'Подключено';
-  @override String get disconnected => 'Отключено';
-  @override String get close => 'Закрыть'; // 新增
-  // ... 其他翻译
-  
-  // 退出确认
-  @override String get confirmExit => 'Подтверждение выхода';
-  @override String get confirmExitDesc => 'Выберите действие:';
-  @override String get minimize => 'Свернуть в трей';
-  @override String get exitApp => 'Выйти из приложения';
-}
+// 西班牙语（只包含已翻译的部分）
+const Map<String, String> _esTranslations = {
+  'home': 'Inicio',
+  'servers': 'Servidores',
+  'settings': 'Ajustes',
+  'connect': 'Conectar',
+  'disconnect': 'Desconectar',
+  'connected': 'Conectado',
+  'disconnected': 'Desconectado',
+  'close': 'Cerrar',
+  'confirmExit': 'Confirmar salida',
+  'confirmExitDesc': 'Elige una acción:',
+  'minimize': 'Minimizar a la bandeja',
+  'exitApp': 'Salir de la aplicación',
+};
 
-// 阿拉伯语
-class AppLocalizationsAr extends AppLocalizationsEn {
-  @override String get appName => 'CFVPN';
-  @override String get home => 'الرئيسية';
-  @override String get servers => 'الخوادم';
-  @override String get settings => 'الإعدادات';
-  @override String get connect => 'اتصال';
-  @override String get disconnect => 'قطع الاتصال';
-  @override String get connected => 'متصل';
-  @override String get disconnected => 'غير متصل';
-  @override String get close => 'إغلاق'; // 新增
-  // ... 其他翻译
-  
-  // 退出确认
-  @override String get confirmExit => 'تأكيد الخروج';
-  @override String get confirmExitDesc => 'اختر إجراء:';
-  @override String get minimize => 'تصغير إلى علبة النظام';
-  @override String get exitApp => 'الخروج من التطبيق';
-}
+// 俄语（只包含已翻译的部分）
+const Map<String, String> _ruTranslations = {
+  'home': 'Главная',
+  'servers': 'Серверы',
+  'settings': 'Настройки',
+  'connect': 'Подключить',
+  'disconnect': 'Отключить',
+  'connected': 'Подключено',
+  'disconnected': 'Отключено',
+  'close': 'Закрыть',
+  'confirmExit': 'Подтверждение выхода',
+  'confirmExitDesc': 'Выберите действие:',
+  'minimize': 'Свернуть в трей',
+  'exitApp': 'Выйти из приложения',
+};
+
+// 阿拉伯语（只包含已翻译的部分）
+const Map<String, String> _arTranslations = {
+  'home': 'الرئيسية',
+  'servers': 'الخوادم',
+  'settings': 'الإعدادات',
+  'connect': 'اتصال',
+  'disconnect': 'قطع الاتصال',
+  'connected': 'متصل',
+  'disconnected': 'غير متصل',
+  'close': 'إغلاق',
+  'confirmExit': 'تأكيد الخروج',
+  'confirmExitDesc': 'اختر إجراء:',
+  'minimize': 'تصغير إلى علبة النظام',
+  'exitApp': 'الخروج من التطبيق',
+};
