@@ -5,6 +5,7 @@ class ServerModel {
   final String ip;
   final int port;
   int ping;
+  double downloadSpeed; // 添加下载速度字段 (MB/s)
   bool isSelected;
 
   ServerModel({
@@ -14,6 +15,7 @@ class ServerModel {
     required this.ip,
     required this.port,
     this.ping = 0,
+    this.downloadSpeed = 0.0,
     this.isSelected = false,
   });
 
@@ -25,6 +27,7 @@ class ServerModel {
       'ip': ip,
       'port': port,
       'ping': ping,
+      'downloadSpeed': downloadSpeed,
       'isSelected': isSelected,
     };
   }
@@ -36,8 +39,9 @@ class ServerModel {
       location: json['location'],
       ip: json['ip'],
       port: json['port'],
-      ping: json['ping'],
-      isSelected: json['isSelected'],
+      ping: json['ping'] ?? 0,
+      downloadSpeed: (json['downloadSpeed'] ?? 0.0).toDouble(),
+      isSelected: json['isSelected'] ?? false,
     );
   }
-} 
+}

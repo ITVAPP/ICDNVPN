@@ -60,10 +60,8 @@ class AppLocalizations {
   String get sortAscending => _get('sortAscending');
   String get sortDescending => _get('sortDescending');
   String get fromCloudflare => _get('fromCloudflare');
-  String get resetServerList => _get('resetServerList');
   String get noServers => _get('noServers');
   String get confirmDelete => _get('confirmDelete');
-  String get confirmReset => _get('confirmReset');
   String get latency => _get('latency');
   String get location => _get('location');
   String get cfNode => _get('cfNode');
@@ -117,10 +115,6 @@ class AppLocalizations {
   String get allServersDeleted => _get('allServersDeleted');
   
   // Cloudflare测试
-  String get nodeCount => _get('nodeCount');
-  String get maxLatency => _get('maxLatency');
-  String get minSpeed => _get('minSpeed');
-  String get testSamples => _get('testSamples');
   String get startTest => _get('startTest');
   String get testing => _get('testing');
   String get testCompleted => _get('testCompleted');
@@ -128,6 +122,26 @@ class AppLocalizations {
   String get preparing => _get('preparing');
   String get connectingNodes => _get('connectingNodes');
   String get processingResults => _get('processingResults');
+  
+  // 新增的进度相关文本
+  String get preparingTestEnvironment => _get('preparingTestEnvironment');
+  String get initializing => _get('initializing');
+  String get generatingTestIPs => _get('generatingTestIPs');
+  String get samplingFromIPRanges => _get('samplingFromIPRanges');
+  String get testingDelay => _get('testingDelay');
+  String get testingDownloadSpeed => _get('testingDownloadSpeed');
+  String get startingSpeedTest => _get('startingSpeedTest');
+  String get foundQualityNodes => _get('foundQualityNodes');
+  
+  // 新增的测试相关文本（本次添加）
+  String get noQualifiedNodes => _get('noQualifiedNodes');
+  String get checkNetworkOrRequirements => _get('checkNetworkOrRequirements');
+  String get noServersMetSpeedRequirement => _get('noServersMetSpeedRequirement');
+  String get lowerSpeedRequirement => _get('lowerSpeedRequirement');
+  String get testingNodeLatency => _get('testingNodeLatency');
+  String get nodeProgress => _get('nodeProgress');
+  String get ipRanges => _get('ipRanges');
+  String get nodeSpeedTest => _get('nodeSpeedTest');
   
   // 诊断
   String get runDiagnostics => _get('runDiagnostics');
@@ -141,6 +155,17 @@ class AppLocalizations {
   String get confirmExitDesc => _get('confirmExitDesc');
   String get minimize => _get('minimize');
   String get exitApp => _get('exitApp');
+  
+  // 带参数的文本格式化方法
+  String samplingFromRanges(int count) {
+    final template = _get('samplingFromIPRanges');
+    return template.replaceAll('%s', count.toString());
+  }
+  
+  String foundNodes(int count) {
+    final template = _get('foundQualityNodes');
+    return template.replaceAll('%s', count.toString());
+  }
 }
 
 // 本地化委托
@@ -225,10 +250,8 @@ const Map<String, String> _zhCnTranslations = {
   'sortAscending': '延迟从低到高',
   'sortDescending': '延迟从高到低',
   'fromCloudflare': '从Cloudflare添加',
-  'resetServerList': '重置服务器列表',
   'noServers': '暂无服务器',
   'confirmDelete': '确认删除',
-  'confirmReset': '这将清空所有服务器并重新从Cloudflare获取，确定继续吗？',
   'latency': '延迟',
   'location': '位置',
   'cfNode': 'CF节点',
@@ -282,10 +305,6 @@ const Map<String, String> _zhCnTranslations = {
   'allServersDeleted': '所有服务器已删除',
   
   // Cloudflare测试
-  'nodeCount': '添加数量',
-  'maxLatency': '延迟上限',
-  'minSpeed': '最低网速',
-  'testSamples': '测试样本数',
   'startTest': '开始测试',
   'testing': '测试中',
   'testCompleted': '测试完成',
@@ -293,6 +312,26 @@ const Map<String, String> _zhCnTranslations = {
   'preparing': '正在准备...',
   'connectingNodes': '正在连接节点...',
   'processingResults': '正在处理结果...',
+  
+  // 新增的进度相关文本
+  'preparingTestEnvironment': '准备测试环境',
+  'initializing': '正在初始化',
+  'generatingTestIPs': '生成测试IP',
+  'samplingFromIPRanges': '从 %s 个IP段采样',
+  'testingDelay': '测试延迟',
+  'testingDownloadSpeed': '测试下载速度',
+  'startingSpeedTest': '开始测速',
+  'foundQualityNodes': '找到 %s 个优质节点',
+  
+  // 新增的测试相关文本（本次添加）
+  'noQualifiedNodes': '未找到符合条件的节点',
+  'checkNetworkOrRequirements': '请检查网络连接或降低筛选要求',
+  'noServersMetSpeedRequirement': '没有服务器满足下载速度要求',
+  'lowerSpeedRequirement': '请降低速度要求或检查网络',
+  'testingNodeLatency': '测试节点延迟',
+  'nodeProgress': '%s/%s',
+  'ipRanges': '%s 个IP段',
+  'nodeSpeedTest': '节点速度测试',
   
   // 诊断
   'runDiagnostics': '运行诊断',
@@ -308,83 +347,28 @@ const Map<String, String> _zhCnTranslations = {
   'exitApp': '退出应用',
 };
 
-// 英语翻译（只包含已翻译的部分）
+// 英语翻译（仅先占位，以后再翻译）
 const Map<String, String> _enTranslations = {
   'appName': 'CFVPN',
   'home': 'Home',
-  'servers': 'Servers',
-  'settings': 'Settings',
-  'connect': 'Connect',
-  'disconnect': 'Disconnect',
-  'connected': 'Connected',
-  'disconnected': 'Disconnected',
-  'connecting': 'Connecting...',
-  'disconnecting': 'Disconnecting...',
-  'close': 'Close',
-  'confirmExit': 'Exit Confirmation',
-  'confirmExitDesc': 'Choose an action:',
-  'minimize': 'Minimize to Tray',
-  'exitApp': 'Exit Application',
-  // 未翻译的会自动使用中文
 };
 
-// 繁体中文（只包含与简体不同的部分）
+// 繁体中文（仅先占位，以后再翻译）
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
-  'servers': '伺服器',
-  'settings': '設定',
-  'close': '關閉',
-  'confirmExit': '退出確認',
-  'confirmExitDesc': '請選擇操作：',
-  'minimize': '最小化到系統匣',
-  'exitApp': '退出應用',
-  // 其他使用简体中文
 };
 
-// 西班牙语（只包含已翻译的部分）
+// 西班牙语（仅先占位，以后再翻译）
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
-  'servers': 'Servidores',
-  'settings': 'Ajustes',
-  'connect': 'Conectar',
-  'disconnect': 'Desconectar',
-  'connected': 'Conectado',
-  'disconnected': 'Desconectado',
-  'close': 'Cerrar',
-  'confirmExit': 'Confirmar salida',
-  'confirmExitDesc': 'Elige una acción:',
-  'minimize': 'Minimizar a la bandeja',
-  'exitApp': 'Salir de la aplicación',
 };
 
-// 俄语（只包含已翻译的部分）
+// 俄语（仅先占位，以后再翻译）
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
-  'servers': 'Серверы',
-  'settings': 'Настройки',
-  'connect': 'Подключить',
-  'disconnect': 'Отключить',
-  'connected': 'Подключено',
-  'disconnected': 'Отключено',
-  'close': 'Закрыть',
-  'confirmExit': 'Подтверждение выхода',
-  'confirmExitDesc': 'Выберите действие:',
-  'minimize': 'Свернуть в трей',
-  'exitApp': 'Выйти из приложения',
 };
 
-// 阿拉伯语（只包含已翻译的部分）
+// 阿拉伯语（仅先占位，以后再翻译）
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
-  'servers': 'الخوادم',
-  'settings': 'الإعدادات',
-  'connect': 'اتصال',
-  'disconnect': 'قطع الاتصال',
-  'connected': 'متصل',
-  'disconnected': 'غير متصل',
-  'close': 'إغلاق',
-  'confirmExit': 'تأكيد الخروج',
-  'confirmExitDesc': 'اختر إجراء:',
-  'minimize': 'تصغير إلى علبة النظام',
-  'exitApp': 'الخروج من التطبيق',
 };

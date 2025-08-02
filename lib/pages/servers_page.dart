@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/cloudflare_test_service.dart';
 import '../models/server_model.dart';
-import '../providers/connection_provider.dart';
-import '../providers/server_provider.dart';
-import '../providers/theme_provider.dart';
-import '../widgets/cloudflare_test_dialog.dart';
+import '../providers/app_provider.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/location_utils.dart';
 import '../utils/ui_utils.dart';
 
 class ServersPage extends StatefulWidget {
@@ -67,6 +63,11 @@ class _ServersPageState extends State<ServersPage> {
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
             Text('${l10n.testing} ${serverProvider.servers.length} ${l10n.servers.toLowerCase()}...'),
+            const SizedBox(height: 8),
+            const Text(
+              'HTTPing 80',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -76,15 +77,23 @@ class _ServersPageState extends State<ServersPage> {
       // 收集所有服务器的IP地址
       final ips = serverProvider.servers.map((server) => server.ip).toList();
 
-      // 使用 CloudflareTestService 的 testLatency 方法
-      final latencyMap = await CloudflareTestService.testLatency(ips);
+      // 使用HTTPing测试，端口80
+      final results = await CloudflareTestService.testLatencyUnified(
+        ips: ips,
+        port: 80,  // 使用80端口
+        useHttping: true,  // 使用HTTPing
+      );
 
       // 更新服务器延迟
       int updatedCount = 0;
-      for (final server in serverProvider.servers) {
-        final latency = latencyMap[server.ip];
-        if (latency != null) {
-          await serverProvider.updatePing(server.id, latency);
+      for (final result in results) {
+        final ip = result['ip'] as String;
+        final latency = result['latency'] as int;
+        
+        // 查找对应的服务器并更新延迟
+        final serverIndex = serverProvider.servers.indexWhere((s) => s.ip == ip);
+        if (serverIndex != -1) {
+          await serverProvider.updatePing(serverProvider.servers[serverIndex].id, latency);
           updatedCount++;
         }
       }
@@ -157,51 +166,6 @@ class _ServersPageState extends State<ServersPage> {
             icon: const Icon(Icons.cloud),
             tooltip: l10n.fromCloudflare,
             onPressed: () => _addCloudflareServer(context),
-          ),
-          // 更多选项
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'reset') {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(l10n.resetServerList),
-                    content: Text(l10n.confirmReset),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: Text(l10n.disconnect),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: TextButton.styleFrom(foregroundColor: Colors.red),
-                        child: Text(l10n.confirmDelete),
-                      ),
-                    ],
-                  ),
-                ) ?? false;
-
-                if (confirm) {
-                  await context.read<ServerProvider>().resetServers();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(l10n.allServersDeleted)),
-                  );
-                }
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'reset',
-                child: Row(
-                  children: [
-                    const Icon(Icons.refresh, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Text(l10n.resetServerList),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -389,7 +353,7 @@ class _ServerListItemState extends State<ServerListItem>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final locationInfo = LocationUtils.getLocationInfo(widget.server.location);
+    final locationInfo = UIUtils.getLocationInfo(widget.server.location);
     
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -453,56 +417,39 @@ class _ServerListItemState extends State<ServerListItem>
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    // 服务器图标
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: widget.isConnected
-                            ? [Colors.green[400]!, Colors.green[600]!]
-                            : widget.isSelected
-                              ? [theme.primaryColor.withOpacity(0.8), theme.primaryColor]
-                              : [Colors.grey[400]!, Colors.grey[600]!],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                    // 服务器图标 - 直接使用圆形国旗设计
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        UIUtils.buildCountryFlag(
+                          widget.server.location,
+                          size: 56, // 直接使用完整尺寸
                         ),
-                        borderRadius: BorderRadius.circular(12), // 矩形圆角
-                        boxShadow: [
-                          if (widget.isConnected)
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                        ],
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          UIUtils.buildCountryFlag(
-                            widget.server.location,
-                            size: 48, // 调整尺寸以适应矩形容器
-                          ),
-                          if (widget.isConnected)
-                            Positioned(
-                              right: 4,
-                              top: 4,
-                              child: Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 2,
-                                  ),
+                        if (widget.isConnected)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.green.withOpacity(0.5),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                     const SizedBox(width: 16),
                     

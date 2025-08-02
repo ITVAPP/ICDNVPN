@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/connection_provider.dart';
-import '../providers/server_provider.dart';
-import '../providers/theme_provider.dart';
+import '../providers/app_provider.dart';
 import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
 import '../services/v2ray_service.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/location_utils.dart';
 import '../utils/ui_utils.dart';
 import 'dart:math' as math;
 import 'dart:async';
@@ -408,7 +405,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildServerInfoCard(ServerModel server, bool isConnected, AppLocalizations l10n) {
     final theme = Theme.of(context);
-    final locationInfo = LocationUtils.getLocationInfo(server.location);
+    final locationInfo = UIUtils.getLocationInfo(server.location);
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -431,17 +428,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         children: [
           Row(
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: theme.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Center(
-                  child: UIUtils.buildCountryFlag(server.location, size: 40),
-                ),
-              ),
+              // 直接使用圆形国旗设计
+              UIUtils.buildCountryFlag(server.location, size: 50),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
@@ -699,7 +687,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 }
 
-// 速度测试对话框
+// 速度测试对话框 - 修改为使用HTTPing
 class _SpeedTestDialog extends StatefulWidget {
   final ServerModel? currentServer;
   
@@ -735,20 +723,31 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
       // 如果有当前服务器，优先测试当前服务器
       final testServer = widget.currentServer ?? servers.first;
       
-      // 使用统一的testLatency方法测试服务器
-      final latencyMap = await CloudflareTestService.testLatency([testServer.ip]);
-      final latency = latencyMap[testServer.ip] ?? 999;
+      // 使用HTTPing测试，端口80
+      final results = await CloudflareTestService.testLatencyUnified(
+        ips: [testServer.ip],
+        port: 80,  // 使用80端口
+        useHttping: true,  // 使用HTTPing
+        singleTest: true,
+      );
       
-      if (mounted) {
-        setState(() {
-          _testResults = {
-            'success': true,
-            'latency': latency,
-            'serverName': testServer.name,
-            'serverLocation': testServer.location,
-          };
-          _isTesting = false;
-        });
+      if (results.isNotEmpty) {
+        final result = results.first;
+        final latency = result['latency'] ?? 999;
+        
+        if (mounted) {
+          setState(() {
+            _testResults = {
+              'success': true,
+              'latency': latency,
+              'serverName': testServer.name,
+              'serverLocation': testServer.location,
+            };
+            _isTesting = false;
+          });
+        }
+      } else {
+        throw l10n.testFailed;
       }
     } catch (e) {
       if (mounted) {
@@ -786,7 +785,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                 Text(l10n.testingLatency),
                 const SizedBox(height: 8),
                 const Text(
-                  '',
+                  'HTTPing 80',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -810,7 +809,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       ),
                     ),
                     Text(
-                      LocationUtils.getLocationInfo(_testResults!['serverLocation'] ?? '')['country'] ?? 
+                      UIUtils.getLocationInfo(_testResults!['serverLocation'] ?? '')['country'] ?? 
                       _testResults!['serverLocation'] ?? '',
                       style: TextStyle(
                         fontSize: 14,

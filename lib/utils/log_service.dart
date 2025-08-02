@@ -60,23 +60,36 @@ class LogService {
       _logSink = _logFile!.openWrite(mode: FileMode.append);
       
       // 写入分隔符，标记新的日志会话
-      await _writeLog('');
-      await _writeLog('=' * 50);
-      await _writeLog('=== 新日志会话开始 ===');
-      await _writeLog('时间: ${date.toIso8601String()}');
-      await _writeLog('=' * 50);
+      _writeLog('');
+      _writeLog('=' * 50);
+      _writeLog('=== 新日志会话开始 ===');
+      _writeLog('时间: ${date.toIso8601String()}');
+      _writeLog('=' * 50);
+      
+      // 初始化时 flush 一次
+      await flush();
       
     } catch (e) {
       enabled = false;
     }
   }
   
-  /// 写入日志到文件
-  Future<void> _writeLog(String message) async {
+  /// 写入日志到文件（不再自动 flush）
+  void _writeLog(String message) {
     if (!enabled || _logSink == null) return;
     
     try {
       _logSink!.writeln(message);
+    } catch (e) {
+      // 静默处理
+    }
+  }
+  
+  /// 手动刷新缓冲区
+  Future<void> flush() async {
+    if (!enabled || _logSink == null) return;
+    
+    try {
       await _logSink!.flush();
     } catch (e) {
       // 静默处理
@@ -85,45 +98,57 @@ class LogService {
   
   /// CloudflareTestService 使用的日志方法
   Future<void> info(String message, {String? tag}) async {
-    await _log('INFO', message, tag);
+    _log('INFO', message, tag);
   }
   
   Future<void> debug(String message, {String? tag}) async {
-    await _log('DEBUG', message, tag);
+    _log('DEBUG', message, tag);
   }
   
   Future<void> warn(String message, {String? tag}) async {
-    await _log('WARN', message, tag);
+    _log('WARN', message, tag);
   }
   
   Future<void> error(String message, {String? tag, Object? error, StackTrace? stackTrace}) async {
-    await _log('ERROR', message, tag);
+    _log('ERROR', message, tag);
     if (error != null) {
-      await _log('ERROR', '错误详情: $error', tag);
+      _log('ERROR', '错误详情: $error', tag);
     }
     if (stackTrace != null) {
-      await _log('ERROR', '堆栈跟踪:\n$stackTrace', tag);
+      _log('ERROR', '堆栈跟踪:\n$stackTrace', tag);
     }
+    
+    // 错误日志立即 flush
+    await flush();
   }
   
   /// 统一的日志记录方法
-  Future<void> _log(String level, String message, String? tag) async {
+  void _log(String level, String message, String? tag) {
     if (!enabled) return;
     
     // 自动初始化：如果未初始化且日志流为空，则自动初始化
     if (!_initialized && _logSink == null) {
-      await init(
+      init(
         prefix: 'app',
         enableFile: true,
         enableConsole: false,
-      );
+      ).then((_) {
+        // 初始化完成后写入当前日志
+        _writeLogMessage(level, message, tag);
+      });
+      return;
     }
     
+    _writeLogMessage(level, message, tag);
+  }
+  
+  /// 写入格式化的日志消息
+  void _writeLogMessage(String level, String message, String? tag) {
     final timestamp = DateTime.now().toIso8601String();
     final tagStr = tag != null ? '[$tag]' : '';
     final logMessage = '[$timestamp] [$level] $tagStr $message';
     
-    await _writeLog(logMessage);
+    _writeLog(logMessage);
   }
   
   /// 获取日志目录路径
@@ -162,6 +187,7 @@ class LogService {
   /// 关闭日志服务
   Future<void> close() async {
     try {
+      await flush(); // 关闭前确保所有日志都写入
       await _logSink?.close();
       _logSink = null;
       _logFile = null;

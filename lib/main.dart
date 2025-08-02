@@ -1,22 +1,54 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'pages/home_page.dart';
 import 'pages/servers_page.dart';
 import 'pages/settings_page.dart';
-import 'providers/connection_provider.dart';
-import 'providers/server_provider.dart';
-import 'providers/theme_provider.dart';
-import 'providers/locale_provider.dart';
-import 'widgets/cloudflare_test_dialog.dart';
+import 'providers/app_provider.dart';
+import 'services/cloudflare_test_service.dart'; // CloudflareTestDialog 现在在这里
 import 'utils/diagnostic_tool.dart';
 import 'l10n/app_localizations.dart';
 import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'services/v2ray_service.dart';
 import 'services/proxy_service.dart';
+
+// 自定义滚动行为类 - 用于控制滚动条在桌面平台的显示
+class CustomScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+  };
+
+  @override
+  Widget buildScrollbar(BuildContext context, Widget child, ScrollableDetails details) {
+    // 根据平台判断
+    switch (getPlatform(context)) {
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.macOS:
+        // 桌面平台始终显示滚动条
+        return Scrollbar(
+          controller: details.controller,
+          thumbVisibility: true, // 始终显示滚动条
+          child: child,
+        );
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.fuchsia:
+        // 移动平台保持默认行为
+        return child;
+    }
+  }
+  
+  TargetPlatform getPlatform(BuildContext context) {
+    return Theme.of(context).platform;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +107,7 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: 'CFVPN',
             debugShowCheckedModeBanner: false,
+            scrollBehavior: CustomScrollBehavior(), // 使用自定义滚动行为
             themeMode: themeProvider.themeMode,
             theme: _buildLightTheme(),
             darkTheme: _buildDarkTheme(),

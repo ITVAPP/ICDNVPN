@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../providers/connection_provider.dart';
-import '../providers/theme_provider.dart';
-import '../providers/locale_provider.dart';
-import '../providers/server_provider.dart';
+import '../providers/app_provider.dart';
 import '../services/autostart_service.dart';
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -200,8 +197,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     
                     // 重置各个Provider的状态
                     if (mounted) {
-                      // 重置服务器列表
-                      context.read<ServerProvider>().resetServers();
+                      // 重新获取服务器列表
+                      context.read<ServerProvider>().refreshFromCloudflare();
                       // 重置连接状态
                       context.read<ConnectionProvider>().setCurrentServer(null);
                       // 重置主题
