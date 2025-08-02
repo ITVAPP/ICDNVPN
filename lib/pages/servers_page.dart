@@ -395,26 +395,34 @@ class _ServerListItemState extends State<ServerListItem>
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: widget.isSelected
-                ? theme.primaryColor.withOpacity(0.15)
+                ? (theme.brightness == Brightness.dark 
+                    ? theme.colorScheme.primary.withOpacity(0.1)  // 深色主题使用更浅的透明度
+                    : theme.primaryColor.withOpacity(0.15))       // 浅色主题保持原样
                 : theme.cardColor,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: widget.isSelected
-                  ? theme.primaryColor.withOpacity(0.5)
+                  ? (theme.brightness == Brightness.dark 
+                      ? theme.colorScheme.primary.withOpacity(0.5)  // 深色主题使用主题色
+                      : theme.primaryColor.withOpacity(0.5))        // 浅色主题使用主色
                   : Colors.transparent,
                 width: 2,
               ),
               boxShadow: [
                 BoxShadow(
                   color: widget.isSelected
-                    ? theme.primaryColor.withOpacity(0.2)
+                    ? (theme.brightness == Brightness.dark 
+                        ? theme.colorScheme.primary.withOpacity(0.2)  // 深色主题使用主题色
+                        : theme.primaryColor.withOpacity(0.2))        // 浅色主题使用主色
                     : Colors.black.withOpacity(0.05),
                   blurRadius: widget.isSelected ? 20 : 10,
                   offset: const Offset(0, 4),
                 ),
                 if (_isHovering)
                   BoxShadow(
-                    color: theme.primaryColor.withOpacity(0.1),
+                    color: theme.brightness == Brightness.dark 
+                      ? theme.colorScheme.primary.withOpacity(0.1)  // 深色主题使用主题色
+                      : theme.primaryColor.withOpacity(0.1),        // 浅色主题使用主色
                     blurRadius: 20,
                     spreadRadius: -5,
                   ),
@@ -494,7 +502,9 @@ class _ServerListItemState extends State<ServerListItem>
                                       : FontWeight.w600,
                                     // 修复：确保选中时文字颜色在深色主题下可见
                                     color: widget.isSelected
-                                      ? theme.primaryColor
+                                      ? (theme.brightness == Brightness.dark 
+                                          ? theme.colorScheme.primary  // 深色主题使用主题色
+                                          : theme.primaryColor)        // 浅色主题使用主色
                                       : theme.textTheme.bodyLarge?.color,
                                   ),
                                 ),
@@ -506,7 +516,9 @@ class _ServerListItemState extends State<ServerListItem>
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.2),
+                                    color: theme.brightness == Brightness.dark
+                                      ? Colors.green.withOpacity(0.3)  // 深色主题增加透明度
+                                      : Colors.green.withOpacity(0.2),  // 浅色主题保持原样
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
@@ -527,7 +539,9 @@ class _ServerListItemState extends State<ServerListItem>
                                 Icons.location_on,
                                 size: 14,
                                 color: widget.isSelected
-                                  ? theme.primaryColor
+                                  ? (theme.brightness == Brightness.dark 
+                                      ? theme.colorScheme.primary  // 深色主题使用主题色
+                                      : theme.primaryColor)        // 浅色主题使用主色
                                   : Colors.grey[600],
                               ),
                               const SizedBox(width: 4),
@@ -536,7 +550,9 @@ class _ServerListItemState extends State<ServerListItem>
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: widget.isSelected
-                                    ? theme.primaryColor
+                                    ? (theme.brightness == Brightness.dark 
+                                        ? theme.colorScheme.primary.withOpacity(0.8)  // 深色主题使用主题色
+                                        : theme.primaryColor.withOpacity(0.8))        // 浅色主题使用主色
                                     : Colors.grey[600],
                                 ),
                               ),
