@@ -2,16 +2,10 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
-
+#include <fstream>
 #include "resource.h"
-
-// 定义坐标提取宏（用于处理鼠标位置）
-#ifndef GET_X_LPARAM
-#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
-#endif
-#ifndef GET_Y_LPARAM
-#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
-#endif
+#include <filesystem>
+#include "app_links/app_links_plugin_c_api.h"
 
 namespace {
 
@@ -99,14 +93,14 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     WNDCLASS window_class{};
     window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     window_class.lpszClassName = kWindowClassName;
-    // 极简样式：只保留基本的重绘标志
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // 修改：使用 NULL_BRUSH 防止系统绘制背景
+    window_class.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -129,60 +123,113 @@ Win32Window::~Win32Window() {
   Destroy();
 }
 
+bool Win32Window::SendAppLinkToInstance(const std::wstring& title) {
+    // Find our exact window
+    HWND hwnd = ::FindWindow(kWindowClassName, title.c_str());
+
+    if (hwnd) {
+        // Dispatch new link to current window
+        SendAppLink(hwnd);
+
+        // (Optional) Restore our window to front in same state
+        WINDOWPLACEMENT place = { sizeof(WINDOWPLACEMENT) };
+        GetWindowPlacement(hwnd, &place);
+
+        switch (place.showCmd) {
+        case SW_SHOWMAXIMIZED:
+            ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+            break;
+        case SW_SHOWMINIMIZED:
+            ShowWindow(hwnd, SW_RESTORE);
+            break;
+        default:
+            ShowWindow(hwnd, SW_NORMAL);
+            break;
+        }
+
+        SetWindowPos(0, HWND_TOP, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
+        SetForegroundWindow(hwnd);
+        // END Restore
+
+        // Window has been found, don't create another one.
+        return true;
+    }
+
+    return false;
+}
+
+void Win32Window::readPlacement(HWND hwnd) {
+    WINDOWPLACEMENT windowsPlacement{};
+    wchar_t appDataPath[MAX_PATH];
+    GetEnvironmentVariableW(L"APPDATA", appDataPath, MAX_PATH);
+    std::wstring path{appDataPath};
+    path += L"\\com.github.pacalini\\pica_comic";
+    if (!std::filesystem::exists(path)) {
+        std::filesystem::create_directories(path);
+    }
+    path += L"\\location.data";
+    std::ifstream file{path, std::ios::binary};
+    if (file.good()) {
+        file.read(reinterpret_cast<char*>(&windowsPlacement), sizeof(WINDOWPLACEMENT));
+        SetWindowPlacement(hwnd, &windowsPlacement);
+    }
+}
+
 bool Win32Window::Create(const std::wstring& title,
-                        const Point& origin,
-                        const Size& size) {
+                         const Point& origin,
+                         const Size& size) {
+    if (SendAppLinkToInstance(title)) {
+        return false;
+    }
   Destroy();
 
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
-  
-  // 创建极简无边框窗口
-  const DWORD window_style = WS_POPUP;
-  
-  // 创建窗口
-  HWND window = CreateWindowEx(
-      0,  // 无扩展样式
-      window_class,
-      title.c_str(),
-      window_style,
-      origin.x,
-      origin.y,
-      size.width,
-      size.height,
-      nullptr,
-      nullptr,
-      GetModuleHandle(nullptr),
-      this);
-      
+
+  const POINT target_point = {static_cast<LONG>(origin.x),
+                              static_cast<LONG>(origin.y)};
+  HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTONEAREST);
+  UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+  double scale_factor = dpi / 96.0;
+
+  HWND window = CreateWindow(
+      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
+      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      nullptr, nullptr, GetModuleHandle(nullptr), this);
+
   if (!window) {
     return false;
   }
 
-  // 设置圆角 - 极简实现
-  const int corner_radius = 10;  // 圆角半径
-  HRGN region = CreateRoundRectRgn(
-      0, 
-      0,
-      size.width,
-      size.height,
-      corner_radius * 2,  // 椭圆宽度
-      corner_radius * 2   // 椭圆高度
-  );
-  
-  if (region) {
-    SetWindowRgn(window, region, TRUE);
-    // SetWindowRgn 接管了 region 的所有权，无需手动删除
-  }
+  // 添加圆角支持
+  ApplyRoundedCorners(window, Scale(size.width, scale_factor), 
+                      Scale(size.height, scale_factor));
 
-  // 设置深色模式支持（保留此功能）
   UpdateTheme(window);
 
   return OnCreate();
 }
 
+// 新增：应用圆角的辅助函数
+void Win32Window::ApplyRoundedCorners(HWND hwnd, int width, int height) {
+  const int corner_radius = 10;
+  HRGN region = CreateRoundRectRgn(
+      0, 0,
+      width + 1,    // 包含右边界
+      height + 1,   // 包含下边界
+      corner_radius * 2,
+      corner_radius * 2
+  );
+  
+  if (region) {
+    SetWindowRgn(hwnd, region, TRUE);
+    // SetWindowRgn 接管所有权，不需要 DeleteObject
+  }
+}
+
 bool Win32Window::Show() {
-  return ::ShowWindow(window_handle_, SW_SHOWNORMAL);
+  return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
 // static
@@ -229,7 +276,6 @@ Win32Window::MessageHandler(HWND hwnd,
 
       return 0;
     }
-    
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
@@ -239,20 +285,15 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       
       // 窗口大小改变时更新圆角
-      const int corner_radius = 10;
-      int width = rect.right - rect.left;
-      int height = rect.bottom - rect.top;
-      
-      HRGN new_region = CreateRoundRectRgn(
-          0, 0,
-          width,
-          height,
-          corner_radius * 2,
-          corner_radius * 2
-      );
-      
-      if (new_region) {
-        SetWindowRgn(hwnd, new_region, TRUE);
+      if (wparam == SIZE_RESTORED || wparam == SIZE_RESIZED) {
+        RECT window_rect;
+        GetWindowRect(hwnd, &window_rect);
+        int width = window_rect.right - window_rect.left;
+        int height = window_rect.bottom - window_rect.top;
+        ApplyRoundedCorners(hwnd, width, height);
+      } else if (wparam == SIZE_MAXIMIZED) {
+        // 最大化时移除圆角
+        SetWindowRgn(hwnd, nullptr, TRUE);
       }
       
       return 0;
@@ -263,54 +304,14 @@ Win32Window::MessageHandler(HWND hwnd,
         SetFocus(child_content_);
       }
       return 0;
+    
+    // 添加：阻止系统擦除背景
+    case WM_ERASEBKGND:
+      return 1;
 
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
-      
-    // 处理无边框窗口的拖动
-    case WM_NCHITTEST: {
-      // 获取鼠标位置
-      POINT cursor = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-      
-      // 转换为客户区坐标
-      ScreenToClient(hwnd, &cursor);
-      
-      // 获取客户区大小
-      RECT rect;
-      GetClientRect(hwnd, &rect);
-      
-      // 定义边框检测区域大小
-      const int border_width = 8;
-      
-      // 检测是否在边框区域（用于调整大小）
-      bool on_left = cursor.x < border_width;
-      bool on_right = cursor.x >= rect.right - border_width;
-      bool on_top = cursor.y < border_width;
-      bool on_bottom = cursor.y >= rect.bottom - border_width;
-      
-      // 返回相应的命中测试结果
-      if (on_top) {
-        if (on_left) return HTTOPLEFT;
-        if (on_right) return HTTOPRIGHT;
-        return HTTOP;
-      }
-      if (on_bottom) {
-        if (on_left) return HTBOTTOMLEFT;
-        if (on_right) return HTBOTTOMRIGHT;
-        return HTBOTTOM;
-      }
-      if (on_left) return HTLEFT;
-      if (on_right) return HTRIGHT;
-      
-      // 标题栏区域（用于拖动窗口）
-      if (cursor.y < 32) {
-        return HTCAPTION;
-      }
-      
-      // 其他区域为客户区
-      return HTCLIENT;
-    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
