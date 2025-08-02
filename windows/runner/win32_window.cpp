@@ -18,6 +18,36 @@ namespace {
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
 
+// 托盘图标消息
+#define WM_TRAYICON (WM_USER + 1)
+
+// 将图标转换为位图（用于菜单）
+HBITMAP IconToBitmap(HICON hIcon, int size = 16) {
+    if (!hIcon) return nullptr;
+    
+    // 创建设备上下文
+    HDC hDC = GetDC(nullptr);
+    HDC hMemDC = CreateCompatibleDC(hDC);
+    
+    // 创建位图
+    HBITMAP hBitmap = CreateCompatibleBitmap(hDC, size, size);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemDC, hBitmap);
+    
+    // 填充透明背景
+    RECT rect = {0, 0, size, size};
+    FillRect(hMemDC, &rect, (HBRUSH)GetStockObject(WHITE_BRUSH));
+    
+    // 绘制图标
+    DrawIconEx(hMemDC, 0, 0, hIcon, size, size, 0, nullptr, DI_NORMAL);
+    
+    // 清理
+    SelectObject(hMemDC, hOldBitmap);
+    DeleteDC(hMemDC);
+    ReleaseDC(nullptr, hDC);
+    
+    return hBitmap;
+}
+
 // 窗口圆角选项（Windows 11）
 enum DWM_WINDOW_CORNER_PREFERENCE {
     DWMWCP_DEFAULT = 0,
@@ -157,6 +187,7 @@ void WindowClassRegistrar::UnregisterWindowClass() {
 // Win32Window 实现
 Win32Window::Win32Window() {
     ++g_active_window_count;
+    ZeroMemory(&tray_icon_data_, sizeof(NOTIFYICONDATA));
 }
 
 Win32Window::~Win32Window() {
@@ -412,15 +443,168 @@ LRESULT Win32Window::MessageHandler(HWND hwnd,
                 UpdateTheme(hwnd);
             }
             return 0;
+            
+        case WM_CLOSE:
+            ShowWindow(false);
+            AddTrayIcon();
+            return 0;
+            
+        case WM_SHOWWINDOW:
+            // 处理窗口显示/隐藏消息（来自windowManager.hide()）
+            if (wparam == FALSE && !is_tray_icon_added_) {
+                // 窗口被隐藏且托盘图标未添加时，添加托盘图标
+                AddTrayIcon();
+            } else if (wparam == TRUE && is_tray_icon_added_) {
+                // 窗口被显示且托盘图标已添加时，移除托盘图标
+                RemoveTrayIcon();
+            }
+            break;  // 继续默认处理
+            
+        case WM_TRAYICON:
+            HandleTrayMessage(wparam, lparam);
+            return 0;
     }
 
     return DefWindowProc(window_handle_, message, wparam, lparam);
+}
+
+void Win32Window::ShowWindow(bool show) {
+    if (window_handle_) {
+        ::ShowWindow(window_handle_, show ? SW_SHOW : SW_HIDE);
+    }
+}
+
+void Win32Window::AddTrayIcon() {
+    if (!window_handle_ || is_tray_icon_added_) return;
+
+    tray_icon_data_.cbSize = sizeof(NOTIFYICONDATA);
+    tray_icon_data_.hWnd = window_handle_;
+    tray_icon_data_.uID = 1;
+    tray_icon_data_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    tray_icon_data_.uCallbackMessage = WM_TRAYICON;
+    tray_icon_data_.hIcon = (HICON)LoadImage(GetModuleHandle(nullptr),
+                                            MAKEINTRESOURCE(IDI_APP_ICON),
+                                            IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+    wcscpy_s(tray_icon_data_.szTip, L"CFVPN - Click to show");
+
+    Shell_NotifyIcon(NIM_ADD, &tray_icon_data_);
+    is_tray_icon_added_ = true;
+}
+
+void Win32Window::RemoveTrayIcon() {
+    if (!is_tray_icon_added_) return;
+
+    Shell_NotifyIcon(NIM_DELETE, &tray_icon_data_);
+    is_tray_icon_added_ = false;
+}
+
+void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
+    if (wparam != 1) return;
+
+    switch (lparam) {
+        case WM_LBUTTONUP:
+            ShowWindow(true);
+            ::SetForegroundWindow(window_handle_);
+            break;
+        case WM_RBUTTONUP: {
+            POINT pt;
+            GetCursorPos(&pt);
+            HMENU menu = CreatePopupMenu();
+            
+            // 设置菜单样式和背景
+            MENUINFO mi = {0};
+            mi.cbSize = sizeof(mi);
+            mi.fMask = MIM_STYLE | MIM_APPLYTOSUBMENUS | MIM_BACKGROUND;
+            mi.dwStyle = MNS_NOTIFYBYPOS | MNS_FADE;  // 添加淡入淡出效果
+            
+            // 创建渐变背景画刷（浅蓝色到白色）
+            HDC hdc = GetDC(nullptr);
+            HBRUSH hBrush = CreateSolidBrush(RGB(240, 248, 255));  // Alice Blue 背景色
+            mi.hbrBack = hBrush;
+            SetMenuInfo(menu, &mi);
+            ReleaseDC(nullptr, hdc);
+            
+            // 准备菜单项信息
+            MENUITEMINFO mii = {0};
+            mii.cbSize = sizeof(MENUITEMINFO);
+            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
+            
+            // 添加 "Show" 菜单项
+            // 使用更合适的图标：使用应用程序图标或窗口图标
+            HICON hShowIcon = (HICON)LoadImage(GetModuleHandle(nullptr), 
+                                             MAKEINTRESOURCE(IDI_APP_ICON), 
+                                             IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+            if (!hShowIcon) {
+                // 如果加载应用图标失败，使用系统图标
+                hShowIcon = LoadIcon(nullptr, IDI_APPLICATION);
+            }
+            HBITMAP hShowBitmap = IconToBitmap(hShowIcon, 16);
+            mii.wID = 1;
+            mii.dwTypeData = (LPWSTR)L"Show";
+            mii.hbmpItem = hShowBitmap;
+            mii.fState = MFS_DEFAULT;  // 设置为默认项（粗体）
+            InsertMenuItem(menu, 0, TRUE, &mii);
+            
+            // 添加分隔线
+            mii.fMask = MIIM_TYPE;
+            mii.fType = MFT_SEPARATOR;
+            InsertMenuItem(menu, 1, TRUE, &mii);
+            
+            // 添加 "Exit" 菜单项
+            // 使用关闭或退出相关的图标
+            HICON hExitIcon = (HICON)LoadImage(nullptr, 
+                                             MAKEINTRESOURCE(OIC_ERROR), 
+                                             IMAGE_ICON, 16, 16, 
+                                             LR_DEFAULTCOLOR | LR_SHARED);
+            HBITMAP hExitBitmap = IconToBitmap(hExitIcon, 16);
+            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
+            mii.wID = 2;
+            mii.dwTypeData = (LPWSTR)L"Exit";
+            mii.hbmpItem = hExitBitmap;
+            mii.fState = 0;  // 普通状态
+            InsertMenuItem(menu, 2, TRUE, &mii);
+            
+            // 为菜单窗口添加阴影效果（Windows 2000+）
+            HWND hMenuWnd = nullptr;
+            
+            // 设置前景窗口并显示菜单
+            SetForegroundWindow(window_handle_);
+            
+            // 使用 TrackPopupMenuEx 以获得更多控制
+            TPMPARAMS tpm;
+            tpm.cbSize = sizeof(TPMPARAMS);
+            GetWindowRect(window_handle_, &tpm.rcExclude);
+            
+            int cmd = TrackPopupMenuEx(menu, 
+                                     TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTBUTTON | TPM_VERNEGANIMATION,
+                                     pt.x, pt.y, window_handle_, &tpm);
+            
+            // 清理资源
+            if (hShowBitmap) DeleteObject(hShowBitmap);
+            if (hExitBitmap) DeleteObject(hExitBitmap);
+            if (hShowIcon) DestroyIcon(hShowIcon);
+            if (hBrush) DeleteObject(hBrush);
+            // hExitIcon 使用了 LR_SHARED 标志，不需要手动销毁
+            DestroyMenu(menu);
+
+            if (cmd == 1) {
+                ShowWindow(true);
+                ::SetForegroundWindow(window_handle_);
+            } else if (cmd == 2) {
+                RemoveTrayIcon();
+                DestroyWindow(window_handle_);
+                PostQuitMessage(0);
+            }
+            break;
+        }
+    }
 }
 
 void Win32Window::Destroy() {
     OnDestroy();
 
     if (window_handle_) {
+        RemoveTrayIcon();  // 销毁窗口前先移除托盘图标
         DestroyWindow(window_handle_);
         window_handle_ = nullptr;
     }
