@@ -84,8 +84,8 @@ class CloudflareTestService {
     
     await _log.info('开始${useHttping ? "HTTPing" : "TCPing"}测试 ${ips.length} 个IP，端口: $testPort', tag: _logTag);
     
-    // 单个测试时不需要批处理
-    final batchSize = singleTest ? 1 : 30;
+    // 单个测试时不需要批处理，批量测试时降低并发数以提高准确性
+    final batchSize = singleTest ? 1 : 20;  // 🔧 从30降到20，减少并发压力
     int successCount = 0;
     int failCount = 0;
     int tested = 0;
@@ -141,9 +141,9 @@ class CloudflareTestService {
       if (singleTest) break;
       
       // 如果已经找到足够的低延迟节点，可以提前结束
-      final goodNodes = results.where((r) => r['latency'] < 200 && r['lossRate'] < 0.1).length;
+      final goodNodes = results.where((r) => r['latency'] < 300 && r['lossRate'] < 0.1).length;
       if (goodNodes >= 10) {
-        await _log.info('已找到 $goodNodes 个优质节点（<200ms，丢包率<10%），提前结束测试', tag: _logTag);
+        await _log.info('已找到 $goodNodes 个优质节点（<300ms，丢包率<10%），提前结束测试', tag: _logTag);
         break;
       }
     }
@@ -163,7 +163,7 @@ class CloudflareTestService {
     String colo = '';
     
     final httpClient = HttpClient();
-    httpClient.connectionTimeout = const Duration(seconds: 3);
+    httpClient.connectionTimeout = const Duration(seconds: 2);  // 🔧 从3秒降到2秒
     
     // HTTPing 强制使用 HTTP 协议（80端口），避免证书问题
     if (port != 80 && port != _httpPort) {
@@ -187,12 +187,12 @@ class CloudflareTestService {
         // 使用HEAD请求减少数据传输
         final request = await httpClient.headUrl(uri);
         request.headers.set('Host', 'cloudflare.com');
-        request.headers.set('User-Agent', 'CloudflareSpeedTest/Flutter');
+        request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         request.headers.set('Accept', '*/*');
         request.headers.set('Connection', 'close');
         
         final response = await request.close().timeout(
-          const Duration(seconds: 2),
+          const Duration(seconds: 1),  // 🔧 从2秒降到1秒
           onTimeout: () {
             throw TimeoutException('HTTP请求超时');
           },
@@ -301,7 +301,6 @@ class CloudflareTestService {
   static Stream<TestProgress> testServersWithProgress({
     required int count,
     required int maxLatency,
-    required int speed,
     required int testCount,
     String location = 'AUTO',
     bool useHttping = false,
@@ -315,7 +314,6 @@ class CloudflareTestService {
       controller: controller,
       count: count,
       maxLatency: maxLatency,
-      speed: speed,
       testCount: testCount,
       location: location,
       useHttping: useHttping,
@@ -886,10 +884,10 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（优化版：纯TCP连接测试）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
-    const int pingTimes = 4; // 测试次数
+    const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
     
@@ -900,79 +898,44 @@ class CloudflareTestService {
       try {
         final stopwatch = Stopwatch()..start();
         
-        // 建立TCP连接
+        // 🔧 纯TCP连接测试 - 移除HTTP请求
         final socket = await Socket.connect(
           ip,
           testPort,
-          timeout: const Duration(seconds: 2),
+          timeout: const Duration(milliseconds: 1000), 
         );
         
-        // 发送HTTP请求（模拟真实通信）
-        final request = 'GET / HTTP/1.1\r\n'
-            'Host: cloudflare.com\r\n'
-            'User-Agent: CloudflareSpeedTest\r\n'
-            'Connection: close\r\n'
-            '\r\n';
+        stopwatch.stop();
         
-        socket.add(utf8.encode(request));
-        
-        // 等待服务器响应
-        final completer = Completer<void>();
-        bool gotResponse = false;
-        
-        socket.listen(
-          (List<int> data) {
-            if (!gotResponse) {
-              gotResponse = true;
-              stopwatch.stop();
-              // 收到第一个数据包就立即完成
-              if (!completer.isCompleted) {
-                completer.complete();
-              }
-            }
-          },
-          onError: (error) {
-            if (!completer.isCompleted) {
-              completer.completeError(error);
-            }
-          },
-          onDone: () {
-            if (!completer.isCompleted) {
-              completer.complete();
-            }
-          },
-          cancelOnError: true,
-        );
-        
-        // 等待响应或超时
-        await completer.future.timeout(
-          const Duration(seconds: 1),
-          onTimeout: () {
-            if (!stopwatch.isRunning) return;
-            stopwatch.stop();
-            throw TimeoutException('响应超时');
-          },
-        );
-        
-        // 关闭连接
+        // 立即关闭连接
         await socket.close();
         
         final latency = stopwatch.elapsedMilliseconds;
         
         await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: ${latency}ms', tag: _logTag);
         
-        if (gotResponse && latency > 0 && latency < 2000) {
+        // 🔧 简化验证逻辑
+        if (latency > 0 && latency < 800) {  // 只接受合理的延迟值
           latencies.add(latency);
           successCount++;
         }
         
       } catch (e) {
         await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
+        
+        // 🔧 更精确的错误分类（可选）
+        if (e is SocketException) {
+          if (e.osError?.errorCode == 111) {  // Connection refused
+            await _log.debug('[TCPing] 连接被拒绝', tag: _logTag);
+          } else if (e.osError?.errorCode == 113) {  // No route to host
+            await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
+          }
+        }
       }
       
-      // 测试间隔
+      // 测试间隔 - 保持200ms避免网络拥塞
       if (i < pingTimes - 1) {
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
     
@@ -1060,7 +1023,7 @@ class CloudflareTestService {
       
       // 设置必要的请求头
       request.headers.set('Host', testUri.host); // 重要：设置正确的Host
-      request.headers.set('User-Agent', 'CloudflareSpeedTest/Flutter');
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       request.headers.set('Accept', '*/*');
       request.headers.set('Accept-Encoding', 'identity'); // 不使用压缩
       
@@ -1218,8 +1181,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     // 使用新的带进度的测试方法
     final stream = CloudflareTestService.testServersWithProgress(
       count: 6,
-      maxLatency: 200,
-      speed: 5,
+      maxLatency: 300,
       testCount: 500,
       location: 'AUTO',
       useHttping: false, // 使用TCPing
