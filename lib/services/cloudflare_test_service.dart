@@ -22,8 +22,8 @@ class CloudflareTestService {
   static const int _httpPort = 80; // HTTP 端口（HTTPing使用）
   static const Duration _tcpTimeout = Duration(seconds: 1); // TCP连接超时时间
   
-  // 下载测试相关常量（优化为3秒）- 修改为Cloudflare官方地址 2MB
-  static const String _downloadTestUrl = 'https://speed.cloudflare.com/__down?bytes=2000000'; // 2MB
+  // 下载测试相关常量 - 使用HTTP协议避免证书问题
+  static const String _downloadTestUrl = 'http://speed.cloudflare.com/__down?bytes=2000000'; // 2MB，使用HTTP
   static const Duration _downloadTimeout = Duration(seconds: 3); // 优化为3秒
   static const int _bufferSize = 1024; // 下载缓冲区大小
   
@@ -73,6 +73,7 @@ class CloudflareTestService {
     bool useHttping = false,  // 是否使用HTTPing
     Function(int current, int total)? onProgress,  // 进度回调
   }) async {
+    // HTTPing模式强制使用80端口，避免证书问题
     final testPort = port ?? (useHttping ? _httpPort : _defaultPort);
     final results = <Map<String, dynamic>>[];
     
@@ -81,7 +82,7 @@ class CloudflareTestService {
       return results;
     }
     
-    await _log.info('开始${useHttping ? "HTTPing" : "TCPing"}测试 ${ips.length} 个IP...', tag: _logTag);
+    await _log.info('开始${useHttping ? "HTTPing" : "TCPing"}测试 ${ips.length} 个IP，端口: $testPort', tag: _logTag);
     
     // 单个测试时不需要批处理
     final batchSize = singleTest ? 1 : 30;
@@ -152,120 +153,120 @@ class CloudflareTestService {
     return results;
   }
   
-  // HTTPing 模式测试单个IP（使用HTTP 80端口）
+  // HTTPing 模式测试单个IP（强制使用HTTP 80端口，避免证书问题）
   static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port) async {
+    await _log.debug('[HTTPing] 开始测试 $ip:$port', tag: _logTag);
+    
     const int pingTimes = 3;
+    List<int> latencies = [];
     int successCount = 0;
-    int totalLatency = 0;
     String colo = '';
     
     final httpClient = HttpClient();
-    httpClient.connectionTimeout = const Duration(seconds: 2);
+    httpClient.connectionTimeout = const Duration(seconds: 3);
     
-    // HTTPing 使用 HTTP 协议（80端口）
-    final useHttp = port == 80 || port == _httpPort;
-    
-    // 首次请求获取地区信息
-    try {
-      final uri = Uri(
-        scheme: useHttp ? 'http' : 'https',
-        host: ip,
-        port: port,
-        path: '/',
-      );
-      
-      final request = await httpClient.headUrl(uri);
-      request.headers.set('Host', 'cloudflare.com');
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36');
-      
-      final stopwatch = Stopwatch()..start();
-      final response = await request.close();
-      stopwatch.stop();
-      
-      await response.drain();
-      
-      // 检查HTTP状态码
-      if (httpingStatusCode == 0) {
-        // 默认接受 200, 301, 302
-        if (response.statusCode != 200 && response.statusCode != 301 && response.statusCode != 302) {
-          httpClient.close();
-          return {
-            'ip': ip,
-            'latency': 999,
-            'lossRate': 1.0,
-            'colo': '',
-          };
-        }
-      } else {
-        // 指定的状态码
-        if (response.statusCode != httpingStatusCode) {
-          httpClient.close();
-          return {
-            'ip': ip,
-            'latency': 999,
-            'lossRate': 1.0,
-            'colo': '',
-          };
-        }
-      }
-      
-      // 获取地区信息（从响应头）
-      colo = _getColoFromHeaders(response.headers);
-      
-      // 检查地区过滤
-      if (httpingCFColo.isNotEmpty && colo.isNotEmpty) {
-        final allowedColos = httpingCFColo.split(',');
-        if (!allowedColos.contains(colo)) {
-          httpClient.close();
-          return {
-            'ip': ip,
-            'latency': 999,
-            'lossRate': 1.0,
-            'colo': colo,
-          };
-        }
-      }
-      
-      successCount = 1;
-      totalLatency = stopwatch.elapsedMilliseconds;
-      
-    } catch (e) {
-      // 首次请求失败
+    // HTTPing 强制使用 HTTP 协议（80端口），避免证书问题
+    if (port != 80 && port != _httpPort) {
+      await _log.warn('[HTTPing] 警告：HTTPing模式应使用80端口，当前端口: $port', tag: _logTag);
     }
     
-    // 进行剩余的测试
-    for (int i = 1; i < pingTimes; i++) {
+    for (int i = 0; i < pingTimes; i++) {
       try {
+        // HTTPing始终使用HTTP协议
         final uri = Uri(
-          scheme: useHttp ? 'http' : 'https',
+          scheme: 'http',
           host: ip,
           port: port,
           path: '/',
         );
         
-        final request = await httpClient.headUrl(uri);
-        request.headers.set('Host', 'cloudflare.com');
+        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: $uri', tag: _logTag);
         
         final stopwatch = Stopwatch()..start();
-        final response = await request.close();
+        
+        // 使用HEAD请求减少数据传输
+        final request = await httpClient.headUrl(uri);
+        request.headers.set('Host', 'cloudflare.com');
+        request.headers.set('User-Agent', 'CloudflareSpeedTest/Flutter');
+        request.headers.set('Accept', '*/*');
+        request.headers.set('Connection', 'close');
+        
+        final response = await request.close().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {
+            throw TimeoutException('HTTP请求超时');
+          },
+        );
+        
         stopwatch.stop();
         
+        // 必须消费响应体
         await response.drain();
         
-        final latency = stopwatch.elapsedMilliseconds;
-        if (latency > 0) {
-          successCount++;
-          totalLatency += latency;
+        await _log.debug('[HTTPing] 响应状态码: ${response.statusCode}, 耗时: ${stopwatch.elapsedMilliseconds}ms', tag: _logTag);
+        
+        // 检查HTTP状态码
+        bool isValidResponse = false;
+        if (httpingStatusCode == 0) {
+          // 默认接受 200, 301, 302
+          isValidResponse = response.statusCode == 200 || 
+                           response.statusCode == 301 || 
+                           response.statusCode == 302;
+        } else {
+          // 指定的状态码
+          isValidResponse = response.statusCode == httpingStatusCode;
         }
+        
+        if (!isValidResponse) {
+          await _log.debug('[HTTPing] 状态码无效: ${response.statusCode}', tag: _logTag);
+          continue;
+        }
+        
+        final latency = stopwatch.elapsedMilliseconds;
+        latencies.add(latency);
+        successCount++;
+        
+        // 获取地区信息（仅第一次）
+        if (colo.isEmpty) {
+          colo = _getColoFromHeaders(response.headers);
+          await _log.debug('[HTTPing] 地区码: $colo', tag: _logTag);
+          
+          // 检查地区过滤
+          if (httpingCFColo.isNotEmpty && colo.isNotEmpty) {
+            final allowedColos = httpingCFColo.split(',')
+                .map((c) => c.trim().toUpperCase()).toList();
+            if (!allowedColos.contains(colo)) {
+              await _log.info('[HTTPing] 地区 $colo 不在允许列表 $allowedColos 中，跳过', tag: _logTag);
+              httpClient.close();
+              return {
+                'ip': ip,
+                'latency': 999,
+                'lossRate': 1.0,
+                'colo': colo,
+              };
+            }
+          }
+        }
+        
       } catch (e) {
-        continue;
+        await _log.debug('[HTTPing] 测试失败: $e', tag: _logTag);
+      }
+      
+      // 测试间隔
+      if (i < pingTimes - 1) {
+        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
     
     httpClient.close();
     
+    // 计算结果
+    final avgLatency = successCount > 0 
+        ? latencies.reduce((a, b) => a + b) ~/ successCount 
+        : 999;
     final lossRate = (pingTimes - successCount) / pingTimes.toDouble();
-    final avgLatency = successCount > 0 ? totalLatency ~/ successCount : 999;
+    
+    await _log.info('[HTTPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%, 地区: $colo', tag: _logTag);
     
     return {
       'ip': ip,
@@ -347,8 +348,9 @@ class CloudflareTestService {
       await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
       await _log.info('模式: ${httping ? "HTTPing" : "TCPing"}, 丢包率上限: ${(maxLossRate * 100).toStringAsFixed(1)}%, 下载速度下限: ${minDownloadSpeed.toStringAsFixed(1)}MB/s', tag: _logTag);
       
-      // 定义测试端口
+      // 定义测试端口 - HTTPing使用80端口
       final int testPort = httping ? _httpPort : _defaultPort;
+      await _log.info('测试端口: $testPort', tag: _logTag);
       
       // 显示使用的IP段
       await _log.debug('Cloudflare IP段列表:', tag: _logTag);
@@ -543,8 +545,7 @@ class CloudflareTestService {
           subProgress: (i + 1) / downloadTestCount,
         ));
         
-        // 使用443端口进行下载测试（与实际连接一致）
-        final downloadSpeed = await _testDownloadSpeed(server.ip, 443);
+        final downloadSpeed = await _testDownloadSpeed(server.ip, server.port);
         server.downloadSpeed = downloadSpeed;
         
         await _log.info('服务器 ${server.ip} - 下载速度: ${downloadSpeed.toStringAsFixed(2)} MB/s', tag: _logTag);
@@ -885,56 +886,110 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版本）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
-    const int pingTimes = 4; // 测试4次（与CloudflareScanner一致）
-    final List<int> latencies = [];
+    const int pingTimes = 4; // 测试次数
+    List<int> latencies = [];
+    int successCount = 0;
     
+    await _log.debug('[TCPing] 开始测试 $ip:$testPort', tag: _logTag);
+    
+    // 进行多次测试
     for (int i = 0; i < pingTimes; i++) {
-      final stopwatch = Stopwatch()..start();
-      
       try {
-        // 创建TCP连接
+        final stopwatch = Stopwatch()..start();
+        
+        // 建立TCP连接
         final socket = await Socket.connect(
           ip,
           testPort,
-          timeout: _tcpTimeout, // 1秒超时
+          timeout: const Duration(seconds: 2),
         );
         
-        // 立即停止计时
-        stopwatch.stop();
+        // 发送HTTP请求（模拟真实通信）
+        final request = 'GET / HTTP/1.1\r\n'
+            'Host: cloudflare.com\r\n'
+            'User-Agent: CloudflareSpeedTest\r\n'
+            'Connection: close\r\n'
+            '\r\n';
         
-        // 立即关闭连接
-        socket.destroy();
+        socket.add(utf8.encode(request));
         
-        // 记录延迟
+        // 等待服务器响应
+        final completer = Completer<void>();
+        bool gotResponse = false;
+        
+        socket.listen(
+          (List<int> data) {
+            if (!gotResponse) {
+              gotResponse = true;
+              stopwatch.stop();
+              // 收到第一个数据包就立即完成
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            }
+          },
+          onError: (error) {
+            if (!completer.isCompleted) {
+              completer.completeError(error);
+            }
+          },
+          onDone: () {
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          },
+          cancelOnError: true,
+        );
+        
+        // 等待响应或超时
+        await completer.future.timeout(
+          const Duration(seconds: 1),
+          onTimeout: () {
+            if (!stopwatch.isRunning) return;
+            stopwatch.stop();
+            throw TimeoutException('响应超时');
+          },
+        );
+        
+        // 关闭连接
+        await socket.close();
+        
         final latency = stopwatch.elapsedMilliseconds;
-        if (latency > 0) {
-          latencies.add(latency);
-        }
         
-        // 测试间隔200ms，避免触发限流
-        if (i < pingTimes - 1) {
-          await Future.delayed(const Duration(milliseconds: 200));
+        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: ${latency}ms', tag: _logTag);
+        
+        if (gotResponse && latency > 0 && latency < 2000) {
+          latencies.add(latency);
+          successCount++;
         }
         
       } catch (e) {
-        // 连接失败
-        latencies.add(999);
+        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
+      }
+      
+      // 测试间隔
+      if (i < pingTimes - 1) {
+        await Future.delayed(const Duration(milliseconds: 100));
       }
     }
     
-    // 计算统计数据
-    final successCount = latencies.where((l) => l < 999).length;
+    // 计算平均延迟（如果有3个以上样本，去除最高最低值）
+    int avgLatency = 999;
+    if (latencies.length >= 3) {
+      latencies.sort();
+      latencies.removeAt(0);
+      latencies.removeAt(latencies.length - 1);
+      avgLatency = latencies.reduce((a, b) => a + b) ~/ latencies.length;
+    } else if (latencies.isNotEmpty) {
+      avgLatency = latencies.reduce((a, b) => a + b) ~/ latencies.length;
+    }
+    
     final lossRate = (pingTimes - successCount) / pingTimes.toDouble();
     
-    // 计算平均延迟
-    int avgLatency = 999;
-    if (successCount > 0) {
-      final validLatencies = latencies.where((l) => l < 999).toList();
-      avgLatency = validLatencies.reduce((a, b) => a + b) ~/ validLatencies.length;
-    }
+    await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     
     return {
       'ip': ip,
@@ -942,7 +997,7 @@ class CloudflareTestService {
       'lossRate': lossRate,
       'sent': pingTimes,
       'received': successCount,
-      'colo': '',
+      'colo': '', // TCPing模式无法获取地区信息
     };
   }
   
@@ -954,76 +1009,115 @@ class CloudflareTestService {
       // 格式: 7bd32409eda7b020-SJC
       final parts = cfRay.split('-');
       if (parts.length >= 2) {
-        return parts.last;
+        final colo = parts.last.toUpperCase();
+        _log.debug('[Headers] cf-ray地区码: $colo', tag: _logTag);
+        return colo;
       }
+    }
+    
+    // 备用：检查其他Cloudflare头部
+    final cfIpCountry = headers.value('cf-ipcountry');
+    if (cfIpCountry != null) {
+      _log.debug('[Headers] cf-ipcountry: $cfIpCountry', tag: _logTag);
+      return cfIpCountry.toUpperCase();
     }
     
     return '';
   }
   
-  // 下载速度测试（修复版本）
+  // 下载速度测试（修复版）
   static Future<double> _testDownloadSpeed(String ip, int port) async {
+    HttpClient? httpClient;
+    
     try {
-      await _log.debug('开始下载测试 $ip:$port', tag: _logTag);
+      await _log.debug('[下载测试] 开始测试 $ip:$port', tag: _logTag);
+      await _log.debug('[下载测试] 使用URL: $_downloadTestUrl', tag: _logTag);
       
-      // 创建 HttpClient
-      final httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(seconds: 10);
+      // 创建HttpClient
+      httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 5);
+      httpClient.idleTimeout = const Duration(seconds: 10);
       
-      // 忽略SSL证书验证（测试环境需要）
+      // 支持SNI（如果需要HTTPS）
       httpClient.badCertificateCallback = (cert, host, port) => true;
       
-      // 使用Cloudflare标准的2MB下载测试地址
-      final uri = Uri(
-        scheme: 'https',
+      // 解析测试URL
+      final testUri = Uri.parse(_downloadTestUrl);
+      
+      // 创建直接连接到IP的URI - 根据URL协议选择正确端口
+      final directUri = Uri(
+        scheme: testUri.scheme,
         host: ip,
-        port: port,
-        path: '/__down',
-        queryParameters: {'bytes': '2000000'}, // 2MB
+        port: testUri.scheme == 'http' ? 80 : 443,  // 关键：根据协议选择端口
+        path: testUri.path,
+        queryParameters: testUri.queryParameters,
       );
       
-      // 创建GET请求
-      final request = await httpClient.getUrl(uri);
+      await _log.debug('[下载测试] 连接到: $directUri', tag: _logTag);
+      
+      // 创建请求
+      final request = await httpClient.getUrl(directUri);
       
       // 设置必要的请求头
-      request.headers.set('Host', 'speed.cloudflare.com');
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      request.headers.set('Host', testUri.host); // 重要：设置正确的Host
+      request.headers.set('User-Agent', 'CloudflareSpeedTest/Flutter');
       request.headers.set('Accept', '*/*');
+      request.headers.set('Accept-Encoding', 'identity'); // 不使用压缩
       
       // 开始计时
       final startTime = DateTime.now();
-      
-      // 发送请求
       final response = await request.close();
       
       // 检查响应状态
+      await _log.debug('[下载测试] 响应状态码: ${response.statusCode}', tag: _logTag);
+      
       if (response.statusCode != 200) {
-        await _log.warn('下载响应状态码: ${response.statusCode}', tag: _logTag);
-        httpClient.close();
+        // 尝试读取错误信息
+        try {
+          final body = await response.transform(utf8.decoder).take(500).join();
+          await _log.warn('[下载测试] 错误响应: $body', tag: _logTag);
+        } catch (e) {
+          // 忽略
+        }
         return 0.0;
       }
       
-      // 读取响应数据
+      // 下载数据并计算速度
       int totalBytes = 0;
+      final endTime = startTime.add(_downloadTimeout);
+      
+      // 使用流式读取
       await for (final chunk in response) {
         totalBytes += chunk.length;
+        
+        // 定期日志
+        if (totalBytes % (512 * 1024) == 0) {
+          await _log.debug('[下载测试] 已下载: ${(totalBytes / 1024 / 1024).toStringAsFixed(2)} MB', tag: _logTag);
+        }
+        
+        // 检查是否超时
+        if (DateTime.now().isAfter(endTime)) {
+          await _log.debug('[下载测试] 超时，停止下载', tag: _logTag);
+          break;
+        }
       }
       
-      // 计算下载时间
       final duration = DateTime.now().difference(startTime);
-      httpClient.close();
       
       // 计算速度（MB/s）
       if (duration.inMilliseconds > 0 && totalBytes > 0) {
-        final speedMBps = (totalBytes / 1024.0 / 1024.0) / (duration.inMilliseconds / 1000.0);
-        await _log.info('下载完成: ${(totalBytes / 1024.0 / 1024.0).toStringAsFixed(2)}MB, 耗时: ${duration.inMilliseconds}ms, 速度: ${speedMBps.toStringAsFixed(2)}MB/s', tag: _logTag);
+        final speedMBps = (totalBytes / 1024 / 1024) / (duration.inMilliseconds / 1000);
+        await _log.info('[下载测试] 完成 - 下载: ${(totalBytes / 1024 / 1024).toStringAsFixed(2)} MB, 耗时: ${duration.inMilliseconds} ms, 速度: ${speedMBps.toStringAsFixed(2)} MB/s', tag: _logTag);
         return speedMBps;
       }
       
       return 0.0;
-    } catch (e) {
-      await _log.warn('下载测试失败: ${e.toString()}', tag: _logTag);
+      
+    } catch (e, stackTrace) {
+      await _log.error('[下载测试] 异常', tag: _logTag, error: e, stackTrace: stackTrace);
       return 0.0;
+    } finally {
+      httpClient?.close();
     }
   }
 }
