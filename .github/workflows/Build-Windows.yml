@@ -112,17 +112,17 @@ jobs:
         Write-Host "Creating archive..."
         Compress-Archive -Path $tempDir -DestinationPath "release\$outputName.zip" -Force
         
-        # 清理临时目录
-        Remove-Item -Path $tempDir -Recurse -Force
+        # 移动临时目录到根目录（避免 release/ 前缀）
+        Move-Item -Path $tempDir -Destination ".\" -Force
         
         Write-Host "Package created: $outputName.zip"
-        Write-Host "Archive structure: $outputName/[application files]"
+        Write-Host "Artifact directory moved to root: $outputName"
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: CFVPN-Windows-x64-${{ github.event.inputs.version || github.ref_name }}
-        path: release/*.zip
+        path: CFVPN-Windows-x64-*
     
     - name: Create Release (if tagged)
       if: startsWith(github.ref, 'refs/tags/')
