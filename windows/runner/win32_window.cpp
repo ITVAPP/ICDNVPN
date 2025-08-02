@@ -91,7 +91,9 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     WNDCLASS window_class{};
     window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     window_class.lpszClassName = kWindowClassName;
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
+    // 添加 CS_DROPSHADOW 样式以启用原生窗口阴影
+    // 这比使用 DWM 扩展边距更稳定且兼容性更好
+    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
@@ -130,9 +132,15 @@ bool Win32Window::Create(const std::wstring& title,
   
   // 创建无边框窗口
   // WS_POPUP: 无边框窗口
-  // WS_THICKFRAME: 允许调整大小（可选）
-  // WS_SYSMENU | WS_MINIMIZEBOX: 系统菜单和最小化功能
-  const DWORD window_style = WS_POPUP | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX;
+  // WS_THICKFRAME: 允许调整大小
+  // WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX: 系统菜单和最小化/最大化功能
+  const DWORD window_style = WS_POPUP | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+  
+  // 计算窗口大小（包含阴影区域）
+  RECT window_rect = {0, 0, static_cast<LONG>(size.width), static_cast<LONG>(size.height)};
+  AdjustWindowRectEx(&window_rect, window_style, FALSE, 0);
+  const int window_width = window_rect.right - window_rect.left;
+  const int window_height = window_rect.bottom - window_rect.top;
   
   // 创建窗口
   HWND window = CreateWindowEx(
@@ -142,8 +150,8 @@ bool Win32Window::Create(const std::wstring& title,
       window_style,
       origin.x,
       origin.y,
-      size.width,
-      size.height,
+      window_width,
+      window_height,
       nullptr,
       nullptr,
       GetModuleHandle(nullptr),
@@ -153,48 +161,30 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
-  // 使用通用的 SetWindowRgn 方法创建圆角
-  // 优点：在 Windows 7/8/10/11 所有版本都能工作
-  // 缺点：没有抗锯齿，边缘可能不够平滑
-  int cornerRadius = 10; // 圆角半径，可根据需要调整
-  HRGN hRgn = CreateRoundRectRgn(
-      0, 0,
-      size.width + 1,   // +1 确保右边缘像素包含在内
-      size.height + 1,  // +1 确保底边缘像素包含在内
-      cornerRadius * 2,
-      cornerRadius * 2
+  // 设置圆角
+  // 可配置的圆角半径
+  const int corner_radius = 10;
+  
+  // 创建圆角区域
+  // 注意：这里使用客户区大小而不是窗口大小
+  RECT client_rect;
+  GetClientRect(window, &client_rect);
+  HRGN rounded_region = CreateRoundRectRgn(
+      0, 
+      0,
+      client_rect.right + 1,   // +1 确保右边缘完全包含
+      client_rect.bottom + 1,  // +1 确保底边缘完全包含
+      corner_radius,
+      corner_radius
   );
   
-  // 应用圆角区域到窗口
-  SetWindowRgn(window, hRgn, TRUE);
-  // 注意：SetWindowRgn 会接管 hRgn 的所有权，所以不需要 DeleteObject
-
-  // 为无边框窗口添加阴影效果
-  HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
-  if (dwmapi) {
-    typedef HRESULT (WINAPI *DwmSetWindowAttributeFunc)(HWND, DWORD, LPCVOID, DWORD);
-    DwmSetWindowAttributeFunc DwmSetWindowAttributeProc = 
-        (DwmSetWindowAttributeFunc)GetProcAddress(dwmapi, "DwmSetWindowAttribute");
-    
-    if (DwmSetWindowAttributeProc) {
-      // 启用窗口阴影
-      BOOL enableShadow = TRUE;
-      DwmSetWindowAttributeProc(window, 2, &enableShadow, sizeof(enableShadow));
-      
-      // 使用最小边距来增强阴影效果，但避免可见边框
-      typedef HRESULT (WINAPI *DwmExtendFrameIntoClientAreaFunc)(HWND, const MARGINS*);
-      DwmExtendFrameIntoClientAreaFunc DwmExtendFrameIntoClientAreaProc = 
-          (DwmExtendFrameIntoClientAreaFunc)GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea");
-      if (DwmExtendFrameIntoClientAreaProc) {
-        // 使用最小边距（1像素）仅用于启用阴影
-        // 这不会创建可见的边框，但会启用 DWM 阴影效果
-        MARGINS margins = {1, 1, 1, 1};
-        DwmExtendFrameIntoClientAreaProc(window, &margins);
-      }
-    }
-    FreeLibrary(dwmapi);
+  // 应用圆角区域
+  if (rounded_region) {
+    SetWindowRgn(window, rounded_region, TRUE);
+    // SetWindowRgn 会接管 region 的所有权，无需手动删除
   }
 
+  // 设置窗口属性以支持深色模式
   UpdateTheme(window);
 
   return OnCreate();
@@ -257,16 +247,22 @@ Win32Window::MessageHandler(HWND hwnd,
                    rect.bottom - rect.top, TRUE);
       }
       
-      // 窗口大小改变时需要更新圆角区域
-      int cornerRadius = 10;
-      HRGN hRgn = CreateRoundRectRgn(
-          0, 0,
+      // 窗口大小改变时更新圆角区域
+      // 重要：必须在每次大小改变时更新，以保持圆角效果
+      const int corner_radius = 10;
+      HRGN new_region = CreateRoundRectRgn(
+          0, 
+          0,
           rect.right - rect.left + 1,
           rect.bottom - rect.top + 1,
-          cornerRadius * 2,
-          cornerRadius * 2
+          corner_radius,
+          corner_radius
       );
-      SetWindowRgn(hwnd, hRgn, TRUE);
+      
+      if (new_region) {
+        SetWindowRgn(hwnd, new_region, TRUE);
+        // SetWindowRgn 接管了 region 的所有权
+      }
       
       return 0;
     }
@@ -280,6 +276,50 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+      
+    // 处理无边框窗口的拖动和调整大小
+    case WM_NCHITTEST: {
+      // 获取鼠标位置
+      POINT cursor = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      
+      // 转换为客户区坐标
+      ScreenToClient(hwnd, &cursor);
+      
+      // 获取客户区大小
+      RECT rect;
+      GetClientRect(hwnd, &rect);
+      
+      // 定义边框检测区域大小（像素）
+      const int border_width = 8;
+      
+      // 检测是否在边框区域
+      bool on_left = cursor.x < border_width;
+      bool on_right = cursor.x >= rect.right - border_width;
+      bool on_top = cursor.y < border_width;
+      bool on_bottom = cursor.y >= rect.bottom - border_width;
+      
+      // 返回相应的命中测试结果
+      if (on_top) {
+        if (on_left) return HTTOPLEFT;
+        if (on_right) return HTTOPRIGHT;
+        return HTTOP;
+      }
+      if (on_bottom) {
+        if (on_left) return HTBOTTOMLEFT;
+        if (on_right) return HTBOTTOMRIGHT;
+        return HTBOTTOM;
+      }
+      if (on_left) return HTLEFT;
+      if (on_right) return HTRIGHT;
+      
+      // 标题栏区域（用于拖动窗口）
+      if (cursor.y < 32) {  // 32像素高的拖动区域
+        return HTCAPTION;
+      }
+      
+      // 其他区域为客户区
+      return HTCLIENT;
+    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
