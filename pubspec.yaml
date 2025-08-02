@@ -16,7 +16,7 @@ dependencies:
   dio: ^5.4.0
   flutter_svg: ^2.0.9
   path_provider: ^2.1.2
-  http: ^1.1.0 
+  # http: ^1.1.0 
   
   # 状态管理
   provider: ^6.1.1
@@ -33,7 +33,7 @@ dependencies:
   window_manager: ^0.3.7
   
   # 系统托盘
-  system_tray: ^2.0.3
+  # system_tray: ^2.0.3
   
   # 路径处理
   path: ^1.8.3
