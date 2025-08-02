@@ -5,8 +5,7 @@
 
 #include "resource.h"
 
-// 定义坐标提取宏（通常在 windowsx.h 中）
-// 这些宏用于从 LPARAM 中提取鼠标坐标
+// 定义坐标提取宏（用于处理鼠标位置）
 #ifndef GET_X_LPARAM
 #define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
 #endif
@@ -100,9 +99,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     WNDCLASS window_class{};
     window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     window_class.lpszClassName = kWindowClassName;
-    // 添加 CS_DROPSHADOW 样式以启用原生窗口阴影
-    // 这比使用 DWM 扩展边距更稳定且兼容性更好
-    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
+    // 极简样式：只保留基本的重绘标志
+    window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
@@ -139,17 +137,8 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
   
-  // 创建无边框窗口
-  // WS_POPUP: 无边框窗口
-  // WS_THICKFRAME: 允许调整大小
-  // WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX: 系统菜单和最小化/最大化功能
-  const DWORD window_style = WS_POPUP | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
-  
-  // 计算窗口大小（包含阴影区域）
-  RECT window_rect = {0, 0, static_cast<LONG>(size.width), static_cast<LONG>(size.height)};
-  AdjustWindowRectEx(&window_rect, window_style, FALSE, 0);
-  const int window_width = window_rect.right - window_rect.left;
-  const int window_height = window_rect.bottom - window_rect.top;
+  // 创建极简无边框窗口
+  const DWORD window_style = WS_POPUP;
   
   // 创建窗口
   HWND window = CreateWindowEx(
@@ -159,8 +148,8 @@ bool Win32Window::Create(const std::wstring& title,
       window_style,
       origin.x,
       origin.y,
-      window_width,
-      window_height,
+      size.width,
+      size.height,
       nullptr,
       nullptr,
       GetModuleHandle(nullptr),
@@ -170,30 +159,23 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
-  // 设置圆角
-  // 可配置的圆角半径
-  const int corner_radius = 10;
-  
-  // 创建圆角区域
-  // 注意：这里使用客户区大小而不是窗口大小
-  RECT client_rect;
-  GetClientRect(window, &client_rect);
-  HRGN rounded_region = CreateRoundRectRgn(
+  // 设置圆角 - 极简实现
+  const int corner_radius = 10;  // 圆角半径
+  HRGN region = CreateRoundRectRgn(
       0, 
       0,
-      client_rect.right + 1,   // +1 确保右边缘完全包含
-      client_rect.bottom + 1,  // +1 确保底边缘完全包含
-      corner_radius,
-      corner_radius
+      size.width,
+      size.height,
+      corner_radius * 2,  // 椭圆宽度
+      corner_radius * 2   // 椭圆高度
   );
   
-  // 应用圆角区域
-  if (rounded_region) {
-    SetWindowRgn(window, rounded_region, TRUE);
-    // SetWindowRgn 会接管 region 的所有权，无需手动删除
+  if (region) {
+    SetWindowRgn(window, region, TRUE);
+    // SetWindowRgn 接管了 region 的所有权，无需手动删除
   }
 
-  // 设置窗口属性以支持深色模式
+  // 设置深色模式支持（保留此功能）
   UpdateTheme(window);
 
   return OnCreate();
@@ -256,21 +238,21 @@ Win32Window::MessageHandler(HWND hwnd,
                    rect.bottom - rect.top, TRUE);
       }
       
-      // 窗口大小改变时更新圆角区域
-      // 重要：必须在每次大小改变时更新，以保持圆角效果
+      // 窗口大小改变时更新圆角
       const int corner_radius = 10;
+      int width = rect.right - rect.left;
+      int height = rect.bottom - rect.top;
+      
       HRGN new_region = CreateRoundRectRgn(
-          0, 
-          0,
-          rect.right - rect.left + 1,
-          rect.bottom - rect.top + 1,
-          corner_radius,
-          corner_radius
+          0, 0,
+          width,
+          height,
+          corner_radius * 2,
+          corner_radius * 2
       );
       
       if (new_region) {
         SetWindowRgn(hwnd, new_region, TRUE);
-        // SetWindowRgn 接管了 region 的所有权
       }
       
       return 0;
@@ -286,7 +268,7 @@ Win32Window::MessageHandler(HWND hwnd,
       UpdateTheme(hwnd);
       return 0;
       
-    // 处理无边框窗口的拖动和调整大小
+    // 处理无边框窗口的拖动
     case WM_NCHITTEST: {
       // 获取鼠标位置
       POINT cursor = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -298,10 +280,10 @@ Win32Window::MessageHandler(HWND hwnd,
       RECT rect;
       GetClientRect(hwnd, &rect);
       
-      // 定义边框检测区域大小（像素）
+      // 定义边框检测区域大小
       const int border_width = 8;
       
-      // 检测是否在边框区域
+      // 检测是否在边框区域（用于调整大小）
       bool on_left = cursor.x < border_width;
       bool on_right = cursor.x >= rect.right - border_width;
       bool on_top = cursor.y < border_width;
@@ -322,7 +304,7 @@ Win32Window::MessageHandler(HWND hwnd,
       if (on_right) return HTRIGHT;
       
       // 标题栏区域（用于拖动窗口）
-      if (cursor.y < 32) {  // 32像素高的拖动区域
+      if (cursor.y < 32) {
         return HTCAPTION;
       }
       
