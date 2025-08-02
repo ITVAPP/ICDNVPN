@@ -574,9 +574,6 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             mii.fState = 0;  // 普通状态
             InsertMenuItem(menu, 2, TRUE, &mii);
             
-            // 为菜单窗口添加阴影效果（Windows 2000+）
-            HWND hMenuWnd = nullptr;
-            
             // 设置前景窗口并显示菜单
             SetForegroundWindow(window_handle_);
             
