@@ -537,42 +537,52 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             // 准备菜单项信息
             MENUITEMINFO mii = {0};
             mii.cbSize = sizeof(MENUITEMINFO);
-            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
             
-            // 添加 "Show" 菜单项
-            // 使用更合适的图标：使用应用程序图标或窗口图标
+            // 添加顶部空白分隔线（增加上边距）
+            mii.fMask = MIIM_TYPE;
+            mii.fType = MFT_SEPARATOR;
+            InsertMenuItem(menu, 0, TRUE, &mii);
+            
+            // 添加 "显示窗口" 菜单项（使用更大的图标）
             HICON hShowIcon = (HICON)LoadImage(GetModuleHandle(nullptr), 
                                              MAKEINTRESOURCE(IDI_APP_ICON), 
-                                             IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+                                             IMAGE_ICON, 20, 20, LR_DEFAULTCOLOR);  // 改为20x20
             if (!hShowIcon) {
                 // 如果加载应用图标失败，使用系统图标
                 hShowIcon = LoadIcon(nullptr, IDI_APPLICATION);
             }
-            HBITMAP hShowBitmap = IconToBitmap(hShowIcon, 16);
+            HBITMAP hShowBitmap = IconToBitmap(hShowIcon, 20);  // 改为20x20
+            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
             mii.wID = 1;
-            mii.dwTypeData = (LPWSTR)L"Show";
+            // 在文字前后添加空格增加水平边距
+            mii.dwTypeData = (LPWSTR)L"    显示窗口    ";  // 前后各4个空格
             mii.hbmpItem = hShowBitmap;
             mii.fState = MFS_DEFAULT;  // 设置为默认项（粗体）
-            InsertMenuItem(menu, 0, TRUE, &mii);
+            InsertMenuItem(menu, 1, TRUE, &mii);
             
             // 添加分隔线
             mii.fMask = MIIM_TYPE;
             mii.fType = MFT_SEPARATOR;
-            InsertMenuItem(menu, 1, TRUE, &mii);
+            InsertMenuItem(menu, 2, TRUE, &mii);
             
-            // 添加 "Exit" 菜单项
-            // 使用关闭或退出相关的图标
+            // 添加 "退出程序" 菜单项（使用更大的图标）
             HICON hExitIcon = (HICON)LoadImage(nullptr, 
                                              MAKEINTRESOURCE(OIC_ERROR), 
-                                             IMAGE_ICON, 16, 16, 
+                                             IMAGE_ICON, 20, 20,  // 改为20x20
                                              LR_DEFAULTCOLOR | LR_SHARED);
-            HBITMAP hExitBitmap = IconToBitmap(hExitIcon, 16);
+            HBITMAP hExitBitmap = IconToBitmap(hExitIcon, 20);  // 改为20x20
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
             mii.wID = 2;
-            mii.dwTypeData = (LPWSTR)L"Exit";
+            // 在文字前后添加空格增加水平边距
+            mii.dwTypeData = (LPWSTR)L"    退出程序    ";  // 前后各4个空格
             mii.hbmpItem = hExitBitmap;
             mii.fState = 0;  // 普通状态
-            InsertMenuItem(menu, 2, TRUE, &mii);
+            InsertMenuItem(menu, 3, TRUE, &mii);
+            
+            // 添加底部空白分隔线（增加下边距）
+            mii.fMask = MIIM_TYPE;
+            mii.fType = MFT_SEPARATOR;
+            InsertMenuItem(menu, 4, TRUE, &mii);
             
             // 设置前景窗口并显示菜单
             SetForegroundWindow(window_handle_);
@@ -581,6 +591,9 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             TPMPARAMS tpm;
             tpm.cbSize = sizeof(TPMPARAMS);
             GetWindowRect(window_handle_, &tpm.rcExclude);
+            
+            // 调整菜单位置，使其不会太贴近鼠标
+            pt.y -= 5;  // 向上偏移5像素，避免误点击
             
             int cmd = TrackPopupMenuEx(menu, 
                                      TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTBUTTON | TPM_VERNEGANIMATION,
