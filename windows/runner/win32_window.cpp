@@ -555,7 +555,7 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
             mii.wID = 1;
             // 在文字前后添加空格增加水平边距
-            mii.dwTypeData = (LPWSTR)L"    显示窗口    ";  // 前后各4个空格
+            mii.dwTypeData = (LPWSTR)L"  Display Screen  ";  // 前后空格
             mii.hbmpItem = hShowBitmap;
             mii.fState = MFS_DEFAULT;  // 设置为默认项（粗体）
             InsertMenuItem(menu, 1, TRUE, &mii);
@@ -574,7 +574,7 @@ void Win32Window::HandleTrayMessage(WPARAM wparam, LPARAM lparam) {
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP | MIIM_STATE;
             mii.wID = 2;
             // 在文字前后添加空格增加水平边距
-            mii.dwTypeData = (LPWSTR)L"    退出程序    ";  // 前后各4个空格
+            mii.dwTypeData = (LPWSTR)L"  Exit The App  ";  // 前后空格
             mii.hbmpItem = hExitBitmap;
             mii.fState = 0;  // 普通状态
             InsertMenuItem(menu, 3, TRUE, &mii);
