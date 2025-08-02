@@ -41,7 +41,7 @@ class CloudflareTestService {
     '131.0.72.0/22',
   ];
   
-  // 测试服务器
+  // 测试服务器 - 保持原有的公共接口
   static Future<List<ServerModel>> testServers({
     required int count,
     required int maxLatency,
@@ -79,13 +79,15 @@ class CloudflareTestService {
       
       // 批量测试延迟
       await _log.info('开始批量测试延迟...', tag: _logTag);
-      final latencyMap = await testLatency(sampleIps);
+      final latencyMap = await testLatency(sampleIps, testPort);
       await _log.info('延迟测试完成，获得 ${latencyMap.length} 个结果', tag: _logTag);
       
       // 统计延迟分布
       final latencyStats = <String, int>{};
       for (final latency in latencyMap.values) {
-        if (latency < 100) {
+        if (latency < 0) {
+          latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
+        } else if (latency < 100) {
           latencyStats['<100ms'] = (latencyStats['<100ms'] ?? 0) + 1;
         } else if (latency < 200) {
           latencyStats['100-200ms'] = (latencyStats['100-200ms'] ?? 0) + 1;
@@ -104,16 +106,16 @@ class CloudflareTestService {
       // 筛选符合条件的服务器
       final validServers = <ServerModel>[];
       for (final entry in latencyMap.entries) {
-        if (entry.value <= maxLatency) {
+        if (entry.value > 0 && entry.value <= maxLatency) {
           String detectedLocation = _detectLocationFromIp(entry.key);
           
           validServers.add(ServerModel(
             id: '${DateTime.now().millisecondsSinceEpoch}_${entry.key.replaceAll('.', '')}',
-            name: entry.key,
-            location: location == 'AUTO' ? detectedLocation : location,
-            ip: entry.key,
-            port: 443,
-            ping: entry.value,
+            name: result.ip,
+            location: location == 'AUTO' ? _detectLocation(result.ip) : location,
+            ip: result.ip,
+            port: testPort,  // 使用配置的端口
+            ping: result.latency,
           ));
         }
       }
@@ -153,14 +155,13 @@ class CloudflareTestService {
     }
   }
   
-  // 根据IP地址推测地理位置（返回国家代码）
+  // 根据IP地址推测地理位置（基于Cloudflare IP段的实际分布）
   static String _detectLocationFromIp(String ip) {
-    // 基于 Cloudflare IP 段的实际地理分布返回 ISO 3166-1 alpha-2 国家代码
     final ipParts = ip.split('.').map(int.parse).toList();
     final firstOctet = ipParts[0];
     final secondOctet = ipParts[1];
     
-    // Cloudflare IP 段到国家代码的映射（基于2025年最新数据）
+    // 基于 Cloudflare 官方 IP 段的地理分布映射
     if (firstOctet == 104) {
       // 104.16.0.0/12 主要在美国，部分在欧洲
       if (secondOctet >= 16 && secondOctet <= 31) {
@@ -212,7 +213,7 @@ class CloudflareTestService {
       }
     } else if (firstOctet == 173 && secondOctet >= 245) {
       // 173.245.48.0/20 美国
-      return 'US';  // 美国
+      return 'US';
     } else if (firstOctet == 103) {
       // 103.21.244.0/22, 103.22.200.0/22 - 亚太地区
       if (secondOctet >= 21 && secondOctet <= 22) {
@@ -224,10 +225,10 @@ class CloudflareTestService {
       }
     } else if (firstOctet == 141 && secondOctet >= 101) {
       // 141.101.64.0/18 美国
-      return 'US';  // 美国
+      return 'US';
     } else if (firstOctet == 108 && secondOctet >= 162) {
       // 108.162.192.0/18 美国
-      return 'US';  // 美国
+      return 'US';
     } else if (firstOctet == 190 && secondOctet >= 93) {
       // 190.93.240.0/20 南美
       return 'BR';  // 巴西
@@ -239,7 +240,7 @@ class CloudflareTestService {
       return 'ZA';  // 南非
     } else if (firstOctet == 198 && secondOctet >= 41) {
       // 198.41.128.0/17 美国
-      return 'US';  // 美国
+      return 'US';
     } else if (firstOctet == 162 && secondOctet >= 158 && secondOctet <= 159) {
       // 162.158.0.0/15 全球分布
       if (secondOctet == 158) {
@@ -257,14 +258,14 @@ class CloudflareTestService {
       }
     } else if (firstOctet == 131 && secondOctet == 0) {
       // 131.0.72.0/22 美国
-      return 'US';  // 美国
+      return 'US';
     }
     
     // 默认返回美国（Cloudflare 的主要节点分布地）
     return 'US';
   }
   
-  // 从 CIDR 中按 /24 段采样 IP（匹配 CloudflareSpeedTest 算法）
+  // 从 CIDR 中按 /24 段采样 IP（保持原有方法）
   static List<String> _sampleFromCidr(String cidr, int count) {
     final ips = <String>[];
     
@@ -361,7 +362,7 @@ class CloudflareTestService {
     return ips;
   }
   
-  // 从 IP 段中采样（优化算法：每个 /24 段采样一个）
+  // 从 IP 段中采样（保持原有方法）
   static Future<List<String>> _sampleIpsFromRanges(int targetCount) async {
     final ips = <String>[];
     
@@ -444,8 +445,9 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 批量测试IP延迟
-  static Future<Map<String, int>> testLatency(List<String> ips) async {
+  // 批量测试IP延迟 - 保持原有的公共接口
+  static Future<Map<String, int>> testLatency(List<String> ips, [int? port]) async {
+    final testPort = port ?? _defaultPort;
     final latencyMap = <String, int>{};
     
     if (ips.isEmpty) {
@@ -455,8 +457,8 @@ class CloudflareTestService {
     
     await _log.info('开始测试 ${ips.length} 个IP的延迟...', tag: _logTag);
     
-    // 限制并发数量，避免过多连接
-    const batchSize = 20;
+    // 限制并发数量（与开源项目类似的并发控制）
+    const batchSize = 30;  // 提高并发数
     int successCount = 0;
     int failCount = 0;
     
@@ -467,9 +469,9 @@ class CloudflareTestService {
       await _log.debug('测试批次 ${(i / batchSize).floor() + 1}/${((ips.length - 1) / batchSize).floor() + 1}，包含 ${batch.length} 个IP', tag: _logTag);
       
       for (final ip in batch) {
-        futures.add(_testSingleIpLatency(ip).then((latency) {
+        futures.add(_testSingleIpLatency(ip, testPort).then((latency) {
           latencyMap[ip] = latency;
-          if (latency < 999) {
+          if (latency > 0 && latency < 999) {
             successCount++;
             _log.debug('✓ IP $ip 延迟: ${latency}ms', tag: _logTag);
           } else {
@@ -493,7 +495,7 @@ class CloudflareTestService {
       await _log.debug('当前进度: 成功 $successCount，失败 $failCount', tag: _logTag);
       
       // 如果已经找到足够的低延迟节点，可以提前结束
-      final goodNodes = latencyMap.values.where((latency) => latency < 200).length;
+      final goodNodes = latencyMap.values.where((latency) => latency > 0 && latency < 200).length;
       if (goodNodes >= 10) {
         await _log.info('已找到 $goodNodes 个优质节点（<200ms），提前结束测试', tag: _logTag);
         break;
@@ -517,87 +519,45 @@ class CloudflareTestService {
     return latencyMap;
   }
   
-  // 测试单个IP的延迟
-  static Future<int> _testSingleIpLatency(String ip) async {
-    Socket? socket;
+  // 测试单个IP的延迟 - 使用简单的TCP连接（类似开源项目）
+  static Future<int> _testSingleIpLatency(String ip, [int? port]) async {
+    final testPort = port ?? _defaultPort;
+    const int pingTimes = 3; // 测试次数（与开源项目一致）
+    int successCount = 0;
+    int totalLatency = 0;
     
-    try {
-      // 对于服务器列表中已有的节点，直接连接测试
-      socket = await Socket.connect(
-        ip,
-        443,
-        timeout: const Duration(seconds: 3),
-      );
-      
-      final startTime = DateTime.now();
-      
-      // 发送简单的TLS Client Hello来测试连接
-      socket.add([
-        0x16, 0x03, 0x01, 0x00, 0x04, // TLS Handshake
-        0x01, 0x00, 0x00, 0x00 // Client Hello (简化版)
-      ]);
-      
-      // 等待响应
-      await socket.first.timeout(const Duration(seconds: 2));
-      
-      final endTime = DateTime.now();
-      final latency = endTime.difference(startTime).inMilliseconds;
-      
-      socket.destroy();
-      
-      return latency;
-      
-    } catch (e) {
-      // 确保socket被关闭
-      socket?.destroy();
-      
-      // 记录Socket连接失败的详细信息
-      await _log.debug('× Socket连接 $ip:443 失败: ${e.runtimeType} - $e', tag: _logTag);
-      
-      // 如果Socket连接失败，尝试HTTP方式
-      HttpClient? httpClient;
+    // 进行多次测试取平均值（与开源项目一致）
+    for (int i = 0; i < pingTimes; i++) {
       try {
-        await _log.debug('尝试HTTP方式测试 $ip', tag: _logTag);
-        httpClient = HttpClient();
-        httpClient.connectionTimeout = const Duration(seconds: 3);
-        httpClient.badCertificateCallback = (cert, host, port) => true;
+        final stopwatch = Stopwatch()..start();
         
-        final startTime = DateTime.now();
-        
-        final uri = Uri(
-          scheme: 'https',
-          host: ip,
-          port: 443,
-          path: '/cdn-cgi/trace',
+        // 简单的TCP连接测试（与开源项目一致）
+        final socket = await Socket.connect(
+          ip,
+          testPort,
+          timeout: _tcpTimeout,  // 1秒超时（与开源项目一致）
         );
         
-        await _log.debug('请求URL: $uri', tag: _logTag);
+        stopwatch.stop();
+        socket.destroy();
         
-        final request = await httpClient.getUrl(uri);
-        request.headers.set('Host', 'cloudflare.com');
-        request.headers.set('User-Agent', 'CloudflareSpeedTest/1.0');
-        
-        final response = await request.close();
-        await response.drain();
-        
-        final endTime = DateTime.now();
-        final latency = endTime.difference(startTime).inMilliseconds;
-        
-        httpClient.close();
-        
-        if (response.statusCode == 200 || response.statusCode == 403) {
-          await _log.debug('✓ HTTP测试 $ip 成功，状态码: ${response.statusCode}，延迟: ${latency}ms', tag: _logTag);
-          return latency;
+        final latency = stopwatch.elapsedMilliseconds;
+        if (latency > 0) {
+          successCount++;
+          totalLatency += latency;
         }
-        
-        await _log.debug('× HTTP测试 $ip 返回异常状态码: ${response.statusCode}', tag: _logTag);
-        return 999;
-      } catch (e2) {
-        // 确保httpClient被关闭
-        httpClient?.close();
-        await _log.debug('× HTTP测试 $ip 失败: ${e2.runtimeType} - $e2', tag: _logTag);
-        return 999;
+      } catch (e) {
+        // 连接失败，继续下一次测试
+        continue;
       }
     }
+    
+    // 如果一次都没成功，返回失败标记
+    if (successCount == 0) {
+      return 999;
+    }
+    
+    // 返回平均延迟
+    return totalLatency ~/ successCount;
   }
 }
