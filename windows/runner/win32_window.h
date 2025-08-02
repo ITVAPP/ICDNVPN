@@ -13,16 +13,15 @@
 class Win32Window {
  public:
   struct Point {
-    unsigned int x;
-    unsigned int y;
-    Point(unsigned int x, unsigned int y) : x(x), y(y) {}
+    int x;
+    int y;
+    Point(int x, int y) : x(x), y(y) {}
   };
 
   struct Size {
-    unsigned int width;
-    unsigned int height;
-    Size(unsigned int width, unsigned int height)
-        : width(width), height(height) {}
+    int width;
+    int height;
+    Size(int width, int height) : width(width), height(height) {}
   };
 
   Win32Window();
@@ -54,6 +53,12 @@ class Win32Window {
 
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
+
+  // Sends existing app instance information to a running window.
+  bool SendAppLinkToInstance(const std::wstring& title);
+
+  // Reads window placement from saved data.
+  void readPlacement(HWND hwnd);
 
  protected:
   // Processes and route salient window messages for mouse handling,
@@ -89,6 +94,9 @@ class Win32Window {
 
   // Update the window frame's theme to match the system theme.
   static void UpdateTheme(HWND const window);
+
+  // Apply rounded corners to the window
+  void ApplyRoundedCorners(HWND hwnd, int width, int height);
 
   bool quit_on_close_ = false;
 
