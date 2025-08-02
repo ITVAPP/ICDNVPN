@@ -31,6 +31,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   DateTime? _connectStartTime;
   
   bool _isProcessing = false;
+  bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
 
   @override
   void initState() {
@@ -291,6 +292,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           
           setState(() {
             _isProcessing = true;
+            // 如果是断开操作，设置断开标志
+            if (isConnected) {
+              _isDisconnecting = true;
+            }
           });
           
           // 启动加载动画
@@ -315,6 +320,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (mounted) {
               setState(() {
                 _isProcessing = false;
+                _isDisconnecting = false;
               });
               _loadingController.stop();
               _loadingController.reset();
@@ -331,12 +337,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: _isProcessing
-                    ? isConnected
-                      ? [  // 已连接，正在断开 - 红色
+                    ? _isDisconnecting
+                      ? [  // 正在断开 - 红色
                           Colors.red.shade400,
                           Colors.red.shade600,
                         ]
-                      : [  // 未连接，正在连接 - 橙色
+                      : [  // 正在连接 - 橙色
                           Colors.orange.shade400,
                           Colors.orange.shade600,
                         ]
@@ -353,7 +359,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 boxShadow: [
                   BoxShadow(
                     color: (_isProcessing 
-                      ? (isConnected ? Colors.red : Colors.orange)
+                      ? (_isDisconnecting ? Colors.red : Colors.orange)
                       : (isConnected ? Colors.green : Colors.blue)
                     ).withOpacity(0.3),
                     blurRadius: 30,
@@ -387,7 +393,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         duration: const Duration(milliseconds: 300),
                         child: Text(
                           _isProcessing 
-                            ? (isConnected ? l10n.disconnecting : l10n.connecting)     // 修复：正确显示"正在断开"
+                            ? (_isDisconnecting ? l10n.disconnecting : l10n.connecting)
                             : (isConnected ? l10n.clickToDisconnect : l10n.clickToConnect),
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
@@ -499,14 +505,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.info_outline,
-            color: theme.hintColor,
-            size: 24,
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                theme.primaryColor,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Text(
-            l10n.noNodesHint,
+            l10n.gettingNodes,
             style: TextStyle(
               fontSize: 16,
               color: theme.hintColor,
@@ -519,9 +530,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildPingIndicator(int ping, bool isConnected) {
     final color = UIUtils.getPingColor(ping);
+    final l10n = AppLocalizations.of(context);
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
@@ -530,25 +542,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           width: 1,
         ),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isConnected)
-            Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.only(right: 6),
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isConnected)
+                Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              Text(
+                l10n.latency,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
+            ],
+          ),
+          const SizedBox(height: 2),
           Text(
             '${ping}ms',
             style: TextStyle(
               color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
