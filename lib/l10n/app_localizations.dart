@@ -51,6 +51,7 @@ class AppLocalizations {
   String get refresh => _get('refresh');
   String get protected => _get('protected');
   String get unprotected => _get('unprotected');
+  String get noNodesHint => _get('noNodesHint');
   
   // 服务器页面
   String get serverList => _get('serverList');
@@ -241,6 +242,7 @@ const Map<String, String> _zhCnTranslations = {
   'refresh': '刷新',
   'protected': '已保护',
   'unprotected': '未保护',
+  'noNodesHint': '暂无节点，请先获取',
   
   // 服务器页面
   'serverList': '服务器列表',
@@ -347,28 +349,171 @@ const Map<String, String> _zhCnTranslations = {
   'exitApp': '退出应用',
 };
 
-// 英语翻译（仅先占位，以后再翻译）
+// 英语翻译
 const Map<String, String> _enTranslations = {
   'appName': 'CFVPN',
   'home': 'Home',
+  'servers': 'Servers',
+  'settings': 'Settings',
+  'connect': 'Connect',
+  'disconnect': 'Disconnect',
+  'connected': 'Connected',
+  'disconnected': 'Disconnected',
+  'connecting': 'Connecting...',
+  'disconnecting': 'Disconnecting...',
+  'close': 'Close',
+  'clickToConnect': 'Click to Connect',
+  'clickToDisconnect': 'Click to Disconnect',
+  'currentServer': 'Current Server',
+  'selectServer': 'Select Server',
+  'upload': 'Upload',
+  'download': 'Download',
+  'autoSelectNode': 'Auto Select',
+  'speedTest': 'Speed Test',
+  'refresh': 'Refresh',
+  'protected': 'Protected',
+  'unprotected': 'Unprotected',
+  'noNodesHint': 'No nodes available, please get some first',
+  'serverList': 'Server List',
+  'addServer': 'Add Server',
+  'deleteServer': 'Delete Server',
+  'testLatency': 'Test Latency',
+  'sortAscending': 'Sort by Latency (Low to High)',
+  'sortDescending': 'Sort by Latency (High to Low)',
+  'fromCloudflare': 'From Cloudflare',
+  'noServers': 'No Servers',
+  'confirmDelete': 'Confirm Delete',
+  'latency': 'Latency',
+  'location': 'Location',
+  'cfNode': 'CF Node',
+  'addFromCloudflare': 'Add from Cloudflare',
+  'autoGetBestNodes': 'Auto get best nodes',
+  'manualAdd': 'Manual Add',
+  'inputServerInfo': 'Input server info',
+  'scanQrCode': 'Scan QR Code',
+  'importFromQrCode': 'Import from QR code',
+  'importFromClipboard': 'Import from Clipboard',
+  'pasteServerConfig': 'Paste server config',
+  'diagnosticTool': 'Diagnostic Tool',
+  'generalSettings': 'General Settings',
+  'networkSettings': 'Network Settings',
+  'about': 'About',
+  'autoStart': 'Auto Start',
+  'autoStartDesc': 'Start when system boots',
+  'autoConnect': 'Auto Connect',
+  'autoConnectDesc': 'Connect when app starts',
+  'tunMode': 'TUN Mode',
+  'tunModeDesc': 'Use TUN virtual network for global proxy',
+  'proxyMode': 'Proxy Mode',
+  'globalProxy': 'Global Proxy',
+  'routeSettings': 'Route Settings',
+  'configureRules': 'Configure rules',
+  'currentVersion': 'Current Version',
+  'checkUpdate': 'Check Update',
+  'officialWebsite': 'Official Website',
+  'contactEmail': 'Contact Email',
+  'privacyPolicy': 'Privacy Policy',
+  'clearCache': 'Clear Cache',
+  'cacheCleared': 'Cache Cleared',
+  'language': 'Language',
+  'theme': 'Theme',
+  'systemTheme': 'Follow System',
+  'lightTheme': 'Light',
+  'darkTheme': 'Dark',
+  'operationFailed': 'Operation Failed',
+  'testingLatency': 'Testing latency...',
+  'gettingNodes': 'Getting nodes...',
+  'noAvailableServer': 'No available server',
+  'alreadyLatestVersion': 'Already latest version',
+  'serverAdded': 'Server added',
+  'serverDeleted': 'Server deleted',
+  'allServersDeleted': 'All servers deleted',
+  'startTest': 'Start Test',
+  'testing': 'Testing',
+  'testCompleted': 'Test Completed',
+  'testFailed': 'Test Failed',
+  'preparing': 'Preparing...',
+  'connectingNodes': 'Connecting nodes...',
+  'processingResults': 'Processing results...',
+  'preparingTestEnvironment': 'Preparing test environment',
+  'initializing': 'Initializing',
+  'generatingTestIPs': 'Generating test IPs',
+  'samplingFromIPRanges': 'Sampling from %s IP ranges',
+  'testingDelay': 'Testing delay',
+  'testingDownloadSpeed': 'Testing download speed',
+  'startingSpeedTest': 'Starting speed test',
+  'foundQualityNodes': 'Found %s quality nodes',
+  'noQualifiedNodes': 'No qualified nodes found',
+  'checkNetworkOrRequirements': 'Check network or lower requirements',
+  'noServersMetSpeedRequirement': 'No servers met speed requirement',
+  'lowerSpeedRequirement': 'Lower speed requirement or check network',
+  'testingNodeLatency': 'Testing node latency',
+  'nodeProgress': '%s/%s',
+  'ipRanges': '%s IP ranges',
+  'nodeSpeedTest': 'Node speed test',
+  'runDiagnostics': 'Run Diagnostics',
+  'diagnosticResults': 'Diagnostic Results',
+  'fileCheck': 'File Check',
+  'networkTest': 'Network Test',
+  'systemInfo': 'System Info',
+  'confirmExit': 'Confirm Exit',
+  'confirmExitDesc': 'Please choose an action:',
+  'minimize': 'Minimize to Tray',
+  'exitApp': 'Exit App',
 };
 
-// 繁体中文（仅先占位，以后再翻译）
+// 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
+  'servers': '伺服器',
+  'settings': '設定',
+  'connect': '連線',
+  'disconnect': '斷開',
+  'connected': '已連線',
+  'disconnected': '未連線',
+  'connecting': '正在連線...',
+  'disconnecting': '正在斷開...',
+  'noNodesHint': '暫無節點，請先獲取',
 };
 
-// 西班牙语（仅先占位，以后再翻译）
+// 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
+  'servers': 'Servidores',
+  'settings': 'Ajustes',
+  'connect': 'Conectar',
+  'disconnect': 'Desconectar',
+  'connected': 'Conectado',
+  'disconnected': 'Desconectado',
+  'connecting': 'Conectando...',
+  'disconnecting': 'Desconectando...',
+  'noNodesHint': 'Sin nodos, obtenga algunos primero',
 };
 
-// 俄语（仅先占位，以后再翻译）
+// 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
+  'servers': 'Серверы',
+  'settings': 'Настройки',
+  'connect': 'Подключить',
+  'disconnect': 'Отключить',
+  'connected': 'Подключено',
+  'disconnected': 'Отключено',
+  'connecting': 'Подключение...',
+  'disconnecting': 'Отключение...',
+  'noNodesHint': 'Нет узлов, сначала получите',
 };
 
-// 阿拉伯语（仅先占位，以后再翻译）
+// 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
+  'servers': 'الخوادم',
+  'settings': 'الإعدادات',
+  'connect': 'اتصال',
+  'disconnect': 'قطع الاتصال',
+  'connected': 'متصل',
+  'disconnected': 'غير متصل',
+  'connecting': 'جاري الاتصال...',
+  'disconnecting': 'جاري قطع الاتصال...',
+  'noNodesHint': 'لا توجد عقد، يرجى الحصول على بعضها أولاً',
 };
