@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/connection_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/locale_provider.dart';
+import '../providers/server_provider.dart';
 import '../services/autostart_service.dart';
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -168,14 +170,64 @@ class _SettingsPageState extends State<SettingsPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ElevatedButton.icon(
-                onPressed: () {
-                  // TODO: 实现清除缓存功能
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(l10n.cacheCleared),
-                      duration: const Duration(seconds: 1),
+                onPressed: () async {
+                  // 显示确认对话框
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Text(l10n.clearCache),
+                      content: const Text('将清除所有缓存数据，包括服务器列表、设置等。确定要继续吗？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: Text(l10n.disconnect), // 取消
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: TextButton.styleFrom(foregroundColor: Colors.red),
+                          child: Text(l10n.clearCache),
+                        ),
+                      ],
                     ),
-                  );
+                  ) ?? false;
+                  
+                  if (!confirmed) return;
+                  
+                  // 执行清除操作
+                  try {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.clear(); // 清除所有存储的数据
+                    
+                    // 重置各个Provider的状态
+                    if (mounted) {
+                      // 重置服务器列表
+                      context.read<ServerProvider>().resetServers();
+                      // 重置连接状态
+                      context.read<ConnectionProvider>().setCurrentServer(null);
+                      // 重置主题
+                      context.read<ThemeProvider>().setThemeMode(ThemeMode.system);
+                      // 重置语言
+                      context.read<LocaleProvider>().clearLocale();
+                    }
+                    
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.cacheCleared),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${l10n.operationFailed}: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 },
                 icon: const Icon(Icons.delete_outline),
                 label: Text(l10n.clearCache),

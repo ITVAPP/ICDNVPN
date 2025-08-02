@@ -330,10 +330,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: _isProcessing
-                    ? [
-                        Colors.orange.shade400,
-                        Colors.orange.shade600,
-                      ]
+                    ? isConnected
+                      ? [
+                          Colors.red.shade400,
+                          Colors.red.shade600,
+                        ]
+                      : [
+                          Colors.orange.shade400,
+                          Colors.orange.shade600,
+                        ]
                     : isConnected
                       ? [
                           Colors.green.shade400,
@@ -347,7 +352,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 boxShadow: [
                   BoxShadow(
                     color: (_isProcessing 
-                      ? Colors.orange 
+                      ? (isConnected ? Colors.red : Colors.orange)
                       : (isConnected ? Colors.green : Colors.blue)
                     ).withOpacity(0.3),
                     blurRadius: 30,
@@ -434,7 +439,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(15),
                 ),
                 child: Center(
-                  child: UIUtils.buildCountryFlag(server.location, size: 36),
+                  child: UIUtils.buildCountryFlag(server.location, size: 40),
                 ),
               ),
               const SizedBox(width: 15),
@@ -469,36 +474,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               // 延迟指示器
               _buildPingIndicator(server.ping, isConnected),
             ],
-          ),
-          const SizedBox(height: 15),
-          // IP地址栏
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-            decoration: BoxDecoration(
-              color: theme.brightness == Brightness.dark
-                ? Colors.grey.shade800.withOpacity(0.5)
-                : Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'IP',
-                  style: TextStyle(
-                    color: theme.hintColor,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  '${server.ip}:${server.port}',
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -706,7 +681,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         child: Column(
           children: [
-            Icon(icon, color: theme.primaryColor),
+            Icon(
+              icon, 
+              color: theme.brightness == Brightness.dark
+                ? Colors.white
+                : theme.primaryColor
+            ),
             const SizedBox(height: 4),
             Text(
               label,

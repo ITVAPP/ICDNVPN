@@ -34,14 +34,14 @@ class UIUtils {
     
     return Container(
       width: size,
-      height: size,
+      height: size * 0.75, // 矩形比例 4:3
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
         gradient: LinearGradient(
           colors: flagData['colors'] as List<Color>,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(4), // 轻微圆角
         boxShadow: [
           BoxShadow(
             color: (flagData['colors'] as List<Color>)[0].withOpacity(0.3),

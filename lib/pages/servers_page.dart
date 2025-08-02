@@ -467,7 +467,7 @@ class _ServerListItemState extends State<ServerListItem>
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12), // 矩形圆角
                         boxShadow: [
                           if (widget.isConnected)
                             BoxShadow(
@@ -482,7 +482,7 @@ class _ServerListItemState extends State<ServerListItem>
                         children: [
                           UIUtils.buildCountryFlag(
                             widget.server.location,
-                            size: 40,
+                            size: 48, // 调整尺寸以适应矩形容器
                           ),
                           if (widget.isConnected)
                             Positioned(
@@ -559,7 +559,7 @@ class _ServerListItemState extends State<ServerListItem>
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 8),
                           Row(
                             children: [
                               Icon(
@@ -625,17 +625,6 @@ class _ServerListItemState extends State<ServerListItem>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${widget.server.ip}:${widget.server.port}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: widget.isSelected
-                                ? theme.primaryColor.withOpacity(0.8)
-                                : Colors.grey[500],
-                              fontFamily: 'monospace',
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -673,6 +662,14 @@ class _ServerListItemState extends State<ServerListItem>
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(2),
+              border: widget.isSelected && isActive
+                ? Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white.withOpacity(0.8)
+                      : Colors.black.withOpacity(0.3),
+                    width: 0.5,
+                  )
+                : null,
               boxShadow: [
                 if (isActive && widget.isSelected)
                   BoxShadow(
