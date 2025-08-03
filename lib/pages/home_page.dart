@@ -743,7 +743,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ? Colors.black.withOpacity(0.2)
               : Colors.black.withOpacity(0.05),
             blurRadius: 10,
-            offset: const Offset(0, 5),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
