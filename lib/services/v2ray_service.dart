@@ -615,20 +615,16 @@ class V2RayService {
       // 使用正确的可执行文件
       final apiExe = hasV2ctl ? v2ctlPath : v2rayPath;
       
-      // Windows平台特殊处理命令参数
+      // 使用正确的命令参数格式
       List<String> apiCmd;
-      if (Platform.isWindows && hasV2ctl) {
-        // Windows下使用v2ctl时的特殊格式
-        // 参考官方文档：Windows CMD需要四个引号来表示一个引号
+      if (hasV2ctl) {
+        // v2ctl 使用标准格式，不需要特殊的引号处理
         apiCmd = [
           'api',
           '--server=127.0.0.1:10085',
           'StatsService.QueryStats',
-          '"pattern: """" reset: false"'  // Windows正确的引号格式
+          'pattern: "" reset: false'  // 修复：作为单个参数，内部引号正常使用
         ];
-      } else if (hasV2ctl) {
-        // 非Windows平台使用v2ctl
-        apiCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.QueryStats', 'pattern: ""', 'reset: false'];
       } else {
         // 使用v2ray内置命令
         apiCmd = ['api', 'statsquery', '--server=127.0.0.1:10085'];
@@ -640,7 +636,7 @@ class V2RayService {
       final result = await Process.run(
         apiExe,
         apiCmd,
-        runInShell: true,
+        runInShell: false,  // 修复：不使用 shell，避免引号问题
         workingDirectory: v2rayDir,
         stdoutEncoding: utf8,
         stderrEncoding: utf8,
@@ -690,11 +686,14 @@ class V2RayService {
         final uplinkName = 'inbound>>>$tag>>>traffic>>>uplink';
         List<String> uplinkCmd;
         
-        if (Platform.isWindows && hasV2ctl) {
-          // Windows特殊格式 - 使用四个引号表示一个引号
-          uplinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', '"name: """"$uplinkName"""" reset: false"'];
-        } else if (hasV2ctl) {
-          uplinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$uplinkName"', 'reset: false'];
+        if (hasV2ctl) {
+          // v2ctl 格式：修复参数传递
+          uplinkCmd = [
+            'api', 
+            '--server=127.0.0.1:10085', 
+            'StatsService.GetStats',
+            'name: "$uplinkName" reset: false'  // 作为单个参数
+          ];
         } else {
           uplinkCmd = ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$uplinkName"'];
         }
@@ -702,8 +701,10 @@ class V2RayService {
         final uplinkResult = await Process.run(
           apiExe,
           uplinkCmd,
-          runInShell: true,
+          runInShell: false,  // 不使用 shell
           workingDirectory: v2rayDir,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
         );
         
         if (uplinkResult.exitCode == 0) {
@@ -718,10 +719,13 @@ class V2RayService {
         final downlinkName = 'inbound>>>$tag>>>traffic>>>downlink';
         List<String> downlinkCmd;
         
-        if (Platform.isWindows && hasV2ctl) {
-          downlinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', '"name: """"$downlinkName"""" reset: false"'];
-        } else if (hasV2ctl) {
-          downlinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$downlinkName"', 'reset: false'];
+        if (hasV2ctl) {
+          downlinkCmd = [
+            'api',
+            '--server=127.0.0.1:10085',
+            'StatsService.GetStats',
+            'name: "$downlinkName" reset: false'
+          ];
         } else {
           downlinkCmd = ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$downlinkName"'];
         }
@@ -729,8 +733,10 @@ class V2RayService {
         final downlinkResult = await Process.run(
           apiExe,
           downlinkCmd,
-          runInShell: true,
+          runInShell: false,
           workingDirectory: v2rayDir,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
         );
         
         if (downlinkResult.exitCode == 0) {
@@ -748,10 +754,13 @@ class V2RayService {
         final uplinkName = 'outbound>>>$tag>>>traffic>>>uplink';
         List<String> uplinkCmd;
         
-        if (Platform.isWindows && hasV2ctl) {
-          uplinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', '"name: """"$uplinkName"""" reset: false"'];
-        } else if (hasV2ctl) {
-          uplinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$uplinkName"', 'reset: false'];
+        if (hasV2ctl) {
+          uplinkCmd = [
+            'api',
+            '--server=127.0.0.1:10085',
+            'StatsService.GetStats',
+            'name: "$uplinkName" reset: false'
+          ];
         } else {
           uplinkCmd = ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$uplinkName"'];
         }
@@ -759,8 +768,10 @@ class V2RayService {
         final uplinkResult = await Process.run(
           apiExe,
           uplinkCmd,
-          runInShell: true,
+          runInShell: false,
           workingDirectory: v2rayDir,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
         );
         
         if (uplinkResult.exitCode == 0) {
@@ -775,10 +786,13 @@ class V2RayService {
         final downlinkName = 'outbound>>>$tag>>>traffic>>>downlink';
         List<String> downlinkCmd;
         
-        if (Platform.isWindows && hasV2ctl) {
-          downlinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', '"name: """"$downlinkName"""" reset: false"'];
-        } else if (hasV2ctl) {
-          downlinkCmd = ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$downlinkName"', 'reset: false'];
+        if (hasV2ctl) {
+          downlinkCmd = [
+            'api',
+            '--server=127.0.0.1:10085',
+            'StatsService.GetStats',
+            'name: "$downlinkName" reset: false'
+          ];
         } else {
           downlinkCmd = ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$downlinkName"'];
         }
@@ -786,8 +800,10 @@ class V2RayService {
         final downlinkResult = await Process.run(
           apiExe,
           downlinkCmd,
-          runInShell: true,
+          runInShell: false,
           workingDirectory: v2rayDir,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
         );
         
         if (downlinkResult.exitCode == 0) {
