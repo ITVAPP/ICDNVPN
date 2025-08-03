@@ -130,8 +130,18 @@ class V2RayService {
       "policy": {
         "levels": {
           "0": {
-            "statsUserUplink": true,
-            "statsUserDownlink": true
+           // 连接设置
+           "handshake": 5,        // 握手超时（秒）
+           "connIdle": 300,       // 连接空闲超时（秒）
+           "uplinkOnly": 3,       // 下行关闭后的上行超时（秒）
+           "downlinkOnly": 5,     // 上行关闭后的下行超时（秒）
+      
+           // 统计设置
+           "statsUserUplink": true,
+           "statsUserDownlink": true,
+      
+           // 内存优化设置
+           "bufferSize": 8        // 缓存大小，单位KB（默认512KB）
           }
         },
         "system": {
@@ -174,6 +184,7 @@ class V2RayService {
         {
           "tag": "api",
           "port": 10085,
+          "listen": "127.0.0.1",
           "protocol": "dokodemo-door",
           "settings": {
             "address": "127.0.0.1"
@@ -248,12 +259,6 @@ class V2RayService {
               "interval": "10-20"
             }
           }
-        },
-        // 添加API出站 - 这是必须的，否则API调用会失败
-        {
-          "tag": "api",
-          "protocol": "freedom",
-          "settings": {}
         }
       ],
       "dns": {
@@ -280,6 +285,7 @@ class V2RayService {
       "routing": {
         "domainStrategy": "AsIs",
         "rules": [
+          // 修复关键点：添加API路由规则，必须在第一位
           {
             "type": "field",
             "inboundTag": [
@@ -426,10 +432,14 @@ class V2RayService {
         throw 'Failed to start V2Ray process';
       }
 
-      // 监听进程输出
+      // 监听进程输出 - 修复：改进错误判断逻辑
       _v2rayProcess!.stdout.transform(utf8.decoder).listen((data) {
         _log.debug('V2Ray stdout: $data', tag: _logTag);
-        if (data.contains('failed to')) {
+        
+        // 只检测真正的启动失败
+        if (data.toLowerCase().contains('failed to start') || 
+            data.toLowerCase().contains('panic:') ||
+            data.toLowerCase().contains('fatal error')) {
           _isRunning = false;
           _log.error('V2Ray启动失败: $data', tag: _logTag);
         }
