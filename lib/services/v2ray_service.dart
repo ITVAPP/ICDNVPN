@@ -217,7 +217,7 @@ class V2RayService {
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
       // 从assets加载配置模板
-      final String jsonString = await rootBundle.loadString('assets/json/v2ray_config_template.json');
+      final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
       return jsonDecode(jsonString);
     } catch (e) {
       await _log.error('加载配置模板失败: $e', tag: _logTag);
