@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:math';
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -121,7 +121,7 @@ class ConnectionProvider with ChangeNotifier {
       
       // 从优质服务器中随机选择
       if (goodServers.isNotEmpty) {
-        final random = Random();
+        final random = math.Random();
         return goodServers[random.nextInt(goodServers.length)];
       }
     }
