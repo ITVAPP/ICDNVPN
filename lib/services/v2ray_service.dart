@@ -702,6 +702,9 @@ class V2RayService {
     try {
       _log.debug('开始解析流量统计输出，长度: ${output.length}', tag: _logTag);
       
+      // 处理可能的HTML实体编码
+      output = output.replaceAll('&lt;', '<').replaceAll('&gt;', '>');
+      
       // 重置当前统计
       int currentUplink = 0;
       int currentDownlink = 0;
@@ -748,6 +751,10 @@ class V2RayService {
       }
       
       _log.debug('共解析 $parsedCount 个统计项', tag: _logTag);
+      
+      if (parsedCount == 0) {
+        _log.warn('未能解析任何流量统计数据，原始输出: ${output.substring(0, output.length > 200 ? 200 : output.length)}...', tag: _logTag);
+      }
       
       // 更新总量
       _uploadTotal = currentUplink;
