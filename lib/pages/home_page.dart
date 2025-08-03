@@ -745,10 +745,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  // 修改流量统计卡片 - 添加margin使宽度与节点卡片一致
   Widget _buildTrafficCard(AppLocalizations l10n) {
     final theme = Theme.of(context);
     
     return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -763,63 +765,87 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ],
         ),
         borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: theme.brightness == Brightness.dark
+              ? Colors.black.withOpacity(0.2)
+              : Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildTrafficItem(
-                icon: Icons.upload,
-                label: l10n.upload,
-                value: _uploadSpeed,
-                color: Colors.orange,
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: theme.dividerColor,
-              ),
-              _buildTrafficItem(
-                icon: Icons.download,
-                label: l10n.download,
-                value: _downloadSpeed,
-                color: Colors.blue,
-              ),
-            ],
+          // 上传部分
+          Expanded(
+            child: _buildTrafficItem(
+              icon: Icons.upload,
+              label: l10n.upload,
+              value: _uploadSpeed,
+              color: Colors.orange,
+            ),
+          ),
+          // 分隔符
+          Container(
+            width: 1,
+            height: 50,
+            color: theme.dividerColor.withOpacity(0.3),
+          ),
+          // 下载部分
+          Expanded(
+            child: _buildTrafficItem(
+              icon: Icons.download,
+              label: l10n.download,
+              value: _downloadSpeed,
+              color: Colors.blue,
+            ),
           ),
         ],
       ),
     );
   }
 
+  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值
   Widget _buildTrafficItem({
     required IconData icon,
     required String label,
     required String value,
     required Color color,
   }) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            color: Theme.of(context).hintColor,
-            fontSize: 12,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // 左侧：图标和标签（垂直排列）
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Theme.of(context).hintColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+          // 右侧：流量数值
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
