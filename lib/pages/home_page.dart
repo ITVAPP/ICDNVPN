@@ -28,10 +28,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _connectedTime = '00:00:00';
   Timer? _trafficTimer;
   Timer? _connectedTimeTimer;
-  DateTime? _connectStartTime;
   
   bool _isProcessing = false;
   bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
+  
+  // 用于跟踪服务器列表变化
+  int _previousServerCount = 0;
 
   @override
   void initState() {
@@ -71,7 +73,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     // 监听连接状态变化
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+      final serverProvider = Provider.of<ServerProvider>(context, listen: false);
+      
       connectionProvider.addListener(_onConnectionChanged);
+      serverProvider.addListener(_onServerListChanged);
+      
+      // 初始化服务器数量
+      _previousServerCount = serverProvider.servers.length;
+      
       _onConnectionChanged();
     });
   }
@@ -79,7 +88,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    final serverProvider = Provider.of<ServerProvider>(context, listen: false);
     connectionProvider.removeListener(_onConnectionChanged);
+    serverProvider.removeListener(_onServerListChanged);
     _slideController.dispose();
     _loadingController.dispose();
     _trafficTimer?.cancel();
@@ -96,6 +107,52 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _stopTrafficMonitoring();
       _stopConnectedTimeTimer();
     }
+  }
+  
+  void _onServerListChanged() {
+    if (!mounted) return;
+    
+    final serverProvider = Provider.of<ServerProvider>(context, listen: false);
+    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    final currentServerCount = serverProvider.servers.length;
+    
+    // 检测服务器列表从空变为非空（获取成功）
+    if (_previousServerCount == 0 && currentServerCount > 0) {
+      // 如果当前没有选中的服务器，自动选择最优的
+      if (connectionProvider.currentServer == null) {
+        final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
+        connectionProvider.setCurrentServer(bestServer);
+        
+        // 显示提示
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已自动选择最优节点: ${bestServer.name} (${bestServer.ping}ms)'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+    // 检测获取失败（从正在获取变为空）
+    else if (serverProvider.servers.isEmpty && !serverProvider.isInitializing && serverProvider.initMessage.isNotEmpty) {
+      // 显示失败提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('获取节点失败，请检查网络连接后重试'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: '重试',
+            textColor: Colors.white,
+            onPressed: () {
+              serverProvider.refreshFromCloudflare();
+            },
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+    
+    _previousServerCount = currentServerCount;
   }
   
   void _startTrafficMonitoring() {
@@ -128,8 +185,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
   
   void _startConnectedTimeTimer() {
-    _connectStartTime = DateTime.now();
     _connectedTimeTimer?.cancel();
+    // 立即更新一次
+    _updateConnectedTime();
+    // 每秒更新
     _connectedTimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _updateConnectedTime();
     });
@@ -137,7 +196,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   void _stopConnectedTimeTimer() {
     _connectedTimeTimer?.cancel();
-    _connectStartTime = null;
     if (mounted) {
       setState(() {
         _connectedTime = '00:00:00';
@@ -146,8 +204,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
   
   void _updateConnectedTime() {
-    if (_connectStartTime != null && mounted) {
-      final duration = DateTime.now().difference(_connectStartTime!);
+    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    final connectStartTime = connectionProvider.connectStartTime;
+    
+    if (connectStartTime != null && mounted) {
+      final duration = DateTime.now().difference(connectStartTime);
       final hours = duration.inHours.toString().padLeft(2, '0');
       final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
       final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
