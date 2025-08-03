@@ -87,6 +87,9 @@ class V2RayService {
   // 记录是否已记录V2Ray目录信息
   static bool _hasLoggedV2RayInfo = false;
   
+  // 配置文件路径常量
+  static const String _CONFIG_PATH = 'assets/js/v2ray_config.json';
+  
   // 根据平台获取可执行文件名
   static String get _v2rayExecutableName {
     if (Platform.isWindows) {
@@ -217,7 +220,7 @@ class V2RayService {
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
       // 从assets加载配置模板
-      final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
+      final String jsonString = await rootBundle.loadString(_CONFIG_PATH);
       return jsonDecode(jsonString);
     } catch (e) {
       await _log.error('加载配置模板失败: $e', tag: _logTag);
@@ -395,7 +398,7 @@ class V2RayService {
         // 生成配置
         try {
           // 加载配置模板（移动端也使用同一个配置文件）
-          final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
+          final String jsonString = await rootBundle.loadString(_CONFIG_PATH);
           Map<String, dynamic> configMap = jsonDecode(jsonString);
           
           // 更新服务器信息
@@ -506,25 +509,32 @@ class V2RayService {
             data.toLowerCase().contains('listening')) {
           _log.info('V2Ray启动成功', tag: _logTag);
           hasStarted = true;
-        } else if (data.toLowerCase().contains('failed') || 
-                   data.toLowerCase().contains('error') ||
-                   data.toLowerCase().contains('panic:')) {
+        } else if (data.toLowerCase().contains('panic:') ||
+                   data.toLowerCase().contains('fatal error')) {
+          // 只有严重错误才更新状态
           _isRunning = false;
           _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-          _log.error('V2Ray错误: $data', tag: _logTag);
+          _log.error('V2Ray严重错误: $data', tag: _logTag);
         }
-        // 忽略WebSocket警告和accepted连接日志
-        else if (!data.toLowerCase().contains('websocket: close') &&
-                 !data.toLowerCase().contains('accepted')) {
-          // 其他可能重要的日志
+        // 忽略accepted连接日志
+        else if (!data.toLowerCase().contains('accepted')) {
           _log.debug('V2Ray: $data', tag: _logTag);
         }
       });
 
       _v2rayProcess!.stderr.transform(utf8.decoder).listen((data) {
-        // 只记录非websocket相关的错误
-        if (!data.toLowerCase().contains('websocket')) {
-          _log.warn('V2Ray stderr: $data', tag: _logTag);
+        // 忽略WebSocket相关的警告，这是正常现象
+        if (data.toLowerCase().contains('websocket: close') ||
+            data.toLowerCase().contains('failed to process outbound traffic')) {
+          // 这些是正常的连接重试，不记录或只记录为debug
+          _log.debug('V2Ray连接重试: $data', tag: _logTag);
+        } else if (data.toLowerCase().contains('panic:') ||
+                   data.toLowerCase().contains('fatal')) {
+          // 只记录严重错误
+          _log.error('V2Ray严重错误: $data', tag: _logTag);
+        } else {
+          // 其他警告
+          _log.warn('V2Ray警告: $data', tag: _logTag);
         }
       });
 
