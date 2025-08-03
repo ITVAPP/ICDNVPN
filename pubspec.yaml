@@ -55,6 +55,7 @@ flutter:
   # 应用图标
   assets:
     - assets/images/
+    - assets/js/
   
   # 字体配置（如果需要）
   # fonts:
