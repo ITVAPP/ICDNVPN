@@ -399,7 +399,7 @@ class V2RayService {
       await _log.info('启动V2Ray进程: $v2rayPath', tag: _logTag);
       
       // 准备进程启动参数
-      final Map<String, String>? environment = {};
+      final Map<String, String> environment = {};
       
       // Android平台可能需要设置环境变量
       if (Platform.isAndroid) {
