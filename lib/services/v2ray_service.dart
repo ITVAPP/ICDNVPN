@@ -23,11 +23,8 @@ class V2RayService {
   static Function? _onProcessExit; // 进程退出回调
   
   // 流量统计相关
-  static int _uploadSpeed = 0;
-  static int _downloadSpeed = 0;
   static int _uploadTotal = 0;
   static int _downloadTotal = 0;
-  static DateTime _lastUpdateTime = DateTime.now();
   static Timer? _statsTimer;
   
   // 日志服务
@@ -465,13 +462,10 @@ class V2RayService {
       await _log.info('V2Ray服务启动成功', tag: _logTag);
       
       // 重置流量统计
-      _uploadSpeed = 0;
-      _downloadSpeed = 0;
       _uploadTotal = 0;
       _downloadTotal = 0;
-      _lastUpdateTime = DateTime.now();
       
-      // 启动流量统计定时器（每秒更新一次）
+      // 启动流量统计定时器
       _startStatsTimer();
       
       return true;
@@ -572,7 +566,7 @@ class V2RayService {
   static void _startStatsTimer() {
     _stopStatsTimer(); // 确保没有重复的定时器
     
-    // 延迟5秒后开始统计，确保V2Ray完全启动（与UI同步）
+    // 延迟5秒后开始统计，确保V2Ray完全启动
     Future.delayed(const Duration(seconds: 5), () {
       if (_isRunning) {
         _log.info('开始流量统计监控', tag: _logTag);
@@ -580,7 +574,7 @@ class V2RayService {
         // 立即执行一次
         _updateTrafficStatsFromAPI();
         
-        // 每5秒更新一次，平衡性能和实时性
+        // 每5秒更新一次
         _statsTimer = Timer.periodic(const Duration(seconds: 5), (_) {
           _updateTrafficStatsFromAPI();
         });
@@ -708,9 +702,6 @@ class V2RayService {
     try {
       _log.debug('开始解析流量统计输出，长度: ${output.length}', tag: _logTag);
       
-      final now = DateTime.now();
-      final timeDiff = now.difference(_lastUpdateTime).inSeconds;
-      
       // 重置当前统计
       int currentUplink = 0;
       int currentDownlink = 0;
@@ -758,36 +749,11 @@ class V2RayService {
       
       _log.debug('共解析 $parsedCount 个统计项', tag: _logTag);
       
-      // 计算速度（字节/秒）
-      if (timeDiff > 0 && (_uploadTotal > 0 || _downloadTotal > 0)) {
-        // 计算增量
-        final uploadDelta = currentUplink - _uploadTotal;
-        final downloadDelta = currentDownlink - _downloadTotal;
-        
-        // 只有当增量为正时才更新速度（避免重启后的负值）
-        if (uploadDelta >= 0 && downloadDelta >= 0) {
-          _uploadSpeed = (uploadDelta / timeDiff).round();
-          _downloadSpeed = (downloadDelta / timeDiff).round();
-        } else {
-          // 如果是第一次或者重启后，直接设置总量，速度为0
-          _uploadSpeed = 0;
-          _downloadSpeed = 0;
-        }
-      } else {
-        // 第一次统计
-        _uploadSpeed = 0;
-        _downloadSpeed = 0;
-      }
-      
       // 更新总量
       _uploadTotal = currentUplink;
       _downloadTotal = currentDownlink;
-      _lastUpdateTime = now;
       
       _log.info('流量统计更新: 上传总量=${UIUtils.formatBytes(_uploadTotal)}, 下载总量=${UIUtils.formatBytes(_downloadTotal)}', tag: _logTag);
-      if (_uploadSpeed > 0 || _downloadSpeed > 0) {
-        _log.info('当前速度: 上传=${UIUtils.formatBytes(_uploadSpeed)}/s, 下载=${UIUtils.formatBytes(_downloadSpeed)}/s', tag: _logTag);
-      }
     } catch (e, stackTrace) {
       _log.error('解析流量统计失败', tag: _logTag, error: e, stackTrace: stackTrace);
     }
@@ -797,8 +763,6 @@ class V2RayService {
   static Future<Map<String, int>> getTrafficStats() async {
     if (!_isRunning) {
       return {
-        'uploadSpeed': 0,
-        'downloadSpeed': 0,
         'uploadTotal': 0,
         'downloadTotal': 0,
       };
@@ -806,8 +770,6 @@ class V2RayService {
     
     // 返回当前统计数据
     return {
-      'uploadSpeed': _uploadSpeed,
-      'downloadSpeed': _downloadSpeed,
       'uploadTotal': _uploadTotal,
       'downloadTotal': _downloadTotal,
     };
