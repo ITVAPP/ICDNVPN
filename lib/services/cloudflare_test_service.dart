@@ -1297,7 +1297,10 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     final l10n = AppLocalizations.of(context);
     final serverProvider = context.read<ServerProvider>();
     
-    // 清空现有服务器并添加新的
+    // 先清空所有旧节点
+    await serverProvider.clearAllServers();
+    
+    // 再逐个添加新节点
     for (final server in servers) {
       await serverProvider.addServer(server);
     }
