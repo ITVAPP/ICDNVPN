@@ -27,11 +27,9 @@ class AppLocalizations {
   }
   
   // 通用
-  String get appName => _get('appName');
   String get home => _get('home');
   String get servers => _get('servers');
   String get settings => _get('settings');
-  String get connect => _get('connect');
   String get disconnect => _get('disconnect');
   String get connected => _get('connected');
   String get disconnected => _get('disconnected');
@@ -49,8 +47,6 @@ class AppLocalizations {
   String get autoSelectNode => _get('autoSelectNode');
   String get speedTest => _get('speedTest');
   String get refresh => _get('refresh');
-  String get protected => _get('protected');
-  String get unprotected => _get('unprotected');
   String get noNodesHint => _get('noNodesHint');
   
   // 服务器页面
@@ -64,8 +60,6 @@ class AppLocalizations {
   String get noServers => _get('noServers');
   String get confirmDelete => _get('confirmDelete');
   String get latency => _get('latency');
-  String get location => _get('location');
-  String get cfNode => _get('cfNode');
   
   // 添加服务器
   String get addFromCloudflare => _get('addFromCloudflare');
@@ -86,8 +80,6 @@ class AppLocalizations {
   String get autoStartDesc => _get('autoStartDesc');
   String get autoConnect => _get('autoConnect');
   String get autoConnectDesc => _get('autoConnectDesc');
-  String get tunMode => _get('tunMode');
-  String get tunModeDesc => _get('tunModeDesc');
   String get proxyMode => _get('proxyMode');
   String get globalProxy => _get('globalProxy');
   String get routeSettings => _get('routeSettings');
@@ -109,11 +101,9 @@ class AppLocalizations {
   String get operationFailed => _get('operationFailed');
   String get testingLatency => _get('testingLatency');
   String get gettingNodes => _get('gettingNodes');
-  String get noAvailableServer => _get('noAvailableServer');
   String get alreadyLatestVersion => _get('alreadyLatestVersion');
   String get serverAdded => _get('serverAdded');
   String get serverDeleted => _get('serverDeleted');
-  String get allServersDeleted => _get('allServersDeleted');
   
   // Cloudflare测试
   String get startTest => _get('startTest');
@@ -121,8 +111,6 @@ class AppLocalizations {
   String get testCompleted => _get('testCompleted');
   String get testFailed => _get('testFailed');
   String get preparing => _get('preparing');
-  String get connectingNodes => _get('connectingNodes');
-  String get processingResults => _get('processingResults');
   
   // 新增的进度相关文本
   String get preparingTestEnvironment => _get('preparingTestEnvironment');
@@ -139,14 +127,11 @@ class AppLocalizations {
   String get checkNetworkOrRequirements => _get('checkNetworkOrRequirements');
   String get noServersMetSpeedRequirement => _get('noServersMetSpeedRequirement');
   String get lowerSpeedRequirement => _get('lowerSpeedRequirement');
-  String get testingNodeLatency => _get('testingNodeLatency');
   String get nodeProgress => _get('nodeProgress');
   String get ipRanges => _get('ipRanges');
-  String get nodeSpeedTest => _get('nodeSpeedTest');
   
   // 诊断
   String get runDiagnostics => _get('runDiagnostics');
-  String get diagnosticResults => _get('diagnosticResults');
   String get fileCheck => _get('fileCheck');
   String get networkTest => _get('networkTest');
   String get systemInfo => _get('systemInfo');
@@ -223,11 +208,9 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
 // 简体中文翻译（完整版，作为默认回退）
 const Map<String, String> _zhCnTranslations = {
   // 通用
-  'appName': 'CFVPN',
   'home': '首页',
   'servers': '服务器',
   'settings': '设置',
-  'connect': '连接',
   'disconnect': '断开',
   'connected': '已连接',
   'disconnected': '未连接',
@@ -245,8 +228,6 @@ const Map<String, String> _zhCnTranslations = {
   'autoSelectNode': '优选节点',
   'speedTest': '测速',
   'refresh': '刷新',
-  'protected': '已保护',
-  'unprotected': '未保护',
   'noNodesHint': '暂无节点，请先获取',
   
   // 服务器页面
@@ -260,8 +241,6 @@ const Map<String, String> _zhCnTranslations = {
   'noServers': '暂无服务器',
   'confirmDelete': '确认删除',
   'latency': '延迟',
-  'location': '位置',
-  'cfNode': 'CF节点',
   
   // 添加服务器
   'addFromCloudflare': '从 Cloudflare 添加',
@@ -282,8 +261,6 @@ const Map<String, String> _zhCnTranslations = {
   'autoStartDesc': '系统启动时自动运行',
   'autoConnect': '自动连接',
   'autoConnectDesc': '启动应用时自动连接',
-  'tunMode': 'TUN 模式',
-  'tunModeDesc': '使用 TUN 虚拟网卡实现全局代理',
   'proxyMode': '代理模式',
   'globalProxy': '全局代理',
   'routeSettings': '路由设置',
@@ -305,11 +282,9 @@ const Map<String, String> _zhCnTranslations = {
   'operationFailed': '操作失败',
   'testingLatency': '正在测试延迟...',
   'gettingNodes': '正在获取节点...',
-  'noAvailableServer': '没有可用的服务器',
   'alreadyLatestVersion': '已是最新版本',
   'serverAdded': '服务器已添加',
   'serverDeleted': '服务器已删除',
-  'allServersDeleted': '所有服务器已删除',
   
   // Cloudflare测试
   'startTest': '开始测试',
@@ -317,8 +292,6 @@ const Map<String, String> _zhCnTranslations = {
   'testCompleted': '测试完成',
   'testFailed': '测试失败',
   'preparing': '正在准备...',
-  'connectingNodes': '正在连接节点...',
-  'processingResults': '正在处理结果...',
   
   // 新增的进度相关文本
   'preparingTestEnvironment': '准备测试环境',
@@ -335,14 +308,11 @@ const Map<String, String> _zhCnTranslations = {
   'checkNetworkOrRequirements': '请检查网络连接或降低筛选要求',
   'noServersMetSpeedRequirement': '没有服务器满足下载速度要求',
   'lowerSpeedRequirement': '请降低速度要求或检查网络',
-  'testingNodeLatency': '测试节点延迟',
   'nodeProgress': '%s/%s',
   'ipRanges': '%s 个IP段',
-  'nodeSpeedTest': '节点速度测试',
   
   // 诊断
   'runDiagnostics': '运行诊断',
-  'diagnosticResults': '诊断结果',
   'fileCheck': '文件检查',
   'networkTest': '网络测试',
   'systemInfo': '系统信息',
@@ -361,184 +331,25 @@ const Map<String, String> _zhCnTranslations = {
 
 // 英语翻译
 const Map<String, String> _enTranslations = {
-  'appName': 'CFVPN',
   'home': 'Home',
-  'servers': 'Servers',
-  'settings': 'Settings',
-  'connect': 'Connect',
-  'disconnect': 'Disconnect',
-  'connected': 'Connected',
-  'disconnected': 'Disconnected',
-  'connecting': 'Connecting...',
-  'disconnecting': 'Disconnecting...',
-  'close': 'Close',
-  'clickToConnect': 'Click to Connect',
-  'clickToDisconnect': 'Click to Disconnect',
-  'currentServer': 'Current Server',
-  'selectServer': 'Select Server',
-  'upload': 'Upload',
-  'download': 'Download',
-  'autoSelectNode': 'Auto Select',
-  'speedTest': 'Speed Test',
-  'refresh': 'Refresh',
-  'protected': 'Protected',
-  'unprotected': 'Unprotected',
-  'noNodesHint': 'No nodes available, please get some first',
-  'serverList': 'Server List',
-  'addServer': 'Add Server',
-  'deleteServer': 'Delete Server',
-  'testLatency': 'Test Latency',
-  'sortAscending': 'Sort by Latency (Low to High)',
-  'sortDescending': 'Sort by Latency (High to Low)',
-  'fromCloudflare': 'From Cloudflare',
-  'noServers': 'No Servers',
-  'confirmDelete': 'Confirm Delete',
-  'latency': 'Latency',
-  'location': 'Location',
-  'cfNode': 'CF Node',
-  'addFromCloudflare': 'Add from Cloudflare',
-  'autoGetBestNodes': 'Auto get best nodes',
-  'manualAdd': 'Manual Add',
-  'inputServerInfo': 'Input server info',
-  'scanQrCode': 'Scan QR Code',
-  'importFromQrCode': 'Import from QR code',
-  'importFromClipboard': 'Import from Clipboard',
-  'pasteServerConfig': 'Paste server config',
-  'diagnosticTool': 'Diagnostic Tool',
-  'generalSettings': 'General Settings',
-  'networkSettings': 'Network Settings',
-  'about': 'About',
-  'autoStart': 'Auto Start',
-  'autoStartDesc': 'Start when system boots',
-  'autoConnect': 'Auto Connect',
-  'autoConnectDesc': 'Connect when app starts',
-  'tunMode': 'TUN Mode',
-  'tunModeDesc': 'Use TUN virtual network for global proxy',
-  'proxyMode': 'Proxy Mode',
-  'globalProxy': 'Global Proxy',
-  'routeSettings': 'Route Settings',
-  'configureRules': 'Configure rules',
-  'currentVersion': 'Current Version',
-  'checkUpdate': 'Check Update',
-  'officialWebsite': 'Official Website',
-  'contactEmail': 'Contact Email',
-  'privacyPolicy': 'Privacy Policy',
-  'clearCache': 'Clear Cache',
-  'cacheCleared': 'Cache Cleared',
-  'language': 'Language',
-  'theme': 'Theme',
-  'systemTheme': 'Follow System',
-  'lightTheme': 'Light',
-  'darkTheme': 'Dark',
-  'operationFailed': 'Operation Failed',
-  'testingLatency': 'Testing latency...',
-  'gettingNodes': 'Getting nodes...',
-  'noAvailableServer': 'No available server',
-  'alreadyLatestVersion': 'Already latest version',
-  'serverAdded': 'Server added',
-  'serverDeleted': 'Server deleted',
-  'allServersDeleted': 'All servers deleted',
-  'startTest': 'Start Test',
-  'testing': 'Testing',
-  'testCompleted': 'Test Completed',
-  'testFailed': 'Test Failed',
-  'preparing': 'Preparing...',
-  'connectingNodes': 'Connecting nodes...',
-  'processingResults': 'Processing results...',
-  'preparingTestEnvironment': 'Preparing test environment',
-  'initializing': 'Initializing',
-  'generatingTestIPs': 'Generating test IPs',
-  'samplingFromIPRanges': 'Sampling from %s IP ranges',
-  'testingDelay': 'Testing delay',
-  'testingDownloadSpeed': 'Testing download speed',
-  'startingSpeedTest': 'Starting speed test',
-  'foundQualityNodes': 'Found %s quality nodes',
-  'noQualifiedNodes': 'No qualified nodes found',
-  'checkNetworkOrRequirements': 'Check network or lower requirements',
-  'noServersMetSpeedRequirement': 'No servers met speed requirement',
-  'lowerSpeedRequirement': 'Lower speed requirement or check network',
-  'testingNodeLatency': 'Testing node latency',
-  'nodeProgress': '%s/%s',
-  'ipRanges': '%s IP ranges',
-  'nodeSpeedTest': 'Node speed test',
-  'runDiagnostics': 'Run Diagnostics',
-  'diagnosticResults': 'Diagnostic Results',
-  'fileCheck': 'File Check',
-  'networkTest': 'Network Test',
-  'systemInfo': 'System Info',
-  'confirmExit': 'Confirm Exit',
-  'confirmExitDesc': 'Please choose an action:',
-  'minimize': 'Minimize to Tray',
-  'exitApp': 'Exit App',
-  'gettingBestNodes': 'Getting best nodes...',
-  'getNodesFailed': 'Failed to get nodes, please retry',
-  'noValidNodes': 'Unable to get valid nodes',
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
-  'servers': '伺服器',
-  'settings': '設定',
-  'connect': '連線',
-  'disconnect': '斷開',
-  'connected': '已連線',
-  'disconnected': '未連線',
-  'connecting': '正在連線...',
-  'disconnecting': '正在斷開...',
-  'noNodesHint': '暫無節點，請先獲取',
-  'gettingBestNodes': '正在獲取最優節點...',
-  'getNodesFailed': '獲取節點失敗，請重試',
-  'noValidNodes': '無法獲取有效節點',
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
-  'servers': 'Servidores',
-  'settings': 'Ajustes',
-  'connect': 'Conectar',
-  'disconnect': 'Desconectar',
-  'connected': 'Conectado',
-  'disconnected': 'Desconectado',
-  'connecting': 'Conectando...',
-  'disconnecting': 'Desconectando...',
-  'noNodesHint': 'Sin nodos, obtenga algunos primero',
-  'gettingBestNodes': 'Obteniendo los mejores nodos...',
-  'getNodesFailed': 'Error al obtener nodos, intente de nuevo',
-  'noValidNodes': 'No se pueden obtener nodos válidos',
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
-  'servers': 'Серверы',
-  'settings': 'Настройки',
-  'connect': 'Подключить',
-  'disconnect': 'Отключить',
-  'connected': 'Подключено',
-  'disconnected': 'Отключено',
-  'connecting': 'Подключение...',
-  'disconnecting': 'Отключение...',
-  'noNodesHint': 'Нет узлов, сначала получите',
-  'gettingBestNodes': 'Получение лучших узлов...',
-  'getNodesFailed': 'Не удалось получить узлы, попробуйте еще раз',
-  'noValidNodes': 'Невозможно получить действительные узлы',
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
-  'servers': 'الخوادم',
-  'settings': 'الإعدادات',
-  'connect': 'اتصال',
-  'disconnect': 'قطع الاتصال',
-  'connected': 'متصل',
-  'disconnected': 'غير متصل',
-  'connecting': 'جاري الاتصال...',
-  'disconnecting': 'جاري قطع الاتصال...',
-  'noNodesHint': 'لا توجد عقد، يرجى الحصول على بعضها أولاً',
-  'gettingBestNodes': 'الحصول على أفضل العقد...',
-  'getNodesFailed': 'فشل الحصول على العقد، يرجى المحاولة مرة أخرى',
-  'noValidNodes': 'غير قادر على الحصول على عقد صالحة',
 };

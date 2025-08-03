@@ -22,12 +22,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<Offset> _slideAnimation;
   late Animation<double> _loadingAnimation;
   
-  // 流量统计
-  String _uploadSpeed = '0 KB/s';
-  String _downloadSpeed = '0 KB/s';
+  // 流量统计 - 修改为显示总量
+  String _uploadTotal = '0 KB';
+  String _downloadTotal = '0 KB';
   String _connectedTime = '00:00:00';
-  Timer? _trafficTimer;
   Timer? _connectedTimeTimer;
+  StreamSubscription<V2RayStatus>? _statusSubscription;
   
   bool _isProcessing = false;
   bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
@@ -70,6 +70,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     _slideController.forward();
     
+    // 监听V2Ray状态流
+    _statusSubscription = V2RayService.statusStream.listen((status) {
+      if (mounted) {
+        setState(() {
+          _uploadTotal = UIUtils.formatBytes(status.upload);
+          _downloadTotal = UIUtils.formatBytes(status.download);
+        });
+      }
+    });
+    
     // 监听连接状态变化
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
@@ -93,7 +103,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     serverProvider.removeListener(_onServerListChanged);
     _slideController.dispose();
     _loadingController.dispose();
-    _trafficTimer?.cancel();
+    _statusSubscription?.cancel();
     _connectedTimeTimer?.cancel();
     super.dispose();
   }
@@ -101,11 +111,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _onConnectionChanged() {
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
     if (connectionProvider.isConnected) {
-      _startTrafficMonitoring();
       _startConnectedTimeTimer();
     } else {
-      _stopTrafficMonitoring();
       _stopConnectedTimeTimer();
+      // 断开时重置流量显示
+      if (mounted) {
+        setState(() {
+          _uploadTotal = '0 KB';
+          _downloadTotal = '0 KB';
+        });
+      }
     }
   }
   
@@ -155,35 +170,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _previousServerCount = currentServerCount;
   }
   
-  void _startTrafficMonitoring() {
-    _trafficTimer?.cancel();
-    
-    // 延迟5秒后开始监控，确保V2Ray完全启动
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!mounted) return;
-      
-      // 立即更新一次
-      _updateTrafficStats();
-      
-      // 每秒更新一次流量显示
-      _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) {
-          _updateTrafficStats();
-        }
-      });
-    });
-  }
-  
-  void _stopTrafficMonitoring() {
-    _trafficTimer?.cancel();
-    if (mounted) {
-      setState(() {
-        _uploadSpeed = '0 KB/s';
-        _downloadSpeed = '0 KB/s';
-      });
-    }
-  }
-  
   void _startConnectedTimeTimer() {
     _connectedTimeTimer?.cancel();
     // 立即更新一次
@@ -215,20 +201,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         _connectedTime = '$hours:$minutes:$seconds';
       });
-    }
-  }
-  
-  void _updateTrafficStats() async {
-    try {
-      final stats = await V2RayService.getTrafficStats();
-      if (mounted) {
-        setState(() {
-          _uploadSpeed = UIUtils.formatSpeed(stats['uploadSpeed'] ?? 0);
-          _downloadSpeed = UIUtils.formatSpeed(stats['downloadSpeed'] ?? 0);
-        });
-      }
-    } catch (e) {
-      print('获取流量统计失败: $e');
     }
   }
 
@@ -783,7 +755,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: _buildTrafficItem(
               icon: Icons.upload,
               label: l10n.upload,
-              value: _uploadSpeed,
+              value: _uploadTotal,
               color: Colors.orange,
             ),
           ),
@@ -798,7 +770,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: _buildTrafficItem(
               icon: Icons.download,
               label: l10n.download,
-              value: _downloadSpeed,
+              value: _downloadTotal,
               color: Colors.blue,
             ),
           ),
@@ -807,7 +779,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值
+  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值（添加白色描边）
   Widget _buildTrafficItem({
     required IconData icon,
     required String label,
@@ -823,26 +795,76 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 28),
+              // 图标添加白色描边
+              Stack(
+                children: [
+                  // 白色描边效果
+                  Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                  Icon(
+                    icon,
+                    color: color,
+                    size: 28,
+                  ),
+                ],
+              ),
               const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Theme.of(context).hintColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+              // 标签文字添加白色描边
+              Stack(
+                children: [
+                  // 白色描边
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      foreground: Paint()
+                        ..style = PaintingStyle.stroke
+                        ..strokeWidth = 2
+                        ..color = Colors.white,
+                    ),
+                  ),
+                  // 实际文字
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Theme.of(context).hintColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          // 右侧：流量数值
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          // 右侧：流量数值 - 添加白色描边
+          Stack(
+            children: [
+              // 白色描边
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  foreground: Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 2
+                    ..color = Colors.white,
+                ),
+              ),
+              // 实际文字
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -896,11 +918,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           icon: Icons.refresh,
           label: l10n.refresh,
           onTap: () async {
-            // 手动触发一次流量统计更新
-            _updateTrafficStats();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${l10n.refresh}...')),
-            );
+            // 手动触发V2Ray统计更新
+            if (connectionProvider.isConnected) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${l10n.refresh}...')),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.disconnected)),
+              );
+            }
           },
         ),
       ],

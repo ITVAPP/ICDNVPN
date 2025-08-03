@@ -697,7 +697,8 @@ class V2RayService {
         
         _updateTrafficStatsFromAPI();
         
-        _statsTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        // 修改：从5秒改为10秒
+        _statsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
           if (_isRunning) {
             _updateTrafficStatsFromAPI();
           }
@@ -912,12 +913,33 @@ class V2RayService {
       return {
         'uploadTotal': 0,
         'downloadTotal': 0,
+        'uploadSpeed': 0,
+        'downloadSpeed': 0,
       };
+    }
+    
+    // 计算当前速度
+    final now = DateTime.now().millisecondsSinceEpoch;
+    int uploadSpeed = 0;
+    int downloadSpeed = 0;
+    
+    if (_lastUpdateTime > 0) {
+      final timeDiff = (now - _lastUpdateTime) / 1000.0; // 秒
+      if (timeDiff > 0) {
+        uploadSpeed = ((_uploadTotal - _lastUploadBytes) / timeDiff).round();
+        downloadSpeed = ((_downloadTotal - _lastDownloadBytes) / timeDiff).round();
+        
+        // 防止负数速度
+        if (uploadSpeed < 0) uploadSpeed = 0;
+        if (downloadSpeed < 0) downloadSpeed = 0;
+      }
     }
     
     return {
       'uploadTotal': _uploadTotal,
       'downloadTotal': _downloadTotal,
+      'uploadSpeed': uploadSpeed,
+      'downloadSpeed': downloadSpeed,
     };
   }
   
