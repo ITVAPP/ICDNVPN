@@ -686,7 +686,7 @@ class _ServerListItemState extends State<ServerListItem>
                                           fontWeight: FontWeight.w600,
                                           foreground: Paint()
                                             ..style = PaintingStyle.stroke
-                                            ..strokeWidth = 2
+                                            ..strokeWidth = 1
                                             ..color = Colors.white,
                                         ),
                                       ),
