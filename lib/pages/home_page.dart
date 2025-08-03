@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -6,8 +8,6 @@ import '../services/cloudflare_test_service.dart';
 import '../services/v2ray_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
-import 'dart:math' as math;
-import 'dart:async';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -499,7 +499,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20)
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
@@ -669,7 +669,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20)
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
@@ -751,7 +751,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20)
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: theme.brightness == Brightness.dark
