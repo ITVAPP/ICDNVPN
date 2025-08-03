@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
-import 'dart:math';
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -514,78 +514,111 @@ class CloudflareTestService {
         progress: currentStep / totalSteps,
       ));
       
-      // 确定需要测速的数量（与开源项目逻辑一致）
-      int downloadTestCount = count;
-      if (validServers.length < count || minDownloadSpeed > 0) {
-        // 如果指定了下载速度下限，需要测试更多服务器
-        downloadTestCount = validServers.length;
-      }
+      // 收集最终的服务器列表
+      final finalServers = <ServerModel>[];
       
-      await _log.info('开始下载测速（数量：$downloadTestCount）...', tag: _logTag);
-      
-      // 收集通过下载速度过滤的服务器
-      final speedFilteredServers = <ServerModel>[];
-      
-      // 对服务器进行下载测速
-      for (int i = 0; i < downloadTestCount; i++) {
-        final server = validServers[i];
-        await _log.debug('测试服务器 ${i + 1}/$downloadTestCount: ${server.ip}', tag: _logTag);
+      // 新逻辑：根据节点数量决定测速策略
+      if (validServers.length <= count) {
+        // 节点不足，跳过测速，直接使用所有节点
+        await _log.info('找到 ${validServers.length} 个节点，不足 $count 个，跳过下载测速', tag: _logTag);
+        finalServers.addAll(validServers);
         
+        // 更新进度到100%
         controller.add(TestProgress(
           step: currentStep,
           totalSteps: totalSteps,
           messageKey: 'testingDownloadSpeed',
           detailKey: 'nodeProgress',
           detailParams: {
-            'current': i + 1,
-            'total': downloadTestCount,
-            'ip': server.ip
+            'current': validServers.length,
+            'total': validServers.length,
           },
-          progress: (currentStep - 1 + (i + 1) / downloadTestCount) / totalSteps,
-          subProgress: (i + 1) / downloadTestCount,
+          progress: currentStep / totalSteps,
+          subProgress: 1.0,
         ));
+      } else {
+        // 节点充足，测试策略调整
+        int downloadTestCount;
         
-        final downloadSpeed = await _testDownloadSpeed(server.ip, server.port);
-        server.downloadSpeed = downloadSpeed;
+        if (minDownloadSpeed > 0) {
+          // 如果指定了下载速度下限，需要测试更多服务器以确保找到足够的合格节点
+          downloadTestCount = validServers.length;
+          await _log.info('指定了最小下载速度 ${minDownloadSpeed}MB/s，将测试全部 $downloadTestCount 个节点', tag: _logTag);
+        } else {
+          // 默认测试2倍数量的节点（最多10个），以便有更多选择
+          downloadTestCount = math.min(validServers.length, math.max(count * 2, 10));
+          await _log.info('开始下载测速，将测试前 $downloadTestCount 个低延迟节点', tag: _logTag);
+        }
         
-        await _log.info('服务器 ${server.ip} - 下载速度: ${downloadSpeed.toStringAsFixed(2)} MB/s', tag: _logTag);
+        // 临时列表，用于存储测速后的节点
+        final testedServers = <ServerModel>[];
         
-        // 下载速度过滤
-        if (downloadSpeed >= minDownloadSpeed) {
-          speedFilteredServers.add(server);
-          // 如果已经找够了需要的数量，可以提前结束
-          if (speedFilteredServers.length >= count && minDownloadSpeed > 0) {
-            await _log.info('已找到 ${speedFilteredServers.length} 个满足速度要求的节点，提前结束测试', tag: _logTag);
-            break;
+        // 对服务器进行下载测速
+        for (int i = 0; i < downloadTestCount; i++) {
+          final server = validServers[i];
+          await _log.debug('测试服务器 ${i + 1}/$downloadTestCount: ${server.ip}', tag: _logTag);
+          
+          controller.add(TestProgress(
+            step: currentStep,
+            totalSteps: totalSteps,
+            messageKey: 'testingDownloadSpeed',
+            detailKey: 'nodeProgress',
+            detailParams: {
+              'current': i + 1,
+              'total': downloadTestCount,
+              'ip': server.ip
+            },
+            progress: (currentStep - 1 + (i + 1) / downloadTestCount) / totalSteps,
+            subProgress: (i + 1) / downloadTestCount,
+          ));
+          
+          final downloadSpeed = await _testDownloadSpeed(server.ip, server.port);
+          server.downloadSpeed = downloadSpeed;
+          
+          await _log.info('节点 ${server.ip} - 延迟: ${server.ping}ms, 下载: ${downloadSpeed.toStringAsFixed(2)}MB/s', tag: _logTag);
+          
+          // 根据是否有速度要求决定是否加入结果
+          if (downloadSpeed >= minDownloadSpeed) {
+            testedServers.add(server);
+            
+            // 如果设置了速度下限且已找够数量，可以提前结束
+            if (minDownloadSpeed > 0 && testedServers.length >= count) {
+              await _log.info('已找到 ${testedServers.length} 个满足速度要求的节点，提前结束测试', tag: _logTag);
+              break;
+            }
+          } else if (minDownloadSpeed == 0) {
+            // 没有速度要求时，所有测试过的节点都保留
+            testedServers.add(server);
           }
         }
+        
+        // 处理测试结果
+        if (minDownloadSpeed > 0 && testedServers.isEmpty) {
+          // 没有节点满足速度要求
+          await _log.error('没有服务器满足下载速度要求（>=${minDownloadSpeed}MB/s）', tag: _logTag);
+          throw TestException(
+            messageKey: 'noServersMetSpeedRequirement',
+            detailKey: 'lowerSpeedRequirement',
+          );
+        }
+        
+        // 按下载速度排序（从高到低）
+        await _log.info('按下载速度重新排序...', tag: _logTag);
+        testedServers.sort((a, b) => b.downloadSpeed.compareTo(a.downloadSpeed));
+        
+        // 取速度最快的节点
+        finalServers.addAll(testedServers.take(count));
       }
       
-      // 如果没有指定下载速度下限，使用所有测试过的服务器
-      final finalServers = minDownloadSpeed > 0 ? speedFilteredServers : validServers.take(downloadTestCount).toList();
-      
-      if (finalServers.isEmpty) {
-        await _log.error('没有服务器满足下载速度要求（>=${minDownloadSpeed.toStringAsFixed(1)} MB/s）', tag: _logTag);
-        throw TestException(
-          messageKey: 'noServersMetSpeedRequirement',
-          detailKey: 'lowerSpeedRequirement',
-        );
-      }
-      
-      // 最终排序（按下载速度排序）
-      await _log.info('按下载速度排序...', tag: _logTag);
-      finalServers.sort((a, b) => b.downloadSpeed.compareTo(a.downloadSpeed));
+
       
       // 记录最优的几个节点
-      await _log.info('找到 ${finalServers.length} 个完成测速的节点', tag: _logTag);
-      final topNodes = finalServers.take(5);
+      await _log.info('找到 ${finalServers.length} 个节点（从 ${validServers.length} 个低延迟节点中选出）', tag: _logTag);
+      final topNodes = finalServers.take(math.min(5, finalServers.length));
       for (final node in topNodes) {
-        await _log.info('优质节点: ${node.ip} - ${node.ping}ms - ${node.downloadSpeed.toStringAsFixed(2)}MB/s - ${node.location}', tag: _logTag);
+        await _log.info('最终节点: ${node.ip} - ${node.ping}ms - ${node.downloadSpeed.toStringAsFixed(2)}MB/s - ${node.location}', tag: _logTag);
       }
       
-      // 返回请求的数量
-      final result = finalServers.take(count).toList();
-      await _log.info('返回 ${result.length} 个节点', tag: _logTag);
       await _log.info('=== 测试完成 ===', tag: _logTag);
       
       // 步骤5：完成
@@ -594,9 +627,9 @@ class CloudflareTestService {
         totalSteps: totalSteps,
         messageKey: 'testCompleted',
         detailKey: 'foundQualityNodes',
-        detailParams: {'count': result.length},
+        detailParams: {'count': finalServers.length},
         progress: 1.0,
-        servers: result,
+        servers: finalServers,
       ));
       
     } catch (e, stackTrace) {
@@ -776,7 +809,7 @@ class CloudflareTestService {
       final startIp = ipNum & mask;
       final endIp = startIp | (~mask & 0xFFFFFFFF);
       
-      final random = Random();
+      final random = math.Random();
       
       // 如果是 /32 单个 IP，直接添加
       if (prefixLength == 32) {
@@ -858,7 +891,7 @@ class CloudflareTestService {
     
     // 如果采样不够，从大的IP段补充
     if (ips.length < targetCount) {
-      final random = Random();
+      final random = math.Random();
       final additionalNeeded = targetCount - ips.length;
       
       // 从较大的 IP 段中额外采样
