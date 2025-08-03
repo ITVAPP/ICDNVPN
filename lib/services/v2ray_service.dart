@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/services.dart'; // 移动平台需要
 import 'package:path/path.dart' as path;
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
@@ -10,13 +11,7 @@ import '../utils/log_service.dart';
 /// 支持的平台：
 /// - Windows: v2ray.exe 放在程序目录/v2ray/下
 /// - macOS/Linux: v2ray 优先使用系统路径，否则使用程序目录
-/// - Android: v2ray 放在应用私有目录/files/v2ray/下（需要path_provider）
-/// - iOS: v2ray 放在应用沙盒Documents/v2ray/下（需要path_provider）
-/// 
-/// 注意：移动平台需要额外处理：
-/// 1. 使用path_provider获取正确的应用目录
-/// 2. 确保v2ray二进制文件有执行权限（chmod +x）
-/// 3. iOS需要签名和权限配置
+/// - Android/iOS: 通过flutter_v2ray插件实现
 class V2RayService {
   static Process? _v2rayProcess;
   static bool _isRunning = false;
@@ -30,6 +25,11 @@ class V2RayService {
   // 日志服务
   static final LogService _log = LogService.instance;
   static const String _logTag = 'V2RayService';
+  
+  // 移动平台通道
+  static const MethodChannel _methodChannel = MethodChannel('flutter_v2ray');
+  static const EventChannel _eventChannel = EventChannel('flutter_v2ray/status');
+  static StreamSubscription? _statusSubscription;
   
   // 根据平台获取可执行文件名
   static String get _v2rayExecutableName {
@@ -65,28 +65,9 @@ class V2RayService {
       final exePath = Platform.resolvedExecutable;
       final directory = path.dirname(exePath);
       return path.join(directory, executableName);
-    } else if (Platform.isAndroid) {
-      // Android: 使用应用私有目录
-      // 注意：实际路径需要使用 path_provider 插件获取
-      // 这里提供一个标准路径供将来实现参考
-      // 实际实现时应该使用: 
-      // final appDir = await getApplicationSupportDirectory();
-      // return path.join(appDir.path, executableName);
-      // 
-      // 临时方案：假设v2ray在/data/local/tmp/（需要root或特殊权限）
-      return path.join('/data/local/tmp', executableName);
-    } else if (Platform.isIOS) {
-      // iOS: 使用应用沙盒内的Documents目录
-      // 注意：实际路径需要使用 path_provider 插件获取
-      // 这里提供一个标准路径供将来实现参考
-      // 实际实现时应该使用:
-      // final appDir = await getApplicationDocumentsDirectory();
-      // return path.join(appDir.path, executableName);
-      //
-      // 临时方案：返回一个示例路径
-      return path.join('/var/mobile/Documents', executableName);
     } else {
-      throw 'Unsupported platform: ${Platform.operatingSystem}';
+      // 移动平台不需要执行文件路径
+      throw UnsupportedError('Mobile platforms use native integration');
     }
   }
   
@@ -384,6 +365,106 @@ class V2RayService {
     try {
       await _log.info('开始启动V2Ray服务 - 服务器: $serverIp:$serverPort', tag: _logTag);
       
+      // 移动平台使用flutter_v2ray插件
+      if (Platform.isAndroid || Platform.isIOS) {
+        await _log.info('移动平台：初始化flutter_v2ray', tag: _logTag);
+        
+        // 设置流量监听
+        _statusSubscription?.cancel();
+        _statusSubscription = _eventChannel.receiveBroadcastStream().distinct().cast().listen((event) {
+          if (event != null) {
+            try {
+              // flutter_v2ray的event格式：[duration, uploadSpeed, downloadSpeed, upload, download, state]
+              _uploadTotal = int.parse(event[3].toString());
+              _downloadTotal = int.parse(event[4].toString());
+              
+              _log.debug(
+                '移动平台流量更新: 上传=${UIUtils.formatBytes(_uploadTotal)}, '
+                '下载=${UIUtils.formatBytes(_downloadTotal)}',
+                tag: _logTag
+              );
+            } catch (e) {
+              _log.error('解析流量数据失败: $e', tag: _logTag);
+            }
+          }
+        });
+        
+        // 初始化V2Ray
+        await _methodChannel.invokeMethod('initializeV2Ray', {
+          "notificationIconResourceType": "mipmap",
+          "notificationIconResourceName": "ic_launcher",
+        });
+        
+        // 生成配置
+        final configMap = {
+          "log": {"loglevel": "warning"},
+          "stats": {},
+          "api": {"tag": "api", "services": ["StatsService"]},
+          "policy": {
+            "system": {
+              "statsOutboundDownlink": true,
+              "statsOutboundUplink": true
+            }
+          },
+          "inbounds": [
+            {
+              "tag": "socks",
+              "port": 10808,
+              "protocol": "socks",
+              "settings": {"auth": "noauth", "udp": true}
+            }
+          ],
+          "outbounds": [
+            {
+              "tag": "proxy",
+              "protocol": "vless",
+              "settings": {
+                "vnext": [{
+                  "address": serverIp,
+                  "port": 443,
+                  "users": [{
+                    "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
+                    "encryption": "none"
+                  }]
+                }]
+              },
+              "streamSettings": {
+                "network": "ws",
+                "security": "tls",
+                "tlsSettings": {
+                  "serverName": "pages-vless-a9f.pages.dev"
+                },
+                "wsSettings": {
+                  "path": "/",
+                  "headers": {"Host": "pages-vless-a9f.pages.dev"}
+                }
+              }
+            }
+          ],
+          "routing": {
+            "rules": [
+              {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
+            ]
+          }
+        };
+        
+        // 启动V2Ray
+        await _methodChannel.invokeMethod('startV2Ray', {
+          "remark": "代理服务器",
+          "config": jsonEncode(configMap),
+          "blocked_apps": null,
+          "bypass_subnets": null,
+          "proxy_only": false,
+          "notificationDisconnectButtonName": "断开",
+          "notificationTitle": "V2Ray运行中",
+        });
+        
+        _isRunning = true;
+        await _log.info('移动平台：V2Ray启动成功', tag: _logTag);
+        return true;
+      }
+      
+      // 桌面平台原有逻辑
       // 检查端口是否可用
       if (!await isPortAvailable(7898) || !await isPortAvailable(7899)) {
         await _log.error('端口 7898 或 7899 已被占用', tag: _logTag);
@@ -479,6 +560,20 @@ class V2RayService {
   static Future<void> stop() async {
     await _log.info('开始停止V2Ray服务', tag: _logTag);
     
+    // 移动平台停止
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        await _methodChannel.invokeMethod('stopV2Ray');
+        _statusSubscription?.cancel();
+        _statusSubscription = null;
+        _isRunning = false;
+        await _log.info('移动平台：V2Ray已停止', tag: _logTag);
+      } catch (e) {
+        await _log.error('移动平台停止失败: $e', tag: _logTag);
+      }
+      return;
+    }
+    
     // 停止流量统计定时器
     _stopStatsTimer();
     
@@ -548,13 +643,6 @@ class V2RayService {
         // pkill 可能不存在，忽略错误
         await _log.debug('pkill命令执行失败，可能不存在', tag: _logTag);
       }
-    } else if (Platform.isAndroid) {
-      // Android: 使用 kill 命令（需要知道PID）
-      // 注意：Android上通常不需要手动清理，因为进程在应用沙盒内
-      await _log.debug('Android平台依赖系统管理进程生命周期', tag: _logTag);
-    } else if (Platform.isIOS) {
-      // iOS: 不支持手动杀进程，依赖系统管理
-      await _log.debug('iOS平台不支持手动终止进程', tag: _logTag);
     }
     
     await _log.info('V2Ray服务已停止', tag: _logTag);
@@ -565,6 +653,12 @@ class V2RayService {
   // 启动流量统计定时器
   static void _startStatsTimer() {
     _stopStatsTimer(); // 确保没有重复的定时器
+    
+    // 移动平台通过EventChannel自动更新，不需要定时器
+    if (Platform.isAndroid || Platform.isIOS) {
+      _log.info('移动平台：流量统计通过EventChannel自动更新', tag: _logTag);
+      return;
+    }
     
     // 延迟5秒后开始统计，确保V2Ray完全启动
     Future.delayed(const Duration(seconds: 5), () {
@@ -642,12 +736,33 @@ class V2RayService {
           await _log.debug('API命令退出码: ${processResult.exitCode}', tag: _logTag);
           
           if (processResult.exitCode == 0) {
-            // 手动转换为UTF8
-            final output = utf8.decode(processResult.stdout as List<int>);
+            // 修复关键点：智能处理输出类型
+            String output;
+            if (processResult.stdout is String) {
+              // Windows使用shell时，stdout直接是String
+              output = processResult.stdout as String;
+              await _log.debug('输出类型: String', tag: _logTag);
+            } else if (processResult.stdout is List<int>) {
+              // 手动转换为UTF8
+              output = utf8.decode(processResult.stdout as List<int>);
+              await _log.debug('输出类型: List<int>', tag: _logTag);
+            } else {
+              output = processResult.stdout.toString();
+              await _log.debug('输出类型: ${processResult.stdout.runtimeType}', tag: _logTag);
+            }
+            
             await _log.debug('V2Ray统计输出: $output', tag: _logTag);
             _parseStatsOutput(output);
           } else {
-            final error = utf8.decode(processResult.stderr as List<int>);
+            // 同样处理错误输出
+            String error;
+            if (processResult.stderr is String) {
+              error = processResult.stderr as String;
+            } else if (processResult.stderr is List<int>) {
+              error = utf8.decode(processResult.stderr as List<int>);
+            } else {
+              error = processResult.stderr.toString();
+            }
             await _log.warn('获取流量统计失败: $error', tag: _logTag);
           }
         } else {
