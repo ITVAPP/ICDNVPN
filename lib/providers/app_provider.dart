@@ -470,6 +470,13 @@ class ServerProvider with ChangeNotifier {
     await prefs.setString(_storageKey, encoded);
   }
 
+  // 清空所有服务器
+  Future<void> clearAllServers() async {
+    _servers.clear();
+    await _saveServers();
+    notifyListeners();
+  }
+
   // 添加单个服务器
   Future<void> addServer(ServerModel server) async {
     // 检查是否已存在相同IP的服务器
