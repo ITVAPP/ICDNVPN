@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
@@ -213,9 +214,21 @@ class V2RayService {
     }
   }
   
+  static Future<Map<String, dynamic>> _loadConfigTemplate() async {
+    try {
+      // 从assets加载配置模板
+      final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
+      return jsonDecode(jsonString);
+    } catch (e) {
+      await _log.error('加载配置模板失败: $e', tag: _logTag);
+      throw '无法加载V2Ray配置模板';
+    }
+  }
+  
   static Future<void> generateConfig({
     required String serverIp,
     int serverPort = 443,
+    String? serverName,  // 新增可选参数
     int localPort = 7898,
     int httpPort = 7899,
   }) async {
@@ -225,236 +238,60 @@ class V2RayService {
       'config.json'
     );
 
-    final config = {
-      "log": {
-        "loglevel": "warning"
-      },
-      "stats": {},
-      "api": {
-        "tag": "api",
-        "services": ["StatsService"]
-      },
-      "policy": {
-        "levels": {
-          "0": {
-           "handshake": 5,
-           "connIdle": 300,
-           "uplinkOnly": 3,
-           "downlinkOnly": 5,
-           "statsUserUplink": true,
-           "statsUserDownlink": true,
-           "bufferSize": 8
-          }
-        },
-        "system": {
-          "statsInboundUplink": true,
-          "statsInboundDownlink": true,
-          "statsOutboundUplink": true,
-          "statsOutboundDownlink": true
-        }
-      },
-      "inbounds": [
-        {
-          "tag": "socks",
-          "port": localPort,
-          "protocol": "socks",
-          "settings": {
-            "auth": "noauth",
-            "udp": true,
-            "userLevel": 0
-          }
-        },
-        {
-          "tag": "http",
-          "port": httpPort,
-          "protocol": "http",
-          "sniffing": {
-            "enabled": true,
-            "destOverride": ["http", "tls"],
-            "routeOnly": false
-          },
-          "settings": {
-            "auth": "noauth",
-            "udp": true,
-            "allowTransparent": false,
-            "userLevel": 0
-          }
-        },
-        {
-          "tag": "api",
-          "port": 10085,
-          "listen": "127.0.0.1",
-          "protocol": "dokodemo-door",
-          "settings": {
-            "address": "127.0.0.1"
+    try {
+      // 加载配置模板
+      Map<String, dynamic> config = await _loadConfigTemplate();
+      
+      // 替换动态参数
+      // 更新入站端口 - 添加类型检查
+      if (config['inbounds'] is List) {
+        for (var inbound in config['inbounds']) {
+          if (inbound is Map && inbound['tag'] == 'socks') {
+            inbound['port'] = localPort;
+          } else if (inbound is Map && inbound['tag'] == 'http') {
+            inbound['port'] = httpPort;
           }
         }
-      ],
-      "outbounds": [
-        {
-          "tag": "proxy",
-          "protocol": "vless",
-          "settings": {
-            "vnext": [
-              {
-                "address": serverIp,
-                "port": serverPort,
-                "users": [
-                  {
-                    "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                    "alterId": 0,
-                    "email": "t@t.tt",
-                    "security": "auto",
-                    "encryption": "none"
-                  }
-                ]
-              }
-            ]
-          },
-          "streamSettings": {
-            "network": "ws",
-            "security": "tls",
-            "tlsSettings": {
-              "allowInsecure": false,
-              "serverName": "pages-vless-a9f.pages.dev",
-              "fingerprint": "randomized"
-            },
-            "wsSettings": {
-              "path": "/",
-              "headers": {
-                "Host": "pages-vless-a9f.pages.dev"
-              }
-            },
-            "sockopt": {
-              "dialerProxy": "proxy3"
-            }
-          },
-          "mux": {
-            "enabled": false,
-            "concurrency": -1
-          }
-        },
-        {
-          "tag": "direct",
-          "protocol": "freedom",
-          "settings": {}
-        },
-        {
-          "tag": "block",
-          "protocol": "blackhole",
-          "settings": {
-            "response": {
-              "type": "http"
-            }
-          }
-        },
-        {
-          "tag": "proxy3",
-          "protocol": "freedom",
-          "settings": {
-            "fragment": {
-              "packets": "tlshello",
-              "length": "100-200",
-              "interval": "10-20"
-            }
-          }
-        }
-      ],
-      "dns": {
-        "hosts": {
-          "dns.google": "8.8.8.8",
-          "proxy.example.com": "127.0.0.1"
-        },
-        "servers": [
-          {
-            "address": "223.5.5.5",
-            "domains": [
-              "geosite:cn",
-              "geosite:geolocation-cn"
-            ],
-            "expectIPs": [
-              "geoip:cn"
-            ]
-          },
-          "1.1.1.1",
-          "8.8.8.8",
-          "https://dns.google/dns-query"
-        ]
-      },
-      "routing": {
-        "domainStrategy": "AsIs",
-        "rules": [
-          {
-            "type": "field",
-            "inboundTag": [
-              "api"
-            ],
-            "outboundTag": "api"
-          },
-          {
-            "type": "field",
-            "port": "443",
-            "network": "udp",
-            "outboundTag": "block"
-          },
-          {
-            "type": "field",
-            "outboundTag": "block",
-            "domain": [
-              "geosite:category-ads-all"
-            ]
-          },
-          {
-            "type": "field",
-            "outboundTag": "direct",
-            "domain": [
-              "domain:dns.alidns.com",
-              "domain:doh.pub",
-              "domain:dot.pub",
-              "domain:doh.360.cn",
-              "domain:dot.360.cn",
-              "geosite:cn",
-              "geosite:geolocation-cn"
-            ]
-          },
-          {
-            "type": "field",
-            "outboundTag": "direct",
-            "ip": [
-              "223.5.5.5/32",
-              "223.6.6.6/32",
-              "2400:3200::1/128",
-              "2400:3200:baba::1/128",
-              "119.29.29.29/32",
-              "1.12.12.12/32",
-              "120.53.53.53/32",
-              "2402:4e00::/128",
-              "2402:4e00:1::/128",
-              "180.76.76.76/32",
-              "2400:da00::6666/128",
-              "114.114.114.114/32",
-              "114.114.115.115/32",
-              "180.184.1.1/32",
-              "180.184.2.2/32",
-              "101.226.4.6/32",
-              "218.30.118.6/32",
-              "123.125.81.6/32",
-              "140.207.198.6/32",
-              "geoip:private",
-              "geoip:cn"
-            ]
-          },
-          {
-            "type": "field",
-            "port": "0-65535",
-            "outboundTag": "proxy"
-          }
-        ]
       }
-    };
+      
+      // 更新出站服务器信息 - 添加类型检查
+      if (config['outbounds'] is List) {
+        for (var outbound in config['outbounds']) {
+          if (outbound is Map && 
+              outbound['tag'] == 'proxy' && 
+              outbound['settings'] is Map) {
+            var vnext = outbound['settings']['vnext'];
+            if (vnext is List && vnext.isNotEmpty && vnext[0] is Map) {
+              vnext[0]['address'] = serverIp;
+              vnext[0]['port'] = serverPort;
+            }
+            
+            // 更新 serverName 和 Host（如果提供了且不为空）
+            if (serverName != null && serverName.isNotEmpty && outbound['streamSettings'] is Map) {
+              var streamSettings = outbound['streamSettings'] as Map;
+              
+              // 更新 TLS serverName
+              if (streamSettings['tlsSettings'] is Map) {
+                streamSettings['tlsSettings']['serverName'] = serverName;
+              }
+              
+              // 更新 WebSocket Host header
+              if (streamSettings['wsSettings'] is Map && 
+                  streamSettings['wsSettings']['headers'] is Map) {
+                streamSettings['wsSettings']['headers']['Host'] = serverName;
+              }
+            }
+          }
+        }
+      }
 
-    await File(configPath).writeAsString(jsonEncode(config));
-    await _log.info('配置文件已生成: $configPath', tag: _logTag);
+      // 写入配置文件
+      await File(configPath).writeAsString(jsonEncode(config));
+      await _log.info('配置文件已生成: $configPath', tag: _logTag);
+    } catch (e) {
+      await _log.error('生成配置文件失败: $e', tag: _logTag);
+      throw '生成V2Ray配置失败: $e';
+    }
   }
 
   static Future<bool> isPortAvailable(int port) async {
@@ -474,6 +311,7 @@ class V2RayService {
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
+    String? serverName,  // 新增可选参数
   }) async {
     // 并发控制
     if (_isStarting || _isStopping) {
@@ -555,60 +393,43 @@ class V2RayService {
         }
         
         // 生成配置
-        final configMap = {
-          "log": {"loglevel": "warning"},
-          "stats": {},
-          "api": {"tag": "api", "services": ["StatsService"]},
-          "policy": {
-            "system": {
-              "statsOutboundDownlink": true,
-              "statsOutboundUplink": true
-            }
-          },
-          "inbounds": [
-            {
-              "tag": "socks",
-              "port": 10808,
-              "protocol": "socks",
-              "settings": {"auth": "noauth", "udp": true}
-            }
-          ],
-          "outbounds": [
-            {
-              "tag": "proxy",
-              "protocol": "vless",
-              "settings": {
-                "vnext": [{
-                  "address": serverIp,
-                  "port": serverPort,
-                  "users": [{
-                    "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                    "encryption": "none"
-                  }]
-                }]
-              },
-              "streamSettings": {
-                "network": "ws",
-                "security": "tls",
-                "tlsSettings": {
-                  "serverName": "pages-vless-a9f.pages.dev"
-                },
-                "wsSettings": {
-                  "path": "/",
-                  "headers": {"Host": "pages-vless-a9f.pages.dev"}
+        try {
+          // 加载配置模板（移动端也使用同一个配置文件）
+          final String jsonString = await rootBundle.loadString('assets/json/v2ray_config_template.json');
+          Map<String, dynamic> configMap = jsonDecode(jsonString);
+          
+          // 更新服务器信息
+          if (configMap['outbounds'] is List) {
+            for (var outbound in configMap['outbounds']) {
+              if (outbound is Map && 
+                  outbound['tag'] == 'proxy' && 
+                  outbound['settings'] is Map) {
+                var vnext = outbound['settings']['vnext'];
+                if (vnext is List && vnext.isNotEmpty && vnext[0] is Map) {
+                  vnext[0]['address'] = serverIp;
+                  vnext[0]['port'] = serverPort;
+                }
+                
+                // 更新 serverName 和 Host（如果提供了且不为空）
+                if (serverName != null && serverName.isNotEmpty && outbound['streamSettings'] is Map) {
+                  var streamSettings = outbound['streamSettings'] as Map;
+                  
+                  // 更新 TLS serverName
+                  if (streamSettings['tlsSettings'] is Map) {
+                    streamSettings['tlsSettings']['serverName'] = serverName;
+                  }
+                  
+                  // 更新 WebSocket Host header
+                  if (streamSettings['wsSettings'] is Map && 
+                      streamSettings['wsSettings']['headers'] is Map) {
+                    streamSettings['wsSettings']['headers']['Host'] = serverName;
+                  }
                 }
               }
             }
-          ],
-          "routing": {
-            "rules": [
-              {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
-            ]
           }
-        };
-        
-        // 启动V2Ray
-        try {
+          
+          // 启动V2Ray
           await _methodChannel.invokeMethod('startV2Ray', {
             "remark": "代理服务器",
             "config": jsonEncode(configMap),
@@ -642,7 +463,8 @@ class V2RayService {
         throw 'Port 7898 or 7899 is already in use';
       }
 
-      await generateConfig(serverIp: serverIp, serverPort: serverPort);
+      // 只在桌面平台生成配置文件
+      await generateConfig(serverIp: serverIp, serverPort: serverPort, serverName: serverName);
 
       final v2rayPath = await _getV2RayPath();
       if (!await File(v2rayPath).exists()) {
