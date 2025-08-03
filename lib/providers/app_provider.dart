@@ -16,10 +16,12 @@ class ConnectionProvider with ChangeNotifier {
   final String _storageKey = 'current_server';
   bool _autoConnect = false;
   bool _isDisposed = false;
+  DateTime? _connectStartTime; // 添加连接开始时间
   
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
+  DateTime? get connectStartTime => _connectStartTime; // 添加getter
   
   ConnectionProvider() {
     // 设置V2Ray进程退出回调
@@ -47,6 +49,7 @@ class ConnectionProvider with ChangeNotifier {
     if (_isConnected) {
       print('V2Ray process exited unexpectedly, updating connection status...');
       _isConnected = false;
+      _connectStartTime = null; // 清除连接时间
       // 清理系统代理设置
       ProxyService.disableSystemProxy().catchError((e) {
         print('Error disabling system proxy after process exit: $e');
@@ -176,6 +179,7 @@ class ConnectionProvider with ChangeNotifier {
             // 启用系统代理
             await ProxyService.enableSystemProxy();
             _isConnected = true;
+            _connectStartTime = DateTime.now(); // 记录连接开始时间
             if (!_isDisposed) {
               notifyListeners();
             }
@@ -208,6 +212,7 @@ class ConnectionProvider with ChangeNotifier {
       // 禁用系统代理
       await ProxyService.disableSystemProxy();
       _isConnected = false;
+      _connectStartTime = null; // 清除连接时间
       if (!_isDisposed) {
         notifyListeners();
       }
@@ -215,6 +220,7 @@ class ConnectionProvider with ChangeNotifier {
       print('Error during disconnect: $e');
       // 即使出错也要更新状态
       _isConnected = false;
+      _connectStartTime = null; // 清除连接时间
       if (!_isDisposed) {
         notifyListeners();
       }
@@ -236,6 +242,7 @@ class ServerProvider with ChangeNotifier {
   List<ServerModel> _servers = [];
   final String _storageKey = 'servers';
   bool _isInitializing = false;
+  bool _isRefreshing = false; // 添加刷新标志
   String _initMessage = '';
   String _initDetail = ''; // 新增详情字段
   double _progress = 0.0; // 新增进度字段
@@ -262,6 +269,7 @@ class ServerProvider with ChangeNotifier {
         // 如果没有服务器，自动获取
         if (_servers.isEmpty) {
           print('服务器列表为空，自动获取节点');
+          // 不要在这里设置 _isInitializing，让 refreshFromCloudflare 自己管理
           await refreshFromCloudflare();
         } else {
           print('已加载 ${_servers.length} 个服务器');
@@ -272,20 +280,30 @@ class ServerProvider with ChangeNotifier {
         print('加载服务器列表失败: $e');
         // 清空损坏的数据，重新初始化
         _servers.clear();
+        // 不要在这里设置 _isInitializing
         await refreshFromCloudflare();
       }
     } else {
       // 首次运行，自动获取节点
       print('首次运行，开始获取节点');
+      // 不要在这里设置 _isInitializing
       await refreshFromCloudflare();
     }
   }
 
+  // 添加一个专门的标志防止重复调用
   // 统一的从Cloudflare刷新服务器的方法 - 修改为使用新的公共方法
   Future<void> refreshFromCloudflare() async {
+    // 防止重复调用 - 使用独立的标志
+    if (_isRefreshing) {
+      print('已经在获取节点中，忽略重复调用');
+      return;
+    }
+    
+    _isRefreshing = true; // 设置刷新标志
     _isInitializing = true;
-    _initMessage = '正在获取最优节点...';
-    _initDetail = '准备测试环境';
+    _initMessage = 'gettingBestNodes';  // 使用国际化键值
+    _initDetail = 'preparingTestEnvironment';  // 使用国际化键值
     _progress = 0.0;
     
     // 立即清空现有节点列表
@@ -326,8 +344,8 @@ class ServerProvider with ChangeNotifier {
       // 调用公共方法
       CloudflareTestService.executeTestWithProgress(
         controller: controller,
-        count: 6,
-        maxLatency: 200,
+        count: 5,
+        maxLatency: 300,  // 修改：从200ms改为300ms
         speed: 5,
         testCount: 500,
         location: 'AUTO',
@@ -339,20 +357,21 @@ class ServerProvider with ChangeNotifier {
       await subscription.cancel();
       
       if (servers.isEmpty) {
-        throw '无法获取有效节点，请检查网络连接';
+        throw 'noValidNodes';  // 使用国际化键值
       }
       
       // 直接替换服务器列表（不是追加）
       _servers = _generateNamedServers(servers);
       await _saveServers();
       
-      _initMessage = '成功获取 ${_servers.length} 个节点';
+      // 成功消息主要用于日志，保持中文即可
+      _initMessage = '';  // 成功时清空消息
       _progress = 1.0;
       print('成功获取 ${_servers.length} 个节点');
       
     } catch (e) {
       print('获取节点失败: $e');
-      _initMessage = '获取节点失败: $e';
+      _initMessage = 'failed';  // 使用标记表示失败，UI层会显示国际化文字
       _progress = 0.0;
       // 清空服务器列表
       _servers.clear();
@@ -360,7 +379,12 @@ class ServerProvider with ChangeNotifier {
     } finally {
       await Future.delayed(const Duration(seconds: 1));
       _isInitializing = false;
-      _initMessage = '';
+      _isRefreshing = false; // 重置刷新标志
+      // 修改：在失败时不清空 _initMessage，让UI能够判断是否失败
+      if (_servers.isNotEmpty) {
+        // 只有成功时才清空消息
+        _initMessage = '';
+      }
       _initDetail = '';
       _progress = 0.0;
       notifyListeners();
