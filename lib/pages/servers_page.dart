@@ -16,6 +16,7 @@ class ServersPage extends StatefulWidget {
 class _ServersPageState extends State<ServersPage> {
   bool _isAscending = true;
   bool _isTesting = false;
+  bool _isSwitching = false; // 添加切换状态标志
 
   void _addCloudflareServer(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -124,6 +125,55 @@ class _ServersPageState extends State<ServersPage> {
     }
   }
 
+  // 获取国际化的消息文本
+  String _getLocalizedMessage(BuildContext context, String messageKey) {
+    final l10n = AppLocalizations.of(context);
+    
+    // 根据消息键返回对应的国际化文本
+    switch (messageKey) {
+      case 'gettingBestNodes':
+        return l10n.gettingBestNodes;
+      case 'preparingTestEnvironment':
+        return l10n.preparingTestEnvironment;
+      case 'generatingTestIPs':
+        return l10n.generatingTestIPs;
+      case 'testingDelay':
+        return l10n.testingDelay;
+      case 'testingDownloadSpeed':
+        return l10n.testingDownloadSpeed;
+      case 'testCompleted':
+        return l10n.testCompleted;
+      default:
+        // 如果是中文文本，直接返回（兼容旧版本）
+        if (messageKey.contains('正在') || messageKey.contains('测试')) {
+          return messageKey;
+        }
+        // 否则返回键值本身
+        return messageKey;
+    }
+  }
+
+  // 获取国际化的详情文本
+  String _getLocalizedDetail(BuildContext context, String detailKey, ServerProvider serverProvider) {
+    final l10n = AppLocalizations.of(context);
+    
+    switch (detailKey) {
+      case 'initializing':
+        return l10n.initializing;
+      case 'startingSpeedTest':
+        return l10n.startingSpeedTest;
+      case 'preparingTestEnvironment':
+        return l10n.preparingTestEnvironment;
+      default:
+        // 如果是中文文本，直接返回（兼容旧版本）
+        if (detailKey.contains('初始') || detailKey.contains('测') || detailKey.contains('从')) {
+          return detailKey;
+        }
+        // 对于包含参数的详情，使用原始的详情文本
+        return serverProvider.initDetail;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -168,7 +218,7 @@ class _ServersPageState extends State<ServersPage> {
             onPressed: () => _addCloudflareServer(context),
           ),
           // 添加右边距
-          const SizedBox(width: 5),
+          const SizedBox(width: 8),
         ],
       ),
       body: Consumer2<ServerProvider, ConnectionProvider>(
@@ -201,13 +251,13 @@ class _ServersPageState extends State<ServersPage> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    serverProvider.initMessage,
+                    _getLocalizedMessage(context, serverProvider.initMessage),
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    serverProvider.initDetail,
+                    _getLocalizedDetail(context, serverProvider.initDetail, serverProvider),
                     style: TextStyle(
                       fontSize: 14,
                       color: Theme.of(context).textTheme.bodySmall?.color,
@@ -275,14 +325,115 @@ class _ServersPageState extends State<ServersPage> {
                   server: server,
                   isSelected: isSelected,
                   isConnected: isConnected,
-                  onTap: () {
-                    connectionProvider.setCurrentServer(server);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${l10n.selectServer} ${server.name}'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
+                  onTap: () async {
+                    // 如果正在切换中，忽略点击
+                    if (_isSwitching) {
+                      return;
+                    }
+                    
+                    // 如果选择的是当前已连接的服务器，不做任何操作
+                    if (connectionProvider.currentServer?.id == server.id) {
+                      return;
+                    }
+                    
+                    // 如果当前已连接，询问是否切换
+                    if (connectionProvider.isConnected) {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('切换节点'),
+                          content: Text('是否切换到 ${server.name}？\n当前连接将会断开并重新连接。'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('切换'),
+                            ),
+                          ],
+                        ),
+                      ) ?? false;
+                      
+                      if (!confirmed) return;
+                      
+                      // 设置切换状态
+                      setState(() {
+                        _isSwitching = true;
+                      });
+                      
+                      // 显示切换进度
+                      if (!context.mounted) return;
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => const AlertDialog(
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('正在切换节点...'),
+                            ],
+                          ),
+                        ),
+                      );
+                      
+                      try {
+                        // 先设置新服务器
+                        await connectionProvider.setCurrentServer(server);
+                        // 断开当前连接
+                        await connectionProvider.disconnect();
+                        // 等待一下确保断开完成
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        // 连接到新服务器
+                        await connectionProvider.connect();
+                        
+                        if (!context.mounted) return;
+                        
+                        // 关闭进度对话框
+                        Navigator.pop(context);
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('已切换到 ${server.name}'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        
+                        // 关闭进度对话框
+                        Navigator.pop(context);
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('切换失败: ${e.toString()}'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } finally {
+                        // 重置切换状态，延迟2秒防止快速重复点击
+                        Future.delayed(const Duration(milliseconds: 2000), () {
+                          if (mounted) {
+                            setState(() {
+                              _isSwitching = false;
+                            });
+                          }
+                        });
+                      }
+                    } else {
+                      // 未连接状态，直接选择
+                      connectionProvider.setCurrentServer(server);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${l10n.selectServer} ${server.name}'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    }
                   },
                   onDelete: () async {
                     final confirm = await showDialog<bool>(
@@ -518,18 +669,37 @@ class _ServerListItemState extends State<ServerListItem>
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: theme.brightness == Brightness.dark
-                                      ? Colors.green.withOpacity(0.3)  // 深色主题增加透明度
-                                      : Colors.green.withOpacity(0.2),  // 浅色主题保持原样
+                                    color: Colors.green.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    l10n.connected,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.w600,
+                                    border: Border.all(
+                                      color: Colors.green.withOpacity(0.5),
+                                      width: 1,
                                     ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      // 白色描边效果 - 使用多个阴影实现
+                                      Text(
+                                        l10n.connected,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          foreground: Paint()
+                                            ..style = PaintingStyle.stroke
+                                            ..strokeWidth = 2
+                                            ..color = Colors.white,
+                                        ),
+                                      ),
+                                      // 深绿色文字
+                                      Text(
+                                        l10n.connected,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green[800], // 深绿色
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                             ],

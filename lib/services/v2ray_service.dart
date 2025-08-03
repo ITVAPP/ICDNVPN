@@ -69,7 +69,9 @@ class V2RayService {
         },
         "system": {
           "statsInboundUplink": true,
-          "statsInboundDownlink": true
+          "statsInboundDownlink": true,
+          "statsOutboundUplink": true,
+          "statsOutboundDownlink": true
         }
       },
       
@@ -212,7 +214,6 @@ class V2RayService {
             ],
             "outboundTag": "api"
           },
-
           {
             "type": "field",
             "port": "443",
@@ -434,12 +435,17 @@ class V2RayService {
   static void _startStatsTimer() {
     _stopStatsTimer(); // 确保没有重复的定时器
     
-    // 立即执行一次
-    _updateTrafficStatsFromAPI();
-    
-    // 每30秒更新一次，减少性能占用
-    _statsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _updateTrafficStatsFromAPI();
+    // 延迟3秒后开始统计，确保V2Ray完全启动
+    Future.delayed(const Duration(seconds: 3), () {
+      if (_isRunning) {
+        // 立即执行一次
+        _updateTrafficStatsFromAPI();
+        
+        // 每30秒更新一次，减少性能占用
+        _statsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+          _updateTrafficStatsFromAPI();
+        });
+      }
     });
   }
   
@@ -449,7 +455,7 @@ class V2RayService {
     _statsTimer = null;
   }
   
-  // 从 V2Ray API 获取流量统计
+  // 从 V2Ray API 获取流量统计 - 修复版本
   static Future<void> _updateTrafficStatsFromAPI() async {
     if (!_isRunning) return;
     
@@ -458,10 +464,21 @@ class V2RayService {
       final v2rayPath = await _getV2RayPath();
       final v2rayDir = path.dirname(v2rayPath);
       
-      // 使用 v2ray api 命令查询统计数据
+      // 检查是否有 v2ctl.exe（某些版本的V2Ray使用v2ctl来执行API命令）
+      final v2ctlPath = path.join(v2rayDir, 'v2ctl.exe');
+      final hasV2ctl = await File(v2ctlPath).exists();
+      
+      // 使用正确的可执行文件
+      final apiExe = hasV2ctl ? v2ctlPath : v2rayPath;
+      final apiCmd = hasV2ctl ? ['api', '--server=127.0.0.1:10085', 'StatsService.QueryStats', 'pattern: ""', 'reset: false'] 
+                               : ['api', 'statsquery', '--server=127.0.0.1:10085'];
+      
+      print('使用API命令: $apiExe ${apiCmd.join(' ')}');
+      
+      // 使用 v2ray/v2ctl api 命令查询统计数据
       final result = await Process.run(
-        v2rayPath,
-        ['api', 'statsquery', '--server=127.0.0.1:10085'],
+        apiExe,
+        apiCmd,
         runInShell: true,
         workingDirectory: v2rayDir,
       );
@@ -469,13 +486,146 @@ class V2RayService {
       if (result.exitCode == 0) {
         // 解析统计数据
         final output = result.stdout.toString();
+        print('V2Ray stats output: $output'); // 调试输出
         _parseStatsOutput(output);
       } else {
-        // 如果命令行方式失败，不再尝试其他方法
         print('获取流量统计失败: ${result.stderr}');
+        print('退出码: ${result.exitCode}');
+        
+        // 如果statsquery失败，尝试使用不同的方法
+        // 尝试查询特定的统计项
+        await _querySpecificStats();
       }
     } catch (e) {
       print('更新流量统计时出错: $e');
+    }
+  }
+  
+  // 查询特定的统计项
+  static Future<void> _querySpecificStats() async {
+    if (!_isRunning) return;
+    
+    try {
+      final v2rayPath = await _getV2RayPath();
+      final v2rayDir = path.dirname(v2rayPath);
+      
+      // 检查是否有 v2ctl.exe
+      final v2ctlPath = path.join(v2rayDir, 'v2ctl.exe');
+      final hasV2ctl = await File(v2ctlPath).exists();
+      final apiExe = hasV2ctl ? v2ctlPath : v2rayPath;
+      
+      // 查询入站流量统计
+      final tags = ['socks', 'http', 'proxy'];
+      int totalUplink = 0;
+      int totalDownlink = 0;
+      
+      for (final tag in tags) {
+        // 查询上行流量
+        final uplinkName = 'inbound>>>$tag>>>traffic>>>uplink';
+        final uplinkCmd = hasV2ctl 
+          ? ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$uplinkName"', 'reset: false']
+          : ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$uplinkName"'];
+          
+        final uplinkResult = await Process.run(
+          apiExe,
+          uplinkCmd,
+          runInShell: true,
+          workingDirectory: v2rayDir,
+        );
+        
+        if (uplinkResult.exitCode == 0) {
+          final match = RegExp(r'value:\s*(\d+)').firstMatch(uplinkResult.stdout.toString());
+          if (match != null) {
+            totalUplink += int.parse(match.group(1)!);
+          }
+        }
+        
+        // 查询下行流量
+        final downlinkName = 'inbound>>>$tag>>>traffic>>>downlink';
+        final downlinkCmd = hasV2ctl
+          ? ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$downlinkName"', 'reset: false']
+          : ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$downlinkName"'];
+          
+        final downlinkResult = await Process.run(
+          apiExe,
+          downlinkCmd,
+          runInShell: true,
+          workingDirectory: v2rayDir,
+        );
+        
+        if (downlinkResult.exitCode == 0) {
+          final match = RegExp(r'value:\s*(\d+)').firstMatch(downlinkResult.stdout.toString());
+          if (match != null) {
+            totalDownlink += int.parse(match.group(1)!);
+          }
+        }
+      }
+      
+      // 查询出站流量统计
+      for (final tag in ['proxy', 'direct']) {
+        // 查询上行流量
+        final uplinkName = 'outbound>>>$tag>>>traffic>>>uplink';
+        final uplinkCmd = hasV2ctl
+          ? ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$uplinkName"', 'reset: false']
+          : ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$uplinkName"'];
+          
+        final uplinkResult = await Process.run(
+          apiExe,
+          uplinkCmd,
+          runInShell: true,
+          workingDirectory: v2rayDir,
+        );
+        
+        if (uplinkResult.exitCode == 0) {
+          final match = RegExp(r'value:\s*(\d+)').firstMatch(uplinkResult.stdout.toString());
+          if (match != null) {
+            totalUplink += int.parse(match.group(1)!);
+          }
+        }
+        
+        // 查询下行流量
+        final downlinkName = 'outbound>>>$tag>>>traffic>>>downlink';
+        final downlinkCmd = hasV2ctl
+          ? ['api', '--server=127.0.0.1:10085', 'StatsService.GetStats', 'name: "$downlinkName"', 'reset: false']
+          : ['api', 'stats', '--server=127.0.0.1:10085', 'name: "$downlinkName"'];
+          
+        final downlinkResult = await Process.run(
+          apiExe,
+          downlinkCmd,
+          runInShell: true,
+          workingDirectory: v2rayDir,
+        );
+        
+        if (downlinkResult.exitCode == 0) {
+          final match = RegExp(r'value:\s*(\d+)').firstMatch(downlinkResult.stdout.toString());
+          if (match != null) {
+            totalDownlink += int.parse(match.group(1)!);
+          }
+        }
+      }
+      
+      // 更新统计数据
+      final now = DateTime.now();
+      final timeDiff = now.difference(_lastUpdateTime).inSeconds;
+      
+      if (timeDiff > 0 && (_uploadTotal > 0 || _downloadTotal > 0)) {
+        _uploadSpeed = ((totalUplink - _uploadTotal) / timeDiff).round();
+        _downloadSpeed = ((totalDownlink - _downloadTotal) / timeDiff).round();
+        
+        // 确保速度为非负数
+        if (_uploadSpeed < 0) _uploadSpeed = 0;
+        if (_downloadSpeed < 0) _downloadSpeed = 0;
+      }
+      
+      _uploadTotal = totalUplink;
+      _downloadTotal = totalDownlink;
+      _lastUpdateTime = now;
+      
+      if (_uploadSpeed > 0 || _downloadSpeed > 0) {
+        print('流量统计: 上传=${UIUtils.formatBytes(_uploadSpeed)}/s, 下载=${UIUtils.formatBytes(_downloadSpeed)}/s');
+      }
+    } catch (e) {
+      print('查询特定统计项失败: $e');
     }
   }
   
@@ -502,12 +652,14 @@ class V2RayService {
             final name = nameMatch.group(1)!;
             final value = int.parse(valueMatch.group(1)!);
             
-            // 累加所有入站的上行和下行流量
-            if (name.contains('inbound>>>') && name.contains('>>>uplink')) {
+            // 累加所有入站和出站的上行和下行流量
+            if (name.contains('>>>uplink')) {
               currentUplink += value;
-            } else if (name.contains('inbound>>>') && name.contains('>>>downlink')) {
+            } else if (name.contains('>>>downlink')) {
               currentDownlink += value;
             }
+            
+            print('统计项: $name = $value'); // 调试输出
           }
         }
       }
@@ -527,9 +679,8 @@ class V2RayService {
       _downloadTotal = currentDownlink;
       _lastUpdateTime = now;
       
-      if (_uploadSpeed > 0 || _downloadSpeed > 0) {
-        print('流量统计: 上传=${UIUtils.formatBytes(_uploadSpeed)}/s, 下载=${UIUtils.formatBytes(_downloadSpeed)}/s');
-      }
+      print('流量统计更新: 上传总量=${UIUtils.formatBytes(_uploadTotal)}, 下载总量=${UIUtils.formatBytes(_downloadTotal)}');
+      print('当前速度: 上传=${UIUtils.formatBytes(_uploadSpeed)}/s, 下载=${UIUtils.formatBytes(_downloadSpeed)}/s');
     } catch (e) {
       print('解析流量统计失败: $e');
     }

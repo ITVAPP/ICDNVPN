@@ -886,7 +886,7 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（优化版：纯TCP连接测试）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
     const int pingTimes = 3; // 测试次数
@@ -895,7 +895,7 @@ class CloudflareTestService {
     
     await _log.debug('[TCPing] 开始测试 $ip:$testPort', tag: _logTag);
     
-    // 进行多次测试
+    // 进行多次测试 - 修改：第一次失败就停止
     for (int i = 0; i < pingTimes; i++) {
       try {
         final stopwatch = Stopwatch()..start();
@@ -933,6 +933,10 @@ class CloudflareTestService {
             await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
           }
         }
+        
+        // 🚨 关键修改：第一次失败就停止测试
+        await _log.debug('[TCPing] 第一次测试失败，跳过后续测试', tag: _logTag);
+        break;  // 立即退出循环
       }
       
       // 测试间隔 - 保持200ms避免网络拥塞
@@ -952,7 +956,9 @@ class CloudflareTestService {
       avgLatency = latencies.reduce((a, b) => a + b) ~/ latencies.length;
     }
     
-    final lossRate = (pingTimes - successCount) / pingTimes.toDouble();
+    // 修改：实际测试次数基于是否首次失败
+    final actualPingTimes = successCount > 0 ? pingTimes : 1;  // 如果首次失败，实际只测了1次
+    final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     
@@ -960,7 +966,7 @@ class CloudflareTestService {
       'ip': ip,
       'latency': avgLatency,
       'lossRate': lossRate,
-      'sent': pingTimes,
+      'sent': actualPingTimes,
       'received': successCount,
       'colo': '', // TCPing模式无法获取地区信息
     };
@@ -1182,7 +1188,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
 
     // 使用新的带进度的测试方法
     final stream = CloudflareTestService.testServersWithProgress(
-      count: 6,
+      count: 5,
       maxLatency: 300,
       speed: 5,
       testCount: 500,

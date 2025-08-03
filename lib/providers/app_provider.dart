@@ -262,6 +262,10 @@ class ServerProvider with ChangeNotifier {
         // 如果没有服务器，自动获取
         if (_servers.isEmpty) {
           print('服务器列表为空，自动获取节点');
+          // 立即更新状态，避免UI显示延迟
+          _isInitializing = true;
+          _initMessage = 'gettingBestNodes';  // 使用国际化键值
+          notifyListeners();
           await refreshFromCloudflare();
         } else {
           print('已加载 ${_servers.length} 个服务器');
@@ -272,20 +276,34 @@ class ServerProvider with ChangeNotifier {
         print('加载服务器列表失败: $e');
         // 清空损坏的数据，重新初始化
         _servers.clear();
+        // 立即更新状态
+        _isInitializing = true;
+        _initMessage = 'gettingBestNodes';  // 使用国际化键值
+        notifyListeners();
         await refreshFromCloudflare();
       }
     } else {
       // 首次运行，自动获取节点
       print('首次运行，开始获取节点');
+      // 立即更新状态
+      _isInitializing = true;
+      _initMessage = 'gettingBestNodes';  // 使用国际化键值
+      notifyListeners();
       await refreshFromCloudflare();
     }
   }
 
   // 统一的从Cloudflare刷新服务器的方法 - 修改为使用新的公共方法
   Future<void> refreshFromCloudflare() async {
+    // 防止重复调用
+    if (_isInitializing) {
+      print('已经在获取节点中，忽略重复调用');
+      return;
+    }
+    
     _isInitializing = true;
-    _initMessage = '正在获取最优节点...';
-    _initDetail = '准备测试环境';
+    _initMessage = 'gettingBestNodes';  // 使用国际化键值
+    _initDetail = 'preparingTestEnvironment';  // 使用国际化键值
     _progress = 0.0;
     
     // 立即清空现有节点列表
@@ -326,8 +344,8 @@ class ServerProvider with ChangeNotifier {
       // 调用公共方法
       CloudflareTestService.executeTestWithProgress(
         controller: controller,
-        count: 6,
-        maxLatency: 200,
+        count: 5,
+        maxLatency: 300,  // 修改：从200ms改为300ms
         speed: 5,
         testCount: 500,
         location: 'AUTO',
@@ -339,20 +357,21 @@ class ServerProvider with ChangeNotifier {
       await subscription.cancel();
       
       if (servers.isEmpty) {
-        throw '无法获取有效节点，请检查网络连接';
+        throw 'noValidNodes';  // 使用国际化键值
       }
       
       // 直接替换服务器列表（不是追加）
       _servers = _generateNamedServers(servers);
       await _saveServers();
       
-      _initMessage = '成功获取 ${_servers.length} 个节点';
+      // 成功消息主要用于日志，保持中文即可
+      _initMessage = '';  // 成功时清空消息
       _progress = 1.0;
       print('成功获取 ${_servers.length} 个节点');
       
     } catch (e) {
       print('获取节点失败: $e');
-      _initMessage = '获取节点失败: $e';
+      _initMessage = 'failed';  // 使用标记表示失败，UI层会显示国际化文字
       _progress = 0.0;
       // 清空服务器列表
       _servers.clear();
@@ -360,7 +379,11 @@ class ServerProvider with ChangeNotifier {
     } finally {
       await Future.delayed(const Duration(seconds: 1));
       _isInitializing = false;
-      _initMessage = '';
+      // 修改：在失败时不清空 _initMessage，让UI能够判断是否失败
+      if (_servers.isNotEmpty) {
+        // 只有成功时才清空消息
+        _initMessage = '';
+      }
       _initDetail = '';
       _progress = 0.0;
       notifyListeners();

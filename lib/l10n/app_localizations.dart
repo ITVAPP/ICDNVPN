@@ -134,7 +134,7 @@ class AppLocalizations {
   String get startingSpeedTest => _get('startingSpeedTest');
   String get foundQualityNodes => _get('foundQualityNodes');
   
-  // 新增的测试相关文本（本次添加）
+  // 新增的测试相关文本
   String get noQualifiedNodes => _get('noQualifiedNodes');
   String get checkNetworkOrRequirements => _get('checkNetworkOrRequirements');
   String get noServersMetSpeedRequirement => _get('noServersMetSpeedRequirement');
@@ -156,6 +156,11 @@ class AppLocalizations {
   String get confirmExitDesc => _get('confirmExitDesc');
   String get minimize => _get('minimize');
   String get exitApp => _get('exitApp');
+  
+  // 新增的节点获取相关文本
+  String get gettingBestNodes => _get('gettingBestNodes');
+  String get getNodesFailed => _get('getNodesFailed');
+  String get noValidNodes => _get('noValidNodes');
   
   // 带参数的文本格式化方法
   String samplingFromRanges(int count) {
@@ -325,7 +330,7 @@ const Map<String, String> _zhCnTranslations = {
   'startingSpeedTest': '开始测速',
   'foundQualityNodes': '找到 %s 个优质节点',
   
-  // 新增的测试相关文本（本次添加）
+  // 新增的测试相关文本
   'noQualifiedNodes': '未找到符合条件的节点',
   'checkNetworkOrRequirements': '请检查网络连接或降低筛选要求',
   'noServersMetSpeedRequirement': '没有服务器满足下载速度要求',
@@ -347,6 +352,11 @@ const Map<String, String> _zhCnTranslations = {
   'confirmExitDesc': '请选择操作：',
   'minimize': '最小化到托盘',
   'exitApp': '退出应用',
+  
+  // 新增的节点获取相关文本
+  'gettingBestNodes': '正在获取最优节点...',
+  'getNodesFailed': '获取节点失败，请重试',
+  'noValidNodes': '无法获取有效节点',
 };
 
 // 英语翻译
@@ -460,6 +470,9 @@ const Map<String, String> _enTranslations = {
   'confirmExitDesc': 'Please choose an action:',
   'minimize': 'Minimize to Tray',
   'exitApp': 'Exit App',
+  'gettingBestNodes': 'Getting best nodes...',
+  'getNodesFailed': 'Failed to get nodes, please retry',
+  'noValidNodes': 'Unable to get valid nodes',
 };
 
 // 繁体中文
@@ -474,6 +487,9 @@ const Map<String, String> _zhTwTranslations = {
   'connecting': '正在連線...',
   'disconnecting': '正在斷開...',
   'noNodesHint': '暫無節點，請先獲取',
+  'gettingBestNodes': '正在獲取最優節點...',
+  'getNodesFailed': '獲取節點失敗，請重試',
+  'noValidNodes': '無法獲取有效節點',
 };
 
 // 西班牙语
@@ -488,6 +504,9 @@ const Map<String, String> _esTranslations = {
   'connecting': 'Conectando...',
   'disconnecting': 'Desconectando...',
   'noNodesHint': 'Sin nodos, obtenga algunos primero',
+  'gettingBestNodes': 'Obteniendo los mejores nodos...',
+  'getNodesFailed': 'Error al obtener nodos, intente de nuevo',
+  'noValidNodes': 'No se pueden obtener nodos válidos',
 };
 
 // 俄语
@@ -502,6 +521,9 @@ const Map<String, String> _ruTranslations = {
   'connecting': 'Подключение...',
   'disconnecting': 'Отключение...',
   'noNodesHint': 'Нет узлов, сначала получите',
+  'gettingBestNodes': 'Получение лучших узлов...',
+  'getNodesFailed': 'Не удалось получить узлы, попробуйте еще раз',
+  'noValidNodes': 'Невозможно получить действительные узлы',
 };
 
 // 阿拉伯语
@@ -516,4 +538,7 @@ const Map<String, String> _arTranslations = {
   'connecting': 'جاري الاتصال...',
   'disconnecting': 'جاري قطع الاتصال...',
   'noNodesHint': 'لا توجد عقد، يرجى الحصول على بعضها أولاً',
+  'gettingBestNodes': 'الحصول على أفضل العقد...',
+  'getNodesFailed': 'فشل الحصول على العقد، يرجى المحاولة مرة أخرى',
+  'noValidNodes': 'غير قادر على الحصول على عقد صالحة',
 };

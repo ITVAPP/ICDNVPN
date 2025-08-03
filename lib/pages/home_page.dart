@@ -100,17 +100,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   void _startTrafficMonitoring() {
     _trafficTimer?.cancel();
-    _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    
+    // 延迟5秒后开始监控，确保V2Ray完全启动
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      
+      // 立即更新一次
       _updateTrafficStats();
+      
+      // 每秒更新一次流量显示
+      _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) {
+          _updateTrafficStats();
+        }
+      });
     });
   }
   
   void _stopTrafficMonitoring() {
     _trafficTimer?.cancel();
-    setState(() {
-      _uploadSpeed = '0 KB/s';
-      _downloadSpeed = '0 KB/s';
-    });
+    if (mounted) {
+      setState(() {
+        _uploadSpeed = '0 KB/s';
+        _downloadSpeed = '0 KB/s';
+      });
+    }
   }
   
   void _startConnectedTimeTimer() {
@@ -124,13 +138,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _stopConnectedTimeTimer() {
     _connectedTimeTimer?.cancel();
     _connectStartTime = null;
-    setState(() {
-      _connectedTime = '00:00:00';
-    });
+    if (mounted) {
+      setState(() {
+        _connectedTime = '00:00:00';
+      });
+    }
   }
   
   void _updateConnectedTime() {
-    if (_connectStartTime != null) {
+    if (_connectStartTime != null && mounted) {
       final duration = DateTime.now().difference(_connectStartTime!);
       final hours = duration.inHours.toString().padLeft(2, '0');
       final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
@@ -144,10 +160,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _updateTrafficStats() async {
     try {
       final stats = await V2RayService.getTrafficStats();
-      setState(() {
-        _uploadSpeed = UIUtils.formatSpeed(stats['uploadSpeed'] ?? 0);
-        _downloadSpeed = UIUtils.formatSpeed(stats['downloadSpeed'] ?? 0);
-      });
+      if (mounted) {
+        setState(() {
+          _uploadSpeed = UIUtils.formatSpeed(stats['uploadSpeed'] ?? 0);
+          _downloadSpeed = UIUtils.formatSpeed(stats['downloadSpeed'] ?? 0);
+        });
+      }
     } catch (e) {
       print('获取流量统计失败: $e');
     }
@@ -205,12 +223,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(height: 40),
                       
-                      // 服务器信息卡片
+                      // 服务器信息卡片 - 修改：传递serverProvider以获取状态
                       SlideTransition(
                         position: _slideAnimation,
                         child: currentServer != null
                           ? _buildServerInfoCard(currentServer, isConnected, l10n)
-                          : _buildEmptyServerCard(l10n),  // 显示空节点卡片
+                          : _buildEmptyServerCard(l10n, serverProvider),  // 传递serverProvider
                       ),
                       
                       // 流量统计卡片
@@ -478,31 +496,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildEmptyServerCard(AppLocalizations l10n) {
+  // 修改：添加serverProvider参数以获取状态
+  Widget _buildEmptyServerCard(AppLocalizations l10n, ServerProvider serverProvider) {
     final theme = Theme.of(context);
     
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 10),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: theme.dividerColor,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.brightness == Brightness.dark
-              ? Colors.black.withOpacity(0.2)
-              : Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
+    // 根据状态显示不同内容
+    Widget content;
+    Color? borderColor;
+    
+    if (serverProvider.isInitializing) {
+      // 正在初始化/获取节点
+      content = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
@@ -524,7 +528,105 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      );
+    } else if (serverProvider.servers.isEmpty && serverProvider.initMessage.isNotEmpty) {
+      // 获取失败 - 通过检查initMessage是否不为空来判断（成功时会清空）
+      borderColor = Colors.orange.withOpacity(0.3);
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 32,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  l10n.getNodesFailed,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.orange[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 重试按钮 - 添加防重复点击保护
+          TextButton.icon(
+            onPressed: serverProvider.isInitializing ? null : () async {
+              await serverProvider.refreshFromCloudflare();
+            },
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(l10n.refresh),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.primaryColor,
+            ),
+          ),
+        ],
+      );
+    } else {
+      // 其他情况（正常显示暂无节点）
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.cloud_off,
+            size: 48,
+            color: theme.hintColor.withOpacity(0.5),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.noNodesHint,
+            style: TextStyle(
+              fontSize: 16,
+              color: theme.hintColor,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          // 手动获取按钮 - 添加防重复点击保护
+          TextButton.icon(
+            onPressed: serverProvider.isInitializing ? null : () async {
+              await serverProvider.refreshFromCloudflare();
+            },
+            icon: const Icon(Icons.cloud_download, size: 18),
+            label: Text(l10n.fromCloudflare),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.primaryColor,
+            ),
+          ),
+        ],
+      );
+    }
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: borderColor ?? theme.dividerColor,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.brightness == Brightness.dark
+              ? Colors.black.withOpacity(0.2)
+              : Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
+      child: content,
     );
   }
 
@@ -707,7 +809,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           icon: Icons.refresh,
           label: l10n.refresh,
           onTap: () async {
-            // 刷新服务器列表延迟
+            // 手动触发一次流量统计更新
+            _updateTrafficStats();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('${l10n.refresh}...')),
             );
