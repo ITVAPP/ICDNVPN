@@ -217,7 +217,7 @@ class V2RayService {
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
       // 从assets加载配置模板
-      final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
+      final String jsonString = await rootBundle.loadString('assets/json/v2ray_config_template.json');
       return jsonDecode(jsonString);
     } catch (e) {
       await _log.error('加载配置模板失败: $e', tag: _logTag);
@@ -395,7 +395,7 @@ class V2RayService {
         // 生成配置
         try {
           // 加载配置模板（移动端也使用同一个配置文件）
-          final String jsonString = await rootBundle.loadString('assets/json/v2ray_config_template.json');
+          final String jsonString = await rootBundle.loadString('assets/js/v2ray_config.json');
           Map<String, dynamic> configMap = jsonDecode(jsonString);
           
           // 更新服务器信息
@@ -801,6 +801,10 @@ class V2RayService {
     }
   }
   
+  // 记录上次的流量值，用于判断是否需要记录日志
+  static int _lastLoggedUpload = -1;
+  static int _lastLoggedDownload = -1;
+  
   // 解析流量统计输出 - 只统计代理流量
   static void _parseStatsOutput(String output) {
     try {
@@ -854,18 +858,15 @@ class V2RayService {
       _lastDownloadBytes = _downloadTotal;
       
       // 只有流量变化或速度不为0时才记录日志
-      static int lastLoggedUpload = -1;
-      static int lastLoggedDownload = -1;
-      
-      if (_uploadTotal != lastLoggedUpload || _downloadTotal != lastLoggedDownload || 
+      if (_uploadTotal != _lastLoggedUpload || _downloadTotal != _lastLoggedDownload || 
           uploadSpeed > 0 || downloadSpeed > 0) {
         _log.info(
           '流量: ↑${UIUtils.formatBytes(_uploadTotal)} ↓${UIUtils.formatBytes(_downloadTotal)} ' +
           '速度: ↑${UIUtils.formatBytes(uploadSpeed)}/s ↓${UIUtils.formatBytes(downloadSpeed)}/s',
           tag: _logTag
         );
-        lastLoggedUpload = _uploadTotal;
-        lastLoggedDownload = _downloadTotal;
+        _lastLoggedUpload = _uploadTotal;
+        _lastLoggedDownload = _downloadTotal;
       }
       
       // 更新状态
