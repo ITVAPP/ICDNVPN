@@ -697,31 +697,25 @@ class V2RayService {
     }
   }
   
-  // 解析流量统计输出 - 基于官方文档的修复版本
+  // 解析流量统计输出
   static void _parseStatsOutput(String output) {
     try {
       _log.debug('开始解析流量统计输出，长度: ${output.length}', tag: _logTag);
       
-      // 处理可能的HTML实体编码
-      output = output.replaceAll('&lt;', '<').replaceAll('&gt;', '>');
-      
       // 重置当前统计
       int currentUplink = 0;
       int currentDownlink = 0;
-      
-      // V2Ray 统计输出格式（根据官方文档）:
-      // stat: <
-      //   name: "inbound>>>socks>>>traffic>>>uplink"
-      //   value: 12345
-      // >
-      
       int parsedCount = 0;
       
       // 分割成单个统计块
       final statBlocks = output.split('stat:');
+      _log.debug('分割后得到 ${statBlocks.length} 个统计块', tag: _logTag);
       
-      for (final block in statBlocks) {
+      for (int i = 0; i < statBlocks.length; i++) {
+        final block = statBlocks[i];
         if (block.trim().isEmpty) continue;
+        
+        _log.debug('处理第 $i 个统计块: $block', tag: _logTag);
         
         // 提取 name 和 value
         final nameMatch = RegExp(r'name:\s*"([^"]+)"').firstMatch(block);
@@ -731,30 +725,26 @@ class V2RayService {
           final name = nameMatch.group(1)!;
           final value = valueMatch != null ? int.parse(valueMatch.group(1)!) : 0;
           
-          // 根据官方文档，统计名称格式：
-          // inbound>>>tag>>>traffic>>>uplink/downlink
-          // outbound>>>tag>>>traffic>>>uplink/downlink
-          // user>>>email>>>traffic>>>uplink/downlink
+          _log.debug('提取到: name="$name", value=$value', tag: _logTag);
           
-          // 我们只需要累加所有的 uplink 和 downlink
+          // 累加所有的 uplink 和 downlink
           if (name.contains('>>>traffic>>>')) {
             if (name.endsWith('>>>uplink')) {
               currentUplink += value;
-              _log.debug('上行流量 - $name: ${UIUtils.formatBytes(value)}', tag: _logTag);
+              _log.debug('上行流量累加: +$value = $currentUplink', tag: _logTag);
             } else if (name.endsWith('>>>downlink')) {
               currentDownlink += value;
-              _log.debug('下行流量 - $name: ${UIUtils.formatBytes(value)}', tag: _logTag);
+              _log.debug('下行流量累加: +$value = $currentDownlink', tag: _logTag);
             }
             parsedCount++;
           }
+        } else {
+          _log.debug('未能匹配到name，跳过此块', tag: _logTag);
         }
       }
       
-      _log.debug('共解析 $parsedCount 个统计项', tag: _logTag);
-      
-      if (parsedCount == 0) {
-        _log.warn('未能解析任何流量统计数据，原始输出: ${output.substring(0, output.length > 200 ? 200 : output.length)}...', tag: _logTag);
-      }
+      _log.debug('解析完成: 共解析 $parsedCount 个统计项', tag: _logTag);
+      _log.debug('统计结果: 上传=$currentUplink, 下载=$currentDownlink', tag: _logTag);
       
       // 更新总量
       _uploadTotal = currentUplink;
