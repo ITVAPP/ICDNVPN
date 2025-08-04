@@ -356,7 +356,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
       onTap: () => _openUrl(currentAd.content.url),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20), // 与节点卡片相同的padding
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // 减小垂直内边距
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -478,113 +478,110 @@ class TextAdCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: MouseRegion(
-        cursor: ad.content.url != null 
-            ? SystemMouseCursors.click 
-            : SystemMouseCursors.basic,
-        child: GestureDetector(
-          onTap: ad.content.url != null 
-              ? () => _openUrl(ad.content.url) 
-              : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
-                  theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
-              border: Border.all(
-                color: theme.primaryColor.withOpacity(0.3),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: theme.brightness == Brightness.dark
-                    ? Colors.black.withOpacity(0.2)
-                    : Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
+    return MouseRegion(
+      cursor: ad.content.url != null 
+          ? SystemMouseCursors.click 
+          : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: ad.content.url != null 
+            ? () => _openUrl(ad.content.url) 
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
+                theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // 广告图标容器 - 与节点卡片的国旗样式一致
-                  Container(
-                    width: 56, // 与服务器列表页的国旗大小一致
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: theme.primaryColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.8),
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                        BoxShadow(
-                          color: theme.primaryColor.withOpacity(0.4),
-                          blurRadius: 8,
-                          spreadRadius: -2,
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        'AD',
-                        style: TextStyle(
-                          fontSize: 56 * 0.35, // 与国旗组件的字号比例一致
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withOpacity(0.5),
-                              offset: const Offset(1, 1),
-                              blurRadius: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // 广告内容
-                  Expanded(
-                    child: Text(
-                      ad.content.text ?? '',
-                      style: TextStyle(
-                        fontSize: 14, // 与节点名称字号一致
-                        color: theme.textTheme.bodyLarge?.color,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // 链接指示器
-                  if (ad.content.url != null) ...[
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.open_in_new,
-                      size: 18,
-                      color: theme.primaryColor.withOpacity(0.6),
-                    ),
-                  ],
-                ],
+            borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
+            border: Border.all(
+              color: theme.primaryColor.withOpacity(0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: theme.brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // 广告图标容器 - 与节点卡片的国旗样式一致
+                Container(
+                  width: 56, // 与服务器列表页的国旗大小一致
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: theme.primaryColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.8),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                      BoxShadow(
+                        color: theme.primaryColor.withOpacity(0.4),
+                        blurRadius: 8,
+                        spreadRadius: -2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      'AD',
+                      style: TextStyle(
+                        fontSize: 56 * 0.35, // 与国旗组件的字号比例一致
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.5),
+                            offset: const Offset(1, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 广告内容
+                Expanded(
+                  child: Text(
+                    ad.content.text ?? '',
+                    style: TextStyle(
+                      fontSize: 14, // 与节点名称字号一致
+                      color: theme.textTheme.bodyLarge?.color,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // 链接指示器
+                if (ad.content.url != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.open_in_new,
+                    size: 18,
+                    color: theme.primaryColor.withOpacity(0.6),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
