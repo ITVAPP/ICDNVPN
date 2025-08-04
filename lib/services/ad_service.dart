@@ -358,17 +358,19 @@ class _TextAdCarouselState extends State<TextAdCarousel>
         margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20), // 与节点卡片相同的padding
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.primaryColor.withOpacity(isDark ? 0.2 : 0.1),
+              theme.primaryColor.withOpacity(isDark ? 0.1 : 0.05),
+            ],
+          ),
           borderRadius: BorderRadius.circular(20), // 与节点卡片相同的圆角
-          boxShadow: [
-            BoxShadow(
-              color: theme.brightness == Brightness.dark
-                ? Colors.black.withOpacity(0.2)
-                : Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          border: Border.all(
+            color: theme.primaryColor.withOpacity(0.2),
+            width: 1,
+          ),
         ),
         child: Row(
           children: [
@@ -490,11 +492,19 @@ class TextAdCard extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              colors: [
-                theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
-                theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
-              ],
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
+                  theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
+                ],
+              ),
               borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
+              border: Border.all(
+                color: theme.primaryColor.withOpacity(0.3),
+                width: 1.5,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: theme.brightness == Brightness.dark
@@ -554,20 +564,14 @@ class TextAdCard extends StatelessWidget {
                   const SizedBox(width: 16),
                   // 广告内容
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 广告文字
-                        Text(
-                          ad.content.text ?? '',
-                          style: TextStyle(
-                            fontSize: 14, // 与节点名称字号一致
-                            color: theme.textTheme.bodyLarge?.color,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                    child: Text(
+                      ad.content.text ?? '',
+                      style: TextStyle(
+                        fontSize: 14, // 与节点名称字号一致
+                        color: theme.textTheme.bodyLarge?.color,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   // 链接指示器
