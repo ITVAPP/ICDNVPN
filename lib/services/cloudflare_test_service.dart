@@ -30,7 +30,6 @@ class CloudflareTestService {
   // HTTPing 模式相关配置
   static bool httping = false; // 是否启用 HTTPing 模式
   static int httpingStatusCode = 0; // 指定的 HTTP 状态码（0表示默认）
-  static String httpingCFColo = ''; // 指定的地区过滤
   
   // 过滤条件
   static double maxLossRate = 1.0; // 丢包率上限（默认100%）
@@ -72,6 +71,7 @@ class CloudflareTestService {
     bool singleTest = false,  // 是否单个测试
     bool useHttping = false,  // 是否使用HTTPing
     Function(int current, int total)? onProgress,  // 进度回调
+    int maxLatency = 300,  // 最大延迟，用于优化超时设置
   }) async {
     // HTTPing模式强制使用80端口，避免证书问题
     final testPort = port ?? (useHttping ? _httpPort : _defaultPort);
@@ -84,8 +84,9 @@ class CloudflareTestService {
     
     await _log.info('开始${useHttping ? "HTTPing" : "TCPing"}测试 ${ips.length} 个IP，端口: $testPort', tag: _logTag);
     
-    // 单个测试时不需要批处理，批量测试时降低并发数以提高准确性
-    final batchSize = singleTest ? 1 : 20;  // 🔧 从30降到20，减少并发压力
+    // 单个测试时不需要批处理，批量测试时根据maxLatency动态调整并发数
+    final batchSize = singleTest ? 1 : math.min(20, math.max(5, 1000 ~/ maxLatency));
+    await _log.debug('批处理大小: $batchSize (基于maxLatency: ${maxLatency}ms)', tag: _logTag);
     int successCount = 0;
     int failCount = 0;
     int tested = 0;
@@ -98,8 +99,8 @@ class CloudflareTestService {
       
       for (final ip in batch) {
         final testMethod = useHttping 
-            ? _testSingleHttping(ip, testPort)
-            : _testSingleIpLatencyWithLossRate(ip, testPort);
+            ? _testSingleHttping(ip, testPort, maxLatency)
+            : _testSingleIpLatencyWithLossRate(ip, testPort, maxLatency);
             
         futures.add(testMethod.then((result) {
           results.add(result);
@@ -153,17 +154,19 @@ class CloudflareTestService {
     return results;
   }
   
-  // HTTPing 模式测试单个IP（强制使用HTTP 80端口，避免证书问题）
-  static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port) async {
-    await _log.debug('[HTTPing] 开始测试 $ip:$port', tag: _logTag);
+  // HTTPing 模式测试单个IP（优化版：使用HEAD请求，不获取地区信息）
+  static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, [int maxLatency = 300]) async {
+    await _log.debug('[HTTPing] 开始测试 $ip:$port (最大延迟: ${maxLatency}ms)', tag: _logTag);
     
     const int pingTimes = 3;
     List<int> latencies = [];
     int successCount = 0;
-    String colo = '';
     
     final httpClient = HttpClient();
-    httpClient.connectionTimeout = const Duration(seconds: 2);  // 🔧 从3秒降到2秒
+    // 使用传入的maxLatency作为连接超时，加100ms缓冲，但至少300ms
+    final timeoutMs = math.max(maxLatency + 100, 300);
+    httpClient.connectionTimeout = Duration(milliseconds: timeoutMs);
+    await _log.debug('[HTTPing] 连接超时设置: ${timeoutMs}ms', tag: _logTag);
     
     // HTTPing 强制使用 HTTP 协议（80端口），避免证书问题
     if (port != 80 && port != _httpPort) {
@@ -177,33 +180,38 @@ class CloudflareTestService {
           scheme: 'http',
           host: ip,
           port: port,
-          path: '/cdn-cgi/trace',  // 修改：使用Cloudflare的trace端点而不是根路径
+          path: '/',  // 使用根路径，支持HEAD请求
         );
         
-        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: $uri', tag: _logTag);
+        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: HEAD $uri', tag: _logTag);
         
         final stopwatch = Stopwatch()..start();
         
-        // 使用GET请求（修改：trace端点需要GET而不是HEAD）
-        final request = await httpClient.getUrl(uri);
+        // 使用HEAD请求（更快，不返回响应体）
+        final request = await httpClient.headUrl(uri);
         request.headers.set('Host', 'cloudflare.com');
         request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         request.headers.set('Accept', '*/*');
         request.headers.set('Connection', 'close');
         
+        await _log.debug('[HTTPing] 发送HEAD请求，等待响应...', tag: _logTag);
+        
         final response = await request.close().timeout(
-          const Duration(seconds: 1),  // 🔧 从2秒降到1秒
+          Duration(milliseconds: maxLatency),  // 使用传入的maxLatency
           onTimeout: () {
+            _log.debug('[HTTPing] HTTP请求超时', tag: _logTag);
             throw TimeoutException('HTTP请求超时');
           },
         );
         
         stopwatch.stop();
+        final latency = stopwatch.elapsedMilliseconds;
         
-        // 必须消费响应体
-        await response.drain();
+        await _log.debug('[HTTPing] 收到响应，状态码: ${response.statusCode}, 耗时: ${latency}ms', tag: _logTag);
         
-        await _log.debug('[HTTPing] 响应状态码: ${response.statusCode}, 耗时: ${stopwatch.elapsedMilliseconds}ms', tag: _logTag);
+        // 不需要消费响应体（HEAD请求没有响应体）
+        // 但仍需要正确关闭响应
+        response.listen((_) {}).cancel();
         
         // 检查HTTP状态码
         bool isValidResponse = false;
@@ -218,43 +226,35 @@ class CloudflareTestService {
         }
         
         if (!isValidResponse) {
-          await _log.debug('[HTTPing] 状态码无效: ${response.statusCode}', tag: _logTag);
+          await _log.debug('[HTTPing] 状态码无效: ${response.statusCode}，期望: ${httpingStatusCode == 0 ? "200/301/302" : httpingStatusCode.toString()}', tag: _logTag);
           continue;
         }
         
-        final latency = stopwatch.elapsedMilliseconds;
-        latencies.add(latency);
-        successCount++;
-        
-        // 获取地区信息（仅第一次）
-        if (colo.isEmpty) {
-          colo = _getColoFromHeaders(response.headers);
-          await _log.debug('[HTTPing] 地区码: $colo', tag: _logTag);
-          
-          // 检查地区过滤
-          if (httpingCFColo.isNotEmpty && colo.isNotEmpty) {
-            final allowedColos = httpingCFColo.split(',')
-                .map((c) => c.trim().toUpperCase()).toList();
-            if (!allowedColos.contains(colo)) {
-              await _log.info('[HTTPing] 地区 $colo 不在允许列表 $allowedColos 中，跳过', tag: _logTag);
-              httpClient.close();
-              return {
-                'ip': ip,
-                'latency': 999,
-                'lossRate': 1.0,
-                'colo': colo,
-              };
-            }
-          }
+        // 记录有效的延迟
+        if (latency > 0 && latency < maxLatency * 2) {  // 允许2倍的maxLatency，因为HTTP可能更慢
+          latencies.add(latency);
+          successCount++;
+          await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes 成功，延迟: ${latency}ms', tag: _logTag);
+        } else {
+          await _log.warn('[HTTPing] 延迟异常: ${latency}ms（超过${maxLatency * 2}ms限制），已忽略', tag: _logTag);
         }
         
       } catch (e) {
-        await _log.debug('[HTTPing] 测试失败: $e', tag: _logTag);
+        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
+        
+        // 详细的错误分类
+        if (e is SocketException) {
+          await _log.debug('[HTTPing] 网络错误: ${e.message}', tag: _logTag);
+        } else if (e is TimeoutException) {
+          await _log.debug('[HTTPing] 请求超时', tag: _logTag);
+        } else if (e is HttpException) {
+          await _log.debug('[HTTPing] HTTP错误: ${e.message}', tag: _logTag);
+        }
       }
       
       // 测试间隔
       if (i < pingTimes - 1) {
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 100));  // 优化：从200ms改为100ms
       }
     }
     
@@ -266,7 +266,7 @@ class CloudflareTestService {
         : 999;
     final lossRate = (pingTimes - successCount) / pingTimes.toDouble();
     
-    await _log.info('[HTTPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%, 地区: $colo', tag: _logTag);
+    await _log.info('[HTTPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     
     return {
       'ip': ip,
@@ -274,12 +274,12 @@ class CloudflareTestService {
       'lossRate': lossRate,
       'sent': pingTimes,
       'received': successCount,
-      'colo': colo,
+      'colo': '',  // 统一返回空，让上层使用_detectLocationFromIp
     };
   }
   
   // 保持原有的公共接口以兼容旧代码
-  static Future<Map<String, int>> testLatency(List<String> ips, [int? port]) async {
+  static Future<Map<String, int>> testLatency(List<String> ips, [int? port, int maxLatency = 300]) async {
     // 根据当前是否启用 HTTPing 来决定使用的端口
     final actualPort = port ?? (httping ? _httpPort : _defaultPort);
     
@@ -287,6 +287,7 @@ class CloudflareTestService {
       ips: ips,
       port: actualPort,
       useHttping: httping,
+      maxLatency: maxLatency,
     );
     final latencyMap = <String, int>{};
     
@@ -419,6 +420,7 @@ class CloudflareTestService {
         ips: sampleIps,
         port: testPort,
         useHttping: httping,
+        maxLatency: maxLatency,  // 传递maxLatency参数
         onProgress: (current, total) {
           controller.add(TestProgress(
             step: currentStep,
@@ -463,14 +465,13 @@ class CloudflareTestService {
         final ip = result['ip'] as String;
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
-        final colo = result['colo'] as String? ?? '';
         
         // 过滤条件：延迟小于等于上限，且丢包率小于指定值
         if (latency > 0 && latency <= maxLatency && lossRate < maxLossRate) {
+          // 统一使用IP地址推测地理位置
           String detectedLocation = location;
           if (location == 'AUTO') {
-            // 优先使用HTTPing获取的地区码
-            detectedLocation = colo.isNotEmpty ? colo : _detectLocationFromIp(ip);
+            detectedLocation = _detectLocationFromIp(ip);
           }
           
           validServers.add(ServerModel(
@@ -919,62 +920,145 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
-  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
-    final testPort = port ?? _defaultPort;
+  // 测试单个IP的延迟和丢包率 - TCPing模式（改进版：测试实际RTT）
+  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, int port, [int maxLatency = 300]) async {
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
     
-    await _log.debug('[TCPing] 开始测试 $ip:$testPort', tag: _logTag);
+    await _log.debug('[TCPing] 开始测试 $ip:$port (超时: ${maxLatency}ms)', tag: _logTag);
     
-    // 进行多次测试 - 修改：第一次失败就停止
+    // 进行多次测试
     for (int i = 0; i < pingTimes; i++) {
+      await _log.debug('[TCPing] 开始第 ${i + 1}/$pingTimes 次连接尝试 $ip:$port', tag: _logTag);
+      
       try {
         final stopwatch = Stopwatch()..start();
         
-        // 🔧 纯TCP连接测试 - 移除HTTP请求
+        // 添加连接前的详细日志
+        await _log.debug('[TCPing] 正在连接 $ip:$port，超时设置: ${maxLatency}ms', tag: _logTag);
+        
+        // TCP连接 - 使用传入的maxLatency作为超时时间
         final socket = await Socket.connect(
           ip,
-          testPort,
-          timeout: const Duration(milliseconds: 1000), 
+          port,
+          timeout: Duration(milliseconds: maxLatency), 
         );
         
-        stopwatch.stop();
+        // 记录连接时间
+        final connectTime = stopwatch.elapsedMilliseconds;
+        await _log.debug('[TCPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
         
-        // 立即关闭连接
-        await socket.close();
-        
-        final latency = stopwatch.elapsedMilliseconds;
-        
-        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: ${latency}ms', tag: _logTag);
-        
-        // 🔧 简化验证逻辑
-        if (latency > 0 && latency < 800) {  // 只接受合理的延迟值
-          latencies.add(latency);
-          successCount++;
+        try {
+          // 发送少量数据并等待响应，测试实际RTT
+          if (port == 443 || port == _defaultPort) {
+            // HTTPS端口：发送TLS ClientHello的开始部分
+            socket.add([
+              0x16, // TLS Handshake
+              0x03, 0x01, // TLS 1.0
+              0x00, 0x05, // Length (最小)
+              0x01, // ClientHello
+            ]);
+          } else if (port == 80 || port == _httpPort) {
+            // HTTP端口：发送HTTP请求的开始部分
+            socket.write('GET / HTTP/1.');
+          } else {
+            // 其他端口：发送通用数据
+            socket.add([0x00]);
+          }
+          
+          await socket.flush();
+          await _log.debug('[TCPing] 已发送数据，等待响应', tag: _logTag);
+          
+          // 等待任何响应数据
+          final completer = Completer<void>();
+          bool receivedData = false;
+          
+          socket.listen(
+            (data) {
+              if (!receivedData && data.isNotEmpty) {
+                receivedData = true;
+                _log.debug('[TCPing] 收到响应数据: ${data.length} 字节', tag: _logTag);
+                if (!completer.isCompleted) {
+                  completer.complete();
+                }
+              }
+            },
+            onDone: () {
+              if (!completer.isCompleted) {
+                completer.completeError('连接关闭');
+              }
+            },
+            onError: (e) {
+              if (!completer.isCompleted) {
+                completer.completeError(e);
+              }
+            },
+            cancelOnError: true,
+          );
+          
+          // 等待响应，超时时间设置为maxLatency的一半（因为已经花了连接时间）
+          // 但至少要100ms
+          final responseTimeout = math.max(maxLatency ~/ 2, 100);
+          await completer.future.timeout(
+            Duration(milliseconds: responseTimeout),
+            onTimeout: () {
+              _log.debug('[TCPing] 等待响应超时 (${responseTimeout}ms)', tag: _logTag);
+              // 如果只是响应超时但连接成功，仍记录连接时间
+              if (connectTime < maxLatency) {
+                latencies.add(connectTime);
+                successCount++;
+              }
+              throw TimeoutException('响应超时');
+            },
+          );
+          
+          stopwatch.stop();
+          final totalTime = stopwatch.elapsedMilliseconds;
+          
+          await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: 总RTT ${totalTime}ms (连接: ${connectTime}ms)', tag: _logTag);
+          
+          // 验证延迟值
+          if (totalTime > 0 && totalTime < maxLatency) {
+            latencies.add(totalTime);
+            successCount++;
+            await _log.debug('[TCPing] RTT值有效，已记录', tag: _logTag);
+          } else {
+            await _log.warn('[TCPing] RTT值异常: ${totalTime}ms（超过${maxLatency}ms限制），已忽略', tag: _logTag);
+          }
+          
+        } finally {
+          // 强制关闭socket，避免等待
+          socket.destroy();
+          await _log.debug('[TCPing] Socket已关闭', tag: _logTag);
         }
         
       } catch (e) {
         await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
+        await _log.debug('[TCPing] 异常类型: ${e.runtimeType}', tag: _logTag);
         
-        // 🔧 更精确的错误分类（可选）
+        // 更精确的错误分类
         if (e is SocketException) {
-          if (e.osError?.errorCode == 111) {  // Connection refused
-            await _log.debug('[TCPing] 连接被拒绝', tag: _logTag);
-          } else if (e.osError?.errorCode == 113) {  // No route to host
-            await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
+          await _log.debug('[TCPing] SocketException详情: ${e.message}', tag: _logTag);
+          if (e.osError != null) {
+            await _log.debug('[TCPing] OS错误码: ${e.osError!.errorCode}', tag: _logTag);
+            await _log.debug('[TCPing] OS错误消息: ${e.osError!.message}', tag: _logTag);
           }
+        } else if (e is TimeoutException) {
+          await _log.debug('[TCPing] 连接或响应超时', tag: _logTag);
         }
         
-        // 🚨 关键修改：第一次失败就停止测试
-        await _log.debug('[TCPing] 第一次测试失败，跳过后续测试', tag: _logTag);
-        break;  // 立即退出循环
+        // 第一次失败就停止测试
+        if (successCount == 0) {
+          await _log.debug('[TCPing] 第一次测试失败，跳过后续测试', tag: _logTag);
+          break;  // 立即退出循环
+        }
       }
       
-      // 测试间隔 - 保持200ms避免网络拥塞
+      // 测试间隔 - 优化为100ms
       if (i < pingTimes - 1) {
-        await Future.delayed(const Duration(milliseconds: 200));
+        await _log.debug('[TCPing] 等待100ms后进行下次测试', tag: _logTag);
+        await Future.delayed(const Duration(milliseconds: 100));
       }
     }
     
@@ -993,7 +1077,8 @@ class CloudflareTestService {
     final actualPingTimes = successCount > 0 ? pingTimes : 1;  // 如果首次失败，实际只测了1次
     final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
-    await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
+    await _log.info('[TCPing] 完成 $ip - 平均RTT: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
+    await _log.info('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, RTT列表: $latencies', tag: _logTag);
     
     return {
       'ip': ip,
@@ -1003,30 +1088,6 @@ class CloudflareTestService {
       'received': successCount,
       'colo': '', // TCPing模式无法获取地区信息
     };
-  }
-  
-  // 从HTTP响应头获取地区信息
-  static String _getColoFromHeaders(HttpHeaders headers) {
-    // Cloudflare: cf-ray 头部包含地区信息
-    final cfRay = headers.value('cf-ray');
-    if (cfRay != null) {
-      // 格式: 7bd32409eda7b020-SJC
-      final parts = cfRay.split('-');
-      if (parts.length >= 2) {
-        final colo = parts.last.toUpperCase();
-        _log.debug('[Headers] cf-ray地区码: $colo', tag: _logTag);
-        return colo;
-      }
-    }
-    
-    // 备用：检查其他Cloudflare头部
-    final cfIpCountry = headers.value('cf-ipcountry');
-    if (cfIpCountry != null) {
-      _log.debug('[Headers] cf-ipcountry: $cfIpCountry', tag: _logTag);
-      return cfIpCountry.toUpperCase();
-    }
-    
-    return '';
   }
   
   // 下载速度测试（修复版）
