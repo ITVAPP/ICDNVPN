@@ -919,21 +919,26 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（添加详细调试日志）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
     
-    await _log.debug('[TCPing] 开始测试 $ip:$testPort', tag: _logTag);
+    await _log.debug('[TCPing] ============ 开始测试 $ip:$testPort ============', tag: _logTag);
     
-    // 进行多次测试 - 修改：第一次失败就停止
+    // 进行多次测试
     for (int i = 0; i < pingTimes; i++) {
       try {
+        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes - 准备连接 $ip:$testPort', tag: _logTag);
+        
+        // 使用微秒级时间戳以提高精度
+        final startMicros = DateTime.now().microsecondsSinceEpoch;
         final stopwatch = Stopwatch()..start();
         
-        // 🔧 纯TCP连接测试 - 移除HTTP请求
+        // 创建Socket连接
+        await _log.debug('[TCPing] 正在创建Socket连接...', tag: _logTag);
         final socket = await Socket.connect(
           ip,
           testPort,
@@ -941,44 +946,65 @@ class CloudflareTestService {
         );
         
         stopwatch.stop();
+        final endMicros = DateTime.now().microsecondsSinceEpoch;
+        
+        // 打印详细连接信息
+        await _log.debug('[TCPing] ✅ 连接成功！', tag: _logTag);
+        await _log.debug('[TCPing] - Socket对象: $socket', tag: _logTag);
+        await _log.debug('[TCPing] - 本地地址: ${socket.address}:${socket.port}', tag: _logTag);
+        await _log.debug('[TCPing] - 远程地址: ${socket.remoteAddress}:${socket.remotePort}', tag: _logTag);
+        await _log.debug('[TCPing] - Stopwatch计时: ${stopwatch.elapsedMilliseconds}ms', tag: _logTag);
+        await _log.debug('[TCPing] - 微秒计时: ${(endMicros - startMicros) / 1000}ms', tag: _logTag);
         
         // 立即关闭连接
         await socket.close();
+        await _log.debug('[TCPing] - 连接已关闭', tag: _logTag);
         
         final latency = stopwatch.elapsedMilliseconds;
         
-        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: ${latency}ms', tag: _logTag);
-        
-        // 🔧 简化验证逻辑
-        if (latency > 0 && latency < 800) {  // 只接受合理的延迟值
+        // 验证延迟值的合理性
+        if (latency > 0 && latency < 800) {
           latencies.add(latency);
           successCount++;
+          await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 成功: ${latency}ms ✓', tag: _logTag);
+        } else {
+          await _log.warn('[TCPing] 测试 ${i + 1}/$pingTimes 延迟异常: ${latency}ms，忽略此次结果', tag: _logTag);
         }
         
       } catch (e) {
-        await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
+        await _log.debug('[TCPing] ❌ 测试 ${i + 1}/$pingTimes 失败', tag: _logTag);
+        await _log.debug('[TCPing] - 错误类型: ${e.runtimeType}', tag: _logTag);
+        await _log.debug('[TCPing] - 错误信息: $e', tag: _logTag);
         
-        // 🔧 更精确的错误分类（可选）
+        // 详细分析错误类型
         if (e is SocketException) {
-          if (e.osError?.errorCode == 111) {  // Connection refused
-            await _log.debug('[TCPing] 连接被拒绝', tag: _logTag);
-          } else if (e.osError?.errorCode == 113) {  // No route to host
-            await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
+          await _log.debug('[TCPing] - SocketException详情:', tag: _logTag);
+          await _log.debug('[TCPing]   - 消息: ${e.message}', tag: _logTag);
+          await _log.debug('[TCPing]   - OS错误: ${e.osError}', tag: _logTag);
+          await _log.debug('[TCPing]   - 地址: ${e.address}', tag: _logTag);
+          await _log.debug('[TCPing]   - 端口: ${e.port}', tag: _logTag);
+          
+          if (e.osError != null) {
+            await _log.debug('[TCPing]   - OS错误码: ${e.osError!.errorCode}', tag: _logTag);
+            await _log.debug('[TCPing]   - OS错误消息: ${e.osError!.message}', tag: _logTag);
           }
+        } else if (e is TimeoutException) {
+          await _log.debug('[TCPing] - 连接超时', tag: _logTag);
         }
         
-        // 🚨 关键修改：第一次失败就停止测试
+        // 第一次失败就停止测试
         await _log.debug('[TCPing] 第一次测试失败，跳过后续测试', tag: _logTag);
-        break;  // 立即退出循环
+        break;
       }
       
-      // 测试间隔 - 保持200ms避免网络拥塞
+      // 测试间隔
       if (i < pingTimes - 1) {
+        await _log.debug('[TCPing] 等待200ms后进行下一次测试...', tag: _logTag);
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
     
-    // 计算平均延迟（如果有3个以上样本，去除最高最低值）
+    // 计算平均延迟
     int avgLatency = 999;
     if (latencies.length >= 3) {
       latencies.sort();
@@ -989,11 +1015,16 @@ class CloudflareTestService {
       avgLatency = latencies.reduce((a, b) => a + b) ~/ latencies.length;
     }
     
-    // 修改：实际测试次数基于是否首次失败
-    final actualPingTimes = successCount > 0 ? pingTimes : 1;  // 如果首次失败，实际只测了1次
+    // 计算丢包率
+    final actualPingTimes = successCount > 0 ? pingTimes : 1;
     final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
-    await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
+    await _log.info('[TCPing] ============ 完成 $ip ============', tag: _logTag);
+    await _log.info('[TCPing] - 发送: $actualPingTimes 次', tag: _logTag);
+    await _log.info('[TCPing] - 成功: $successCount 次', tag: _logTag);
+    await _log.info('[TCPing] - 平均延迟: ${avgLatency}ms', tag: _logTag);
+    await _log.info('[TCPing] - 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
+    await _log.info('[TCPing] ========================================', tag: _logTag);
     
     return {
       'ip': ip,
@@ -1263,181 +1294,4 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     );
   }
   
-  // 获取本地化的消息
-  String _getLocalizedMessage(TestProgress progress) {
-    final l10n = AppLocalizations.of(context);
-    
-    // 使用反射或映射来获取对应的本地化文本
-    switch (progress.messageKey) {
-      case 'preparingTestEnvironment':
-        return l10n.preparingTestEnvironment;
-      case 'generatingTestIPs':
-        return l10n.generatingTestIPs;
-      case 'testingDelay':
-        return l10n.testingDelay;
-      case 'testingDownloadSpeed':
-        return l10n.testingDownloadSpeed;
-      case 'testCompleted':
-        return l10n.testCompleted;
-      case 'disconnecting':
-        return l10n.disconnecting;
-      case 'testFailed':
-        return l10n.testFailed;
-      case 'noQualifiedNodes':
-        return l10n.noQualifiedNodes;
-      case 'noServersMetSpeedRequirement':
-        return l10n.noServersMetSpeedRequirement;
-      default:
-        return progress.messageKey;
-    }
-  }
-  
-  // 获取本地化的详情
-  String _getLocalizedDetail(TestProgress progress) {
-    if (progress.detailKey == null) return '';
-    
-    final l10n = AppLocalizations.of(context);
-    
-    switch (progress.detailKey!) {
-      case 'initializing':
-        return l10n.initializing;
-      case 'startingSpeedTest':
-        return l10n.startingSpeedTest;
-      case 'checkNetworkOrRequirements':
-        return l10n.checkNetworkOrRequirements;
-      case 'lowerSpeedRequirement':
-        return l10n.lowerSpeedRequirement;
-      case 'ipRanges':
-        final count = progress.detailParams?['count'] ?? 0;
-        return l10n.samplingFromRanges(count);
-      case 'nodeProgress':
-        final current = progress.detailParams?['current'] ?? 0;
-        final total = progress.detailParams?['total'] ?? 0;
-        final ip = progress.detailParams?['ip'] ?? '';
-        if (ip.isNotEmpty) {
-          return '$current/$total - $ip';
-        }
-        return '$current/$total';
-      case 'foundQualityNodes':
-        final count = progress.detailParams?['count'] ?? 0;
-        return l10n.foundNodes(count);
-      default:
-        return progress.detailKey!;
-    }
-  }
-  
-  void _saveResults(List<ServerModel> servers) async {
-    final l10n = AppLocalizations.of(context);
-    final serverProvider = context.read<ServerProvider>();
-    
-    // 先清空所有旧节点
-    await serverProvider.clearAllServers();
-    
-    // 再逐个添加新节点
-    for (final server in servers) {
-      await serverProvider.addServer(server);
-    }
-    
-    setState(() {
-      _isCompleted = true;
-    });
-    
-    // 延迟关闭对话框
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    
-    // 显示成功消息
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${l10n.serverAdded} ${servers.length} 个')),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 20),
-        // 圆形进度条
-        SizedBox(
-          width: 60,
-          height: 60,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              CircularProgressIndicator(
-                value: _currentProgress?.progress,
-                strokeWidth: 4,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  _currentProgress?.hasError == true
-                      ? Colors.red
-                      : Theme.of(context).primaryColor,
-                ),
-              ),
-              if (_currentProgress != null)
-                Text(
-                  '${_currentProgress!.percentage}%',
-                  style: const TextStyle(fontSize: 12),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        // 主要信息
-        Text(
-          _currentProgress != null 
-              ? _getLocalizedMessage(_currentProgress!)
-              : l10n.preparing,
-          style: const TextStyle(
-            fontSize: 16, 
-            fontWeight: FontWeight.bold,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        // 详细信息
-        if (_currentProgress != null)
-          Text(
-            _getLocalizedDetail(_currentProgress!),
-            style: TextStyle(
-              fontSize: 14,
-              color: _currentProgress?.hasError == true
-                  ? Colors.red
-                  : Theme.of(context).textTheme.bodySmall?.color,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        // 子进度条（如延迟测试的详细进度）
-        if (_currentProgress?.subProgress != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: SizedBox(
-              width: 200,
-              child: LinearProgressIndicator(
-                value: _currentProgress!.subProgress,
-                minHeight: 2,
-              ),
-            ),
-          ),
-        const SizedBox(height: 20),
-        // 完成图标
-        if (_isCompleted)
-          Icon(
-            Icons.check_circle,
-            size: 48,
-            color: Colors.green[400],
-          ),
-      ],
-    );
-  }
-  
-  @override
-  void dispose() {
-    _progressSubscription?.cancel();
-    super.dispose();
-  }
-}
+  //
