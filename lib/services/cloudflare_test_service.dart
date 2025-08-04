@@ -933,8 +933,7 @@ class CloudflareTestService {
   }
 
   // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
-  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port, {int? maxLatency}]) async {
-    final testPort = port ?? _defaultPort;
+  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, int testPort, {int? maxLatency}) async {
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
