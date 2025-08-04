@@ -703,17 +703,17 @@ class CloudflareTestService {
       // 统计延迟分布
       final latencyStats = <String, int>{};
       int totalFailures = 0;
-      int fakeConnections = 0;
+      int sourceAddressUsed = 0;
       for (final result in pingResults) {
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
-        final isFake = result['fakeConnection'] ?? false;
+        final usedSource = result['usedSourceAddress'] ?? false;
         
-        if (isFake) {
-          fakeConnections++;
-          totalFailures++;
-          latencyStats['假连接'] = (latencyStats['假连接'] ?? 0) + 1;
-        } else if (lossRate >= 1.0) {
+        if (usedSource) {
+          sourceAddressUsed++;
+        }
+        
+        if (lossRate >= 1.0) {
           latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
           totalFailures++;
         } else if (latency < 100) {
@@ -733,11 +733,9 @@ class CloudflareTestService {
       }
       await _log.info('延迟分布: $latencyStats', tag: _logTag);
       
-      // 如果检测到大量假连接，记录警告
-      if (fakeConnections > 0) {
-        await _log.error('⚠️ 检测到 $fakeConnections 个假连接！这是Flutter Socket的已知bug。', tag: _logTag);
-        await _log.error('   参考: https://github.com/flutter/flutter/issues/155740', tag: _logTag);
-        await _log.error('   建议: 尝试重启应用或使用HTTPing模式', tag: _logTag);
+      // 如果使用了sourceAddress，记录信息
+      if (sourceAddressUsed > 0) {
+        await _log.info('✓ 成功使用sourceAddress参数绕过Flutter Socket bug: $sourceAddressUsed 个连接', tag: _logTag);
       }
       
       // 检查失败率，决定是否启用诊断
@@ -767,13 +765,6 @@ class CloudflareTestService {
         final ip = result['ip'] as String;
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
-        final isFake = result['fakeConnection'] ?? false;
-        
-        // 排除假连接
-        if (isFake) {
-          await _log.debug('跳过假连接: $ip', tag: _logTag);
-          continue;
-        }
         
         // 过滤条件：延迟小于等于上限，且丢包率小于指定值
         if (latency > 0 && latency <= maxLatency && lossRate < maxLossRate) {
@@ -797,28 +788,15 @@ class CloudflareTestService {
       await _log.info('初步过滤后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms，丢包率<${(maxLossRate * 100).toStringAsFixed(1)}%）', tag: _logTag);
       
       if (validServers.isEmpty) {
-        // 检查是否都是假连接
-        final allFakeConnections = pingResults.where((r) => r['fakeConnection'] == true).length;
-        if (allFakeConnections > 0) {
-          await _log.error('''检测到Flutter Socket bug导致所有连接失败！
-          
-这是一个已知的Flutter bug：socket.address返回了错误的地址。
-参考：https://github.com/flutter/flutter/issues/155740
-
-解决方案：
-  1. 尝试使用HTTPing模式（使用80端口）
-  2. 重启应用
-  3. 在不同的网络环境下测试
-  4. 等待Flutter修复此bug''', tag: _logTag);
-        } else {
-          await _log.error('''未找到符合条件的节点
+        await _log.error('''未找到符合条件的节点
 建议：
   1. 检查网络连接是否正常
   2. 降低延迟要求（当前: $maxLatency ms）
   3. 提高丢包率容忍度（当前: ${(maxLossRate * 100).toStringAsFixed(1)}%）
   4. 增加测试数量（当前: $testCount）
-  5. 检查防火墙是否阻止了${testPort}端口''', tag: _logTag);
-        }
+  5. 检查防火墙是否阻止了${testPort}端口
+  
+注：如果遇到Socket地址bug，系统会自动尝试使用sourceAddress参数解决''', tag: _logTag);
         
         throw TestException(
           messageKey: 'noQualifiedNodes',
@@ -1244,12 +1222,13 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版：检测假连接）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版：使用sourceAddress解决bug）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, int port, [int maxLatency = 300]) async {
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
-    bool isFakeConnection = false; // 检测是否是假连接
+    bool useSourceAddress = false; // 是否需要使用sourceAddress
+    String? localIpAddress; // 本地IP地址
     
     await _log.debug('[TCPing] 开始测试 $ip:$port (超时: ${maxLatency}ms)', tag: _logTag);
     
@@ -1260,24 +1239,47 @@ class CloudflareTestService {
       try {
         final stopwatch = Stopwatch()..start();
         
-        // TCP连接 - 使用总超时时间
-        final socket = await Socket.connect(
-          ip,
-          port,
-          timeout: Duration(milliseconds: maxLatency),
-        );
+        Socket socket;
+        if (useSourceAddress && localIpAddress != null) {
+          // 使用sourceAddress参数
+          await _log.debug('[TCPing] 使用sourceAddress: $localIpAddress', tag: _logTag);
+          socket = await Socket.connect(
+            ip,
+            port,
+            sourceAddress: localIpAddress,
+            timeout: Duration(milliseconds: maxLatency),
+          );
+        } else {
+          // 正常连接
+          socket = await Socket.connect(
+            ip,
+            port,
+            timeout: Duration(milliseconds: maxLatency),
+          );
+        }
         
         final connectTime = stopwatch.elapsedMilliseconds;
         await _log.debug('[TCPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
         
-        // 检测是否是假连接（Flutter bug）
-        try {
-          if (socket.address.address == socket.remoteAddress.address) {
-            isFakeConnection = true;
-            await _log.warn('[TCPing] 检测到Flutter Socket bug: 本地地址与远程地址相同！', tag: _logTag);
+        // 检测是否有socket.address bug
+        if (!useSourceAddress && i == 0) {  // 只在第一次测试时检查
+          try {
+            if (socket.address.address == socket.remoteAddress.address) {
+              await _log.warn('[TCPing] 检测到Flutter Socket bug: 本地地址与远程地址相同！', tag: _logTag);
+              
+              // 尝试获取本地IP并启用sourceAddress
+              localIpAddress = await _getLocalIpAddress();
+              if (localIpAddress != '未知') {
+                await _log.info('[TCPing] 将使用sourceAddress参数重试: $localIpAddress', tag: _logTag);
+                useSourceAddress = true;
+                socket.destroy();
+                i--; // 重试当前测试
+                continue;
+              }
+            }
+          } catch (e) {
+            // 忽略地址获取错误
           }
-        } catch (e) {
-          // 忽略地址获取错误
         }
         
         try {
@@ -1427,22 +1429,13 @@ class CloudflareTestService {
     final actualPingTimes = successCount > 0 ? pingTimes : math.min(2, pingTimes);
     final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
-    // 如果检测到假连接，强制标记为失败
-    if (isFakeConnection) {
-      await _log.error('[TCPing] 检测到Flutter Socket bug，连接被标记为失败', tag: _logTag);
-      return {
-        'ip': ip,
-        'latency': 999,
-        'lossRate': 1.0,
-        'sent': actualPingTimes,
-        'received': 0,
-        'colo': '',
-        'fakeConnection': true, // 标记为假连接
-      };
-    }
-    
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     await _log.debug('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, 延迟列表: $latencies', tag: _logTag);
+    
+    // 如果使用了sourceAddress，记录信息
+    if (useSourceAddress) {
+      await _log.info('[TCPing] 使用sourceAddress参数成功绕过了Flutter Socket bug', tag: _logTag);
+    }
     
     // 如果启用诊断模式且失败率高，进行诊断
     if (_enableDiagnosis && lossRate >= 1.0 && _diagnosisCount < _maxDiagnosisCount) {
@@ -1458,7 +1451,7 @@ class CloudflareTestService {
       'sent': actualPingTimes,
       'received': successCount,
       'colo': '', // TCPing模式无法获取地区信息
-      'fakeConnection': false,
+      'usedSourceAddress': useSourceAddress, // 标记是否使用了sourceAddress
     };
   }
   
