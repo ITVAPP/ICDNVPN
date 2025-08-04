@@ -919,7 +919,7 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（修改：添加详细调试日志）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
     final testPort = port ?? _defaultPort;
     const int pingTimes = 3; // 测试次数
@@ -930,13 +930,8 @@ class CloudflareTestService {
     
     // 进行多次测试 - 修改：第一次失败就停止
     for (int i = 0; i < pingTimes; i++) {
-      await _log.debug('[TCPing] 开始第 ${i + 1}/$pingTimes 次连接尝试 $ip:$testPort', tag: _logTag);
-      
       try {
         final stopwatch = Stopwatch()..start();
-        
-        // 添加连接前的详细日志
-        await _log.debug('[TCPing] 正在连接 $ip:$testPort，超时设置: 1000ms', tag: _logTag);
         
         // 🔧 纯TCP连接测试 - 移除HTTP请求
         final socket = await Socket.connect(
@@ -947,14 +942,8 @@ class CloudflareTestService {
         
         stopwatch.stop();
         
-        // 添加连接成功后的详细信息
-        await _log.debug('[TCPing] 连接成功！socket对象: $socket', tag: _logTag);
-        await _log.debug('[TCPing] 本地地址: ${socket.address.address}:${socket.port}', tag: _logTag);
-        await _log.debug('[TCPing] 远程地址: ${socket.remoteAddress.address}:${socket.remotePort}', tag: _logTag);
-        
         // 立即关闭连接
         await socket.close();
-        await _log.debug('[TCPing] Socket已关闭', tag: _logTag);
         
         final latency = stopwatch.elapsedMilliseconds;
         
@@ -964,30 +953,18 @@ class CloudflareTestService {
         if (latency > 0 && latency < 800) {  // 只接受合理的延迟值
           latencies.add(latency);
           successCount++;
-          await _log.debug('[TCPing] 延迟值有效，已记录', tag: _logTag);
-        } else {
-          await _log.warn('[TCPing] 延迟值异常: ${latency}ms，已忽略', tag: _logTag);
         }
         
       } catch (e) {
         await _log.debug('[TCPing] 测试 ${i + 1}/$pingTimes 失败: $e', tag: _logTag);
-        await _log.debug('[TCPing] 异常类型: ${e.runtimeType}', tag: _logTag);
         
         // 🔧 更精确的错误分类（可选）
         if (e is SocketException) {
-          await _log.debug('[TCPing] SocketException详情: ${e.message}', tag: _logTag);
-          if (e.osError != null) {
-            await _log.debug('[TCPing] OS错误码: ${e.osError!.errorCode}', tag: _logTag);
-            await _log.debug('[TCPing] OS错误消息: ${e.osError!.message}', tag: _logTag);
-            
-            if (e.osError?.errorCode == 111) {  // Connection refused
-              await _log.debug('[TCPing] 连接被拒绝', tag: _logTag);
-            } else if (e.osError?.errorCode == 113) {  // No route to host
-              await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
-            }
+          if (e.osError?.errorCode == 111) {  // Connection refused
+            await _log.debug('[TCPing] 连接被拒绝', tag: _logTag);
+          } else if (e.osError?.errorCode == 113) {  // No route to host
+            await _log.debug('[TCPing] 无法路由到主机', tag: _logTag);
           }
-        } else if (e is TimeoutException) {
-          await _log.debug('[TCPing] 连接超时', tag: _logTag);
         }
         
         // 🚨 关键修改：第一次失败就停止测试
@@ -997,7 +974,6 @@ class CloudflareTestService {
       
       // 测试间隔 - 保持200ms避免网络拥塞
       if (i < pingTimes - 1) {
-        await _log.debug('[TCPing] 等待200ms后进行下次测试', tag: _logTag);
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
@@ -1018,7 +994,6 @@ class CloudflareTestService {
     final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
-    await _log.info('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, 延迟列表: $latencies', tag: _logTag);
     
     return {
       'ip': ip,
