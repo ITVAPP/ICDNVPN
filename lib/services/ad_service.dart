@@ -197,19 +197,6 @@ class AdService extends ChangeNotifier {
     return getAdsForPage(page, type: 'text', limit: limit);
   }
 
-  /// 获取指定页面的图片广告（随机选择一个）
-  AdModel? getImageAdForPage(String page) {
-    final imageAds = getAdsForPage(page, type: 'image');
-    if (imageAds.isEmpty) return null;
-
-    // 过滤掉今天已经显示次数达到上限的广告
-    final availableAds = imageAds.where((ad) => shouldShowImageAd(ad.id)).toList();
-    if (availableAds.isEmpty) return null;
-
-    // 随机选择一个
-    return availableAds[_random.nextInt(availableAds.length)];
-  }
-
   /// 检查图片广告是否应该显示
   bool shouldShowImageAd(String adId) {
     // 检查今日显示次数
@@ -258,19 +245,6 @@ class AdService extends ChangeNotifier {
       debugPrint('检查冷却时间失败: $e');
     }
     return true; // 如果出错，允许显示
-  }
-
-  /// 获取指定页面的图片广告（随机选择一个）- 同步版本（简化版，不检查冷却时间）
-  AdModel? getImageAdForPage(String page) {
-    final imageAds = getAdsForPage(page, type: 'image');
-    if (imageAds.isEmpty) return null;
-
-    // 过滤掉今天已经显示次数达到上限的广告
-    final availableAds = imageAds.where((ad) => shouldShowImageAd(ad.id)).toList();
-    if (availableAds.isEmpty) return null;
-
-    // 随机选择一个
-    return availableAds[_random.nextInt(availableAds.length)];
   }
 
   /// 获取指定页面的图片广告（随机选择一个）- 异步版本（完整版，检查冷却时间）
