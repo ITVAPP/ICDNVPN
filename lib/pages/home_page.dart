@@ -114,6 +114,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   void _onConnectionChanged() {
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    
+    // 检查是否有断开原因（意外断开）
+    if (connectionProvider.disconnectReason != null && mounted) {
+      final l10n = AppLocalizations.of(context);
+      String message = '';
+      
+      switch (connectionProvider.disconnectReason) {
+        case 'unexpected_exit':
+          message = l10n.vpnDisconnected;
+          break;
+        default:
+          message = l10n.connectionLost;
+      }
+      
+      // 显示提示
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          // 清除断开原因，避免重复显示
+          connectionProvider.clearDisconnectReason();
+        }
+      });
+    }
+    
     if (connectionProvider.isConnected) {
       _startConnectedTimeTimer();
     } else {
@@ -519,7 +549,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         color: theme.cardColor,
@@ -705,7 +735,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         color: theme.cardColor,
@@ -787,7 +817,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final theme = Theme.of(context);
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
+      margin: const EdgeInsets.symmetric(horizontal: 8), // 添加与节点卡片相同的margin
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         gradient: LinearGradient(

@@ -355,7 +355,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
     return GestureDetector(
       onTap: () => _openUrl(currentAd.content.url),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
+        margin: const EdgeInsets.symmetric(horizontal: 8), // 添加与节点卡片相同的margin
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
         decoration: BoxDecoration(
           gradient: LinearGradient(

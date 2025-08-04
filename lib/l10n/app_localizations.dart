@@ -147,6 +147,10 @@ class AppLocalizations {
   String get getNodesFailed => _get('getNodesFailed');
   String get noValidNodes => _get('noValidNodes');
   
+  // 新增：连接断开相关文本
+  String get connectionLost => _get('connectionLost');
+  String get vpnDisconnected => _get('vpnDisconnected');
+  
   // 带参数的文本格式化方法
   String samplingFromRanges(int count) {
     final template = _get('samplingFromIPRanges');
@@ -327,29 +331,78 @@ const Map<String, String> _zhCnTranslations = {
   'gettingBestNodes': '正在获取最优节点...',
   'getNodesFailed': '获取节点失败，请重试',
   'noValidNodes': '无法获取有效节点',
+  
+  // 新增：连接断开相关文本
+  'connectionLost': '连接已断开',
+  'vpnDisconnected': 'VPN连接已断开',
 };
 
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
+  'servers': 'Servers',
+  'settings': 'Settings',
+  'disconnect': 'Disconnect',
+  'connected': 'Connected',
+  'disconnected': 'Disconnected',
+  'connecting': 'Connecting...',
+  'disconnecting': 'Disconnecting...',
+  'close': 'Close',
+  'vpnDisconnected': 'VPN connection lost',
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
+  'servers': '伺服器',
+  'settings': '設定',
+  'disconnect': '斷開',
+  'connected': '已連線',
+  'disconnected': '未連線',
+  'connecting': '正在連線...',
+  'disconnecting': '正在斷開...',
+  'close': '關閉',
+  'vpnDisconnected': 'VPN連線已斷開',
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
+  'servers': 'Servidores',
+  'settings': 'Configuración',
+  'disconnect': 'Desconectar',
+  'connected': 'Conectado',
+  'disconnected': 'Desconectado',
+  'connecting': 'Conectando...',
+  'disconnecting': 'Desconectando...',
+  'close': 'Cerrar',
+  'vpnDisconnected': 'Conexión VPN perdida',
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
+  'servers': 'Серверы',
+  'settings': 'Настройки',
+  'disconnect': 'Отключить',
+  'connected': 'Подключено',
+  'disconnected': 'Отключено',
+  'connecting': 'Подключение...',
+  'disconnecting': 'Отключение...',
+  'close': 'Закрыть',
+  'vpnDisconnected': 'VPN-соединение потеряно',
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
+  'servers': 'الخوادم',
+  'settings': 'الإعدادات',
+  'disconnect': 'قطع الاتصال',
+  'connected': 'متصل',
+  'disconnected': 'غير متصل',
+  'connecting': 'جاري الاتصال...',
+  'disconnecting': 'جاري قطع الاتصال...',
+  'close': 'إغلاق',
+  'vpnDisconnected': 'انقطع اتصال VPN',
 };

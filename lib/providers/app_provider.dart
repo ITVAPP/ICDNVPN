@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/server_model.dart';
 import '../services/v2ray_service.dart';
 import '../services/proxy_service.dart';
-import '../services/cloudflare_test_service.dart';
 
 // ===== 连接状态管理（原 connection_provider.dart） =====
 class ConnectionProvider with ChangeNotifier {
@@ -17,11 +16,13 @@ class ConnectionProvider with ChangeNotifier {
   bool _autoConnect = false;
   bool _isDisposed = false;
   DateTime? _connectStartTime; // 添加连接开始时间
+  String? _disconnectReason; // 添加断开原因
   
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
   DateTime? get connectStartTime => _connectStartTime; // 添加getter
+  String? get disconnectReason => _disconnectReason; // 添加getter
   
   ConnectionProvider() {
     // 设置V2Ray进程退出回调
@@ -50,6 +51,7 @@ class ConnectionProvider with ChangeNotifier {
       print('V2Ray process exited unexpectedly, updating connection status...');
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
+      _disconnectReason = 'unexpected_exit'; // 设置断开原因
       // 清理系统代理设置
       ProxyService.disableSystemProxy().catchError((e) {
         print('Error disabling system proxy after process exit: $e');
@@ -57,6 +59,14 @@ class ConnectionProvider with ChangeNotifier {
       if (!_isDisposed) {
         notifyListeners();
       }
+    }
+  }
+  
+  // 清除断开原因
+  void clearDisconnectReason() {
+    _disconnectReason = null;
+    if (!_isDisposed) {
+      notifyListeners();
     }
   }
   
@@ -132,6 +142,9 @@ class ConnectionProvider with ChangeNotifier {
   
   Future<void> connect() async {
     if (_isDisposed) return;
+    
+    // 清除之前的断开原因
+    _disconnectReason = null;
     
     ServerModel? serverToConnect;
     
@@ -213,6 +226,7 @@ class ConnectionProvider with ChangeNotifier {
       await ProxyService.disableSystemProxy();
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
+      _disconnectReason = null; // 主动断开不设置原因
       if (!_isDisposed) {
         notifyListeners();
       }

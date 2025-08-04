@@ -645,7 +645,7 @@ class _ServerListItemState extends State<ServerListItem>
           scale: _scaleAnimation,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
+            margin: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: widget.isSelected
                 ? (theme.brightness == Brightness.dark 
