@@ -1,20 +1,21 @@
+import 'dart:io' show Platform, exit;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'providers/app_provider.dart';
 import 'pages/home_page.dart';
 import 'pages/servers_page.dart';
 import 'pages/settings_page.dart';
-import 'providers/app_provider.dart';
-import 'services/cloudflare_test_service.dart'; // CloudflareTestDialog 现在在这里
+import 'services/cloudflare_test_service.dart';
 import 'utils/diagnostic_tool.dart';
-import 'l10n/app_localizations.dart';
-import 'dart:io' show Platform, exit;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'services/v2ray_service.dart';
 import 'services/proxy_service.dart';
+import 'services/ad_service.dart';
+import 'l10n/app_localizations.dart';
 
 // 自定义滚动行为类 - 用于控制滚动条在桌面平台的显示
 class CustomScrollBehavior extends MaterialScrollBehavior {
@@ -101,6 +102,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ServerProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
+        ChangeNotifierProvider(create: (_) => AdService()..initialize()), // 新增：广告服务
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
         builder: (context, themeProvider, localeProvider, child) {
