@@ -109,15 +109,6 @@ class AdService extends ChangeNotifier {
 
   /// 初始化广告服务
   Future<void> initialize() async {
-    // 设置新的会话ID（表示应用启动）
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
-      await prefs.setString('session_id', sessionId);
-    } catch (e) {
-      debugPrint('设置会话ID失败: $e');
-    }
-    
     await loadAds();
   }
 
@@ -235,11 +226,6 @@ class AdService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('ad_close_time_$adId', DateTime.now().toIso8601String());
-      // 同时记录关闭时的会话ID
-      final sessionId = prefs.getString('session_id');
-      if (sessionId != null) {
-        await prefs.setString('ad_close_session_$adId', sessionId);
-      }
     } catch (e) {
       debugPrint('记录广告关闭时间失败: $e');
     }
@@ -250,24 +236,11 @@ class AdService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastCloseTimeStr = prefs.getString('ad_close_time_$adId');
-      final closeSessionId = prefs.getString('ad_close_session_$adId');
-      final currentSessionId = prefs.getString('session_id');
-      
-      // 如果没有关闭记录，允许显示
-      if (lastCloseTimeStr == null) {
-        return true;
+      if (lastCloseTimeStr != null) {
+        final lastCloseTime = DateTime.parse(lastCloseTimeStr);
+        final timeSinceClose = DateTime.now().difference(lastCloseTime);
+        return timeSinceClose >= AppConfig.imageAdCooldown;
       }
-      
-      // 如果是不同会话（应用重启），允许显示
-      if (closeSessionId != currentSessionId) {
-        return true;
-      }
-      
-      // 同一会话内，检查冷却时间
-      final lastCloseTime = DateTime.parse(lastCloseTimeStr);
-      final timeSinceClose = DateTime.now().difference(lastCloseTime);
-      return timeSinceClose >= AppConfig.imageAdCooldown;
-      
     } catch (e) {
       debugPrint('检查冷却时间失败: $e');
     }
@@ -432,13 +405,13 @@ class _TextAdCarouselState extends State<TextAdCarousel>
                 ),
               ),
             ),
-            // 链接图标 - 只在有链接时显示
+            // 如果有链接，显示箭头
             if (currentAd.content.url != null) ...[
               const SizedBox(width: 8),
               Icon(
-                Icons.open_in_new,
-                size: 16,
-                color: theme.primaryColor.withOpacity(0.7),
+                Icons.arrow_forward_ios,
+                size: 14,
+                color: theme.hintColor,
               ),
             ],
           ],
@@ -574,7 +547,7 @@ class TextAdCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // 链接指示器 - 只在有链接时显示
+                  // 链接指示器
                   if (ad.content.url != null) ...[
                     const SizedBox(width: 8),
                     Icon(
