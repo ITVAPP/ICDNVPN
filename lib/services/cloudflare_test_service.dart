@@ -1316,13 +1316,11 @@ class CloudflareTestService {
             await _log.debug('[TCPing] HTTPS端口测试完成，延迟: ${latency}ms', tag: _logTag);
             
             // 记录有效延迟（但如果是假连接，标记为失败）
-            if (latency > 0 && latency <= maxLatency && !isFakeConnection) {
+            if (latency > 0 && latency <= maxLatency) {
               latencies.add(latency);
               successCount++;
               await _log.debug('[TCPing] 延迟值有效，已记录', tag: _logTag);
-            } else if (isFakeConnection) {
-              await _log.warn('[TCPing] 由于检测到假连接，标记为失败', tag: _logTag);
-            }
+            } 
           } else if (remainingTime > 10) {
             // 对于HTTP端口，等待响应
             final responseCompleter = Completer<void>();
