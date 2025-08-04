@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/server_model.dart';
 import '../services/v2ray_service.dart';
 import '../services/proxy_service.dart';
+import '../services/cloudflare_test_service.dart';
 
 // ===== 连接状态管理（原 connection_provider.dart） =====
 class ConnectionProvider with ChangeNotifier {

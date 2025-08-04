@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../app_config.dart';
+import '../config/app_config.dart';
 
 // ==================== 广告数据模型 ====================
 
@@ -16,13 +16,11 @@ class AdContent {
   final String? text;          // 文字广告内容
   final String? imageUrl;      // 图片广告URL
   final String? url;           // 点击跳转URL
-  final int? displayDuration;  // 图片广告显示时长（秒）
 
   AdContent({
     this.text,
     this.imageUrl,
     this.url,
-    this.displayDuration,
   });
 
   factory AdContent.fromJson(Map<String, dynamic> json) {
@@ -30,7 +28,6 @@ class AdContent {
       text: json['text'],
       imageUrl: json['imageUrl'],
       url: json['url'],
-      displayDuration: json['displayDuration'],
     );
   }
 }
@@ -616,6 +613,8 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
   Timer? _countdownTimer;
   int _remainingSeconds = 0;
   bool _isImageLoaded = false;
+  bool _animationCompleted = false;
+  bool _countdownStarted = false;
 
   @override
   void initState() {
@@ -632,14 +631,20 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       curve: Curves.easeOut,
     ));
 
-    _animationController.forward();
+    _animationController.forward().then((_) {
+      if (mounted) {
+        setState(() {
+          _animationCompleted = true;
+        });
+        _checkAndStartCountdown();
+      }
+    });
 
     // 记录广告显示
     widget.adService.recordImageAdShow(widget.ad.id);
 
-    // 设置倒计时
-    _remainingSeconds = widget.ad.content.displayDuration ?? 5;
-    _startCountdown();
+    // 使用统一配置的显示时长
+    _remainingSeconds = AppConfig.imageAdDisplaySeconds;
   }
 
   @override
@@ -647,6 +652,13 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
     _countdownTimer?.cancel();
     _animationController.dispose();
     super.dispose();
+  }
+
+  void _checkAndStartCountdown() {
+    if (_animationCompleted && _isImageLoaded && !_countdownStarted && mounted) {
+      _countdownStarted = true;
+      _startCountdown();
+    }
   }
 
   void _startCountdown() {
@@ -839,6 +851,17 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
   Widget _buildImage() {
     final imageUrl = widget.ad.content.imageUrl;
     if (imageUrl == null || imageUrl.isEmpty) {
+      // 空URL也触发倒计时
+      if (!_isImageLoaded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _isImageLoaded = true;
+            });
+            _checkAndStartCountdown();
+          }
+        });
+      }
       return Container(
         color: Colors.grey[300],
         child: const Center(
@@ -852,7 +875,31 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       return Image.asset(
         imageUrl,
         fit: BoxFit.contain,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (frame != null && !_isImageLoaded) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _isImageLoaded = true;
+                });
+                _checkAndStartCountdown();
+              }
+            });
+          }
+          return child;
+        },
         errorBuilder: (context, error, stackTrace) {
+          // 图片加载失败也应该开始倒计时
+          if (!_isImageLoaded) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _isImageLoaded = true;
+                });
+                _checkAndStartCountdown();
+              }
+            });
+          }
           return Container(
             color: Colors.grey[300],
             child: const Center(
@@ -874,6 +921,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
                   setState(() {
                     _isImageLoaded = true;
                   });
+                  _checkAndStartCountdown();
                 }
               });
             }
@@ -893,6 +941,17 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
           );
         },
         errorBuilder: (context, error, stackTrace) {
+          // 图片加载失败也应该开始倒计时
+          if (!_isImageLoaded) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _isImageLoaded = true;
+                });
+                _checkAndStartCountdown();
+              }
+            });
+          }
           return Container(
             color: Colors.grey[300],
             child: const Center(

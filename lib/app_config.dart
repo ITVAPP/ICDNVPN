@@ -1,5 +1,3 @@
-// lib/config/app_config.dart
-
 /// 应用全局配置
 class AppConfig {
   // 广告配置
@@ -15,4 +13,7 @@ class AppConfig {
   // 图片广告显示控制
   static const int maxImageAdShowPerDay = 3; // 每天最多显示次数
   static const Duration imageAdCooldown = Duration(hours: 2); // 关闭后冷却时间
+  
+  // 图片广告显示时长（统一10秒）
+  static const int imageAdDisplaySeconds = 10;
 }

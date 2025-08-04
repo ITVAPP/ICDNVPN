@@ -85,8 +85,7 @@
       "pages": ["home"],
       "content": {
         "imageUrl": "https://static-cse.canva.com/blob/1145855/create_short-video-maker_hero_desktop-min.jpg",
-        "url": "https://example.com/new-year-promo",
-        "displayDuration": 5
+        "url": "https://example.com/new-year-promo"
       },
       "priority": 1,
       "validUntil": "2025-01-31T23:59:59Z"
@@ -97,8 +96,7 @@
       "pages": ["home"],
       "content": {
         "imageUrl": "https://blog.novecore.com/wp-content/uploads/2024/01/music-videos-1024x683.png",
-        "url": "https://example.com/premium-offer",
-        "displayDuration": 4
+        "url": "https://example.com/premium-offer"
       },
       "priority": 2,
       "validUntil": "2025-12-31T23:59:59Z"
@@ -109,8 +107,7 @@
       "pages": ["servers"],
       "content": {
         "imageUrl": "https://blog.novecore.com/wp-content/uploads/2024/01/music-videos-1024x683.png",
-        "url": "https://example.com/global-nodes",
-        "displayDuration": 3
+        "url": "https://example.com/global-nodes"
       },
       "priority": 1,
       "validUntil": "2025-12-31T23:59:59Z"
