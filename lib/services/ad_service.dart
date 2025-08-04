@@ -612,9 +612,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
   late Animation<double> _fadeAnimation;
   Timer? _countdownTimer;
   int _remainingSeconds = 0;
-  bool _isImageLoaded = false;
-  bool _animationCompleted = false;
-  bool _countdownStarted = false;
+  bool _isImagePreloaded = false;
 
   @override
   void initState() {
@@ -631,20 +629,11 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       curve: Curves.easeOut,
     ));
 
-    _animationController.forward().then((_) {
-      if (mounted) {
-        setState(() {
-          _animationCompleted = true;
-        });
-        _checkAndStartCountdown();
-      }
-    });
-
-    // 记录广告显示
-    widget.adService.recordImageAdShow(widget.ad.id);
-
     // 使用统一配置的显示时长
     _remainingSeconds = AppConfig.imageAdDisplaySeconds;
+
+    // 预加载图片
+    _preloadImage();
   }
 
   @override
@@ -654,10 +643,57 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
     super.dispose();
   }
 
-  void _checkAndStartCountdown() {
-    if (_animationCompleted && _isImageLoaded && !_countdownStarted && mounted) {
-      _countdownStarted = true;
-      _startCountdown();
+  void _preloadImage() {
+    final imageUrl = widget.ad.content.imageUrl;
+    
+    if (imageUrl == null || imageUrl.isEmpty) {
+      // 无图片URL，直接显示错误状态
+      _showAdContent();
+      return;
+    }
+
+    if (imageUrl.startsWith('assets/')) {
+      // 本地图片预加载
+      precacheImage(AssetImage(imageUrl), context).then((_) {
+        if (mounted) {
+          _showAdContent();
+        }
+      }).catchError((_) {
+        // 加载失败也显示（会显示错误图标）
+        if (mounted) {
+          _showAdContent();
+        }
+      });
+    } else {
+      // 网络图片预加载
+      precacheImage(NetworkImage(imageUrl), context).then((_) {
+        if (mounted) {
+          _showAdContent();
+        }
+      }).catchError((_) {
+        // 加载失败也显示（会显示错误图标）
+        if (mounted) {
+          _showAdContent();
+        }
+      });
+    }
+  }
+
+  void _showAdContent() {
+    if (mounted) {
+      setState(() {
+        _isImagePreloaded = true;
+      });
+      
+      // 记录广告显示（在实际显示时记录，而不是initState）
+      widget.adService.recordImageAdShow(widget.ad.id);
+      
+      // 开始淡入动画
+      _animationController.forward().then((_) {
+        if (mounted) {
+          _startCountdown();
+        }
+      });
     }
   }
 
@@ -699,6 +735,11 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
 
   @override
   Widget build(BuildContext context) {
+    // 图片未预加载完成，不显示任何内容
+    if (!_isImagePreloaded) {
+      return const SizedBox.shrink();
+    }
+
     final theme = Theme.of(context);
     final screenSize = MediaQuery.of(context).size;
 
@@ -804,7 +845,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
                     ),
                   ),
                   // 点击提示（如果有链接）
-                  if (widget.ad.content.url != null && _isImageLoaded)
+                  if (widget.ad.content.url != null)
                     Positioned(
                       bottom: 12,
                       left: 12,
@@ -850,18 +891,9 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
 
   Widget _buildImage() {
     final imageUrl = widget.ad.content.imageUrl;
+    
     if (imageUrl == null || imageUrl.isEmpty) {
-      // 空URL也触发倒计时
-      if (!_isImageLoaded) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {
-              _isImageLoaded = true;
-            });
-            _checkAndStartCountdown();
-          }
-        });
-      }
+      // 无图片URL，显示错误图标
       return Container(
         color: Colors.grey[300],
         child: const Center(
@@ -875,31 +907,8 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       return Image.asset(
         imageUrl,
         fit: BoxFit.contain,
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (frame != null && !_isImageLoaded) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isImageLoaded = true;
-                });
-                _checkAndStartCountdown();
-              }
-            });
-          }
-          return child;
-        },
         errorBuilder: (context, error, stackTrace) {
-          // 图片加载失败也应该开始倒计时
-          if (!_isImageLoaded) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isImageLoaded = true;
-                });
-                _checkAndStartCountdown();
-              }
-            });
-          }
+          // 加载失败，显示错误图标
           return Container(
             color: Colors.grey[300],
             child: const Center(
@@ -912,46 +921,8 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       return Image.network(
         imageUrl,
         fit: BoxFit.contain,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) {
-            // 图片加载完成
-            if (!_isImageLoaded) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  setState(() {
-                    _isImageLoaded = true;
-                  });
-                  _checkAndStartCountdown();
-                }
-              });
-            }
-            return child;
-          }
-          // 加载中
-          return Container(
-            color: Colors.grey[200],
-            child: Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            ),
-          );
-        },
         errorBuilder: (context, error, stackTrace) {
-          // 图片加载失败也应该开始倒计时
-          if (!_isImageLoaded) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isImageLoaded = true;
-                });
-                _checkAndStartCountdown();
-              }
-            });
-          }
+          // 加载失败，显示错误图标
           return Container(
             color: Colors.grey[300],
             child: const Center(

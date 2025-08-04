@@ -35,6 +35,11 @@ class CloudflareTestService {
   static double maxLossRate = 1.0; // 丢包率上限（默认100%）
   static double minDownloadSpeed = 0.0; // 下载速度下限（MB/s）
   
+  // 诊断模式控制
+  static bool _enableDiagnosis = false; // 是否启用诊断模式
+  static int _diagnosisCount = 0; // 已诊断的IP数量
+  static const int _maxDiagnosisCount = 3; // 最多诊断的IP数量
+  
   // Cloudflare 官方 IP 段（2025年最新版本）- 直接定义为静态常量
   static const List<String> _cloudflareIpRanges = [
     '173.245.48.0/20',
@@ -63,6 +68,60 @@ class CloudflareTestService {
     '172.67.0.0/16',
     '131.0.72.0/22',
   ];
+  
+  // TCP连接诊断方法
+  static Future<void> _diagnoseTcpConnection(String ip, int port) async {
+    await _log.info('\n=== TCP 连接诊断 ===', tag: _logTag);
+    await _log.info('目标: $ip:$port', tag: _logTag);
+    
+    try {
+      // 测试1：基础连接时间
+      final sw1 = Stopwatch()..start();
+      final socket = await Socket.connect(
+        ip, 
+        port,
+        timeout: const Duration(seconds: 5), // 诊断时使用较长超时
+      );
+      sw1.stop();
+      await _log.info('1. Socket.connect 返回: ${sw1.elapsedMilliseconds}ms', tag: _logTag);
+      
+      // 测试2：检查连接属性
+      try {
+        await _log.info('2. 本地地址: ${socket.address.address}:${socket.port}', tag: _logTag);
+        await _log.info('3. 远程地址: ${socket.remoteAddress.address}:${socket.remotePort}', tag: _logTag);
+      } catch (e) {
+        await _log.warn('获取地址失败: $e', tag: _logTag);
+      }
+      
+      // 测试3：发送1字节并flush
+      final sw2 = Stopwatch()..start();
+      socket.add([0x00]);
+      await socket.flush();
+      sw2.stop();
+      await _log.info('4. 发送1字节+flush: ${sw2.elapsedMilliseconds}ms', tag: _logTag);
+      
+      // 测试4：等待任何响应（100ms超时）
+      final sw3 = Stopwatch()..start();
+      final completer = Completer<String>();
+      socket.listen(
+        (data) => completer.complete('收到${data.length}字节'),
+        onError: (e) => completer.complete('错误: $e'),
+        onDone: () => completer.complete('连接关闭'),
+      );
+      
+      final result = await completer.future.timeout(
+        const Duration(milliseconds: 100),
+        onTimeout: () => '100ms内无响应',
+      );
+      sw3.stop();
+      await _log.info('5. 等待响应: ${sw3.elapsedMilliseconds}ms - $result', tag: _logTag);
+      
+      socket.destroy();
+      await _log.info('=== 诊断完成 ===\n', tag: _logTag);
+    } catch (e) {
+      await _log.error('诊断过程出错: $e', tag: _logTag);
+    }
+  }
   
   // 统一的测速方法（合并单独测速和批量测试）
   static Future<List<Map<String, dynamic>>> testLatencyUnified({
@@ -403,6 +462,10 @@ class CloudflareTestService {
       if (lossRateLimit != null) maxLossRate = lossRateLimit;
       if (speedLimit != null) minDownloadSpeed = speedLimit;
       
+      // 重置诊断计数器
+      _diagnosisCount = 0;
+      _enableDiagnosis = false;
+      
       await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
       await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
       await _log.info('模式: ${httping ? "HTTPing" : "TCPing"}, 丢包率上限: ${(maxLossRate * 100).toStringAsFixed(1)}%, 下载速度下限: ${minDownloadSpeed.toStringAsFixed(1)}MB/s', tag: _logTag);
@@ -495,12 +558,14 @@ class CloudflareTestService {
       
       // 统计延迟分布
       final latencyStats = <String, int>{};
+      int totalFailures = 0;
       for (final result in pingResults) {
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
         
         if (lossRate >= 1.0) {
           latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
+          totalFailures++;
         } else if (latency < 100) {
           latencyStats['<100ms'] = (latencyStats['<100ms'] ?? 0) + 1;
         } else if (latency < 200) {
@@ -513,9 +578,31 @@ class CloudflareTestService {
           latencyStats['500-999ms'] = (latencyStats['500-999ms'] ?? 0) + 1;
         } else {
           latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
+          totalFailures++;
         }
       }
       await _log.info('延迟分布: $latencyStats', tag: _logTag);
+      
+      // 检查失败率，决定是否启用诊断
+      if (pingResults.isNotEmpty) {
+        final failureRate = totalFailures / pingResults.length;
+        if (failureRate > 0.5) { // 失败率超过50%
+          await _log.warn('检测到高失败率: ${(failureRate * 100).toStringAsFixed(1)}%，启用诊断模式', tag: _logTag);
+          _enableDiagnosis = true;
+          
+          // 对几个失败的IP进行诊断
+          final failedIps = pingResults
+              .where((r) => r['lossRate'] >= 1.0)
+              .take(3)
+              .map((r) => r['ip'] as String)
+              .toList();
+              
+          for (final ip in failedIps) {
+            await _log.info('对失败IP进行诊断: $ip', tag: _logTag);
+            await _diagnoseTcpConnection(ip, testPort);
+          }
+        }
+      }
       
       // 过滤有效服务器
       final validServers = <ServerModel>[];
@@ -1140,6 +1227,13 @@ class CloudflareTestService {
     
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     await _log.debug('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, 延迟列表: $latencies', tag: _logTag);
+    
+    // 如果启用诊断模式且失败率高，进行诊断
+    if (_enableDiagnosis && lossRate >= 1.0 && _diagnosisCount < _maxDiagnosisCount) {
+      _diagnosisCount++;
+      await _log.warn('[TCPing] 检测到失败率100%，启动诊断模式 (${_diagnosisCount}/$_maxDiagnosisCount)', tag: _logTag);
+      await _diagnoseTcpConnection(ip, port);
+    }
     
     return {
       'ip': ip,
