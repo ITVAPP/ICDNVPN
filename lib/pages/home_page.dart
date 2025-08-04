@@ -6,6 +6,7 @@ import '../providers/app_provider.dart';
 import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
 import '../services/v2ray_service.dart';
+import '../services/ad_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
 
@@ -92,6 +93,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _previousServerCount = serverProvider.servers.length;
       
       _onConnectionChanged();
+      
+      // 新增：检查是否显示图片广告
+      _checkAndShowImageAd();
     });
   }
 
@@ -204,6 +208,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  // 新增：检查并显示图片广告
+  void _checkAndShowImageAd() async {
+    final adService = context.read<AdService>();
+    final imageAd = await adService.getImageAdForPageAsync('home');
+    
+    if (imageAd != null) {
+      // 延迟显示，等页面完全加载
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _showImageAdOverlay(imageAd);
+        }
+      });
+    }
+  }
+
+  // 新增：显示图片广告遮罩
+  void _showImageAdOverlay(dynamic ad) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (context) => ImageAdOverlay(
+        ad: ad,
+        adService: context.read<AdService>(),
+        onClose: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -273,6 +306,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       // 快速操作按钮
                       const SizedBox(height: 30),
                       _buildQuickActions(serverProvider, connectionProvider, l10n),
+                      
+                      // 新增：文字广告轮播
+                      Consumer<AdService>(
+                        builder: (context, adService, child) {
+                          final textAds = adService.getTextAdsForPage('home');
+                          if (textAds.isEmpty) return const SizedBox.shrink();
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: TextAdCarousel(
+                              ads: textAds,
+                              height: 60,
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -743,7 +792,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ? Colors.black.withOpacity(0.2)
               : Colors.black.withOpacity(0.05),
             blurRadius: 10,
-            offset: const Offset(0, 3),
+            offset: const Offset(0, 5),
           ),
         ],
       ),
