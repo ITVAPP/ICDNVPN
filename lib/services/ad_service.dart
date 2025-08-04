@@ -356,7 +356,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
       onTap: () => _openUrl(currentAd.content.url),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // 减小垂直内边距
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -514,7 +514,7 @@ class TextAdCard extends StatelessWidget {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
             child: Row(
               children: [
                 // 广告图标容器 - 与节点卡片的国旗样式一致

@@ -699,7 +699,7 @@ class _ServerListItemState extends State<ServerListItem>
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
                 child: Row(
                   children: [
                     // 服务器图标 - 直接使用圆形国旗设计
@@ -746,21 +746,48 @@ class _ServerListItemState extends State<ServerListItem>
                           Row(
                             children: [
                               Expanded(
-                                child: Text(
-                                  widget.server.name,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: widget.isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.w600,
-                                    // 修复：确保选中时文字颜色在深色主题下可见
-                                    color: widget.isSelected
-                                      ? (theme.brightness == Brightness.dark 
-                                          ? theme.colorScheme.primary  // 深色主题使用主题色
-                                          : theme.primaryColor)        // 浅色主题使用主色
-                                      : theme.textTheme.bodyLarge?.color,
-                                  ),
-                                ),
+                                child: widget.isSelected || widget.isConnected
+                                  ? Stack(
+                                      children: [
+                                        // 淡白色描边
+                                        Text(
+                                          widget.server.name,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: widget.isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                            foreground: Paint()
+                                              ..style = PaintingStyle.stroke
+                                              ..strokeWidth = 1
+                                              ..color = Colors.white.withOpacity(0.7), // 淡白色
+                                          ),
+                                        ),
+                                        // 实际文字
+                                        Text(
+                                          widget.server.name,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: widget.isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                            color: widget.isSelected
+                                              ? (theme.brightness == Brightness.dark 
+                                                  ? theme.colorScheme.primary
+                                                  : theme.primaryColor)
+                                              : theme.textTheme.bodyLarge?.color,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Text(
+                                      widget.server.name,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: theme.textTheme.bodyLarge?.color,
+                                      ),
+                                    ),
                               ),
                               if (widget.isConnected)
                                 Container(
@@ -807,42 +834,130 @@ class _ServerListItemState extends State<ServerListItem>
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Icon(
-                                Icons.location_on,
-                                size: 14,
-                                color: widget.isSelected
-                                  ? (theme.brightness == Brightness.dark 
-                                      ? theme.colorScheme.primary  // 深色主题使用主题色
-                                      : theme.primaryColor)        // 浅色主题使用主色
-                                  : Colors.grey[600],
-                              ),
+                              // 位置图标
+                              widget.isSelected || widget.isConnected
+                                ? Stack(
+                                    children: [
+                                      // 淡白色描边
+                                      Icon(
+                                        Icons.location_on,
+                                        size: 15,
+                                        color: Colors.white.withOpacity(0.7),
+                                      ),
+                                      // 实际图标
+                                      Icon(
+                                        Icons.location_on,
+                                        size: 14,
+                                        color: widget.isSelected
+                                          ? (theme.brightness == Brightness.dark 
+                                              ? theme.colorScheme.primary
+                                              : theme.primaryColor)
+                                          : Colors.grey[600],
+                                      ),
+                                    ],
+                                  )
+                                : Icon(
+                                    Icons.location_on,
+                                    size: 14,
+                                    color: Colors.grey[600],
+                                  ),
                               const SizedBox(width: 4),
-                              Text(
-                                locationInfo['country'] ?? widget.server.location,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: widget.isSelected
-                                    ? (theme.brightness == Brightness.dark 
-                                        ? theme.colorScheme.primary.withOpacity(0.8)  // 深色主题使用主题色
-                                        : theme.primaryColor.withOpacity(0.8))        // 浅色主题使用主色
-                                    : Colors.grey[600],
-                                ),
-                              ),
+                              // 位置文字
+                              widget.isSelected || widget.isConnected
+                                ? Stack(
+                                    children: [
+                                      // 淡白色描边
+                                      Text(
+                                        locationInfo['country'] ?? widget.server.location,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          foreground: Paint()
+                                            ..style = PaintingStyle.stroke
+                                            ..strokeWidth = 1
+                                            ..color = Colors.white.withOpacity(0.7),
+                                        ),
+                                      ),
+                                      // 实际文字
+                                      Text(
+                                        locationInfo['country'] ?? widget.server.location,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: widget.isSelected
+                                            ? (theme.brightness == Brightness.dark 
+                                                ? theme.colorScheme.primary.withOpacity(0.8)
+                                                : theme.primaryColor.withOpacity(0.8))
+                                            : Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    locationInfo['country'] ?? widget.server.location,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
                               const SizedBox(width: 16),
-                              Icon(
-                                Icons.network_ping,
-                                size: 14,
-                                color: UIUtils.getPingColor(widget.server.ping),
-                              ),
+                              // 延迟图标
+                              widget.isSelected || widget.isConnected
+                                ? Stack(
+                                    children: [
+                                      // 淡白色描边
+                                      Icon(
+                                        Icons.network_ping,
+                                        size: 15,
+                                        color: Colors.white.withOpacity(0.7),
+                                      ),
+                                      // 实际图标
+                                      Icon(
+                                        Icons.network_ping,
+                                        size: 14,
+                                        color: UIUtils.getPingColor(widget.server.ping),
+                                      ),
+                                    ],
+                                  )
+                                : Icon(
+                                    Icons.network_ping,
+                                    size: 14,
+                                    color: UIUtils.getPingColor(widget.server.ping),
+                                  ),
                               const SizedBox(width: 4),
-                              Text(
-                                '${widget.server.ping}ms',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: UIUtils.getPingColor(widget.server.ping),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                              // 延迟文字
+                              widget.isSelected || widget.isConnected
+                                ? Stack(
+                                    children: [
+                                      // 淡白色描边
+                                      Text(
+                                        '${widget.server.ping}ms',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          foreground: Paint()
+                                            ..style = PaintingStyle.stroke
+                                            ..strokeWidth = 1
+                                            ..color = Colors.white.withOpacity(0.7),
+                                        ),
+                                      ),
+                                      // 实际文字
+                                      Text(
+                                        '${widget.server.ping}ms',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: UIUtils.getPingColor(widget.server.ping),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    '${widget.server.ping}ms',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: UIUtils.getPingColor(widget.server.ping),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                             ],
                           ),
                         ],
@@ -875,15 +990,44 @@ class _ServerListItemState extends State<ServerListItem>
           final isActive = index < strength;
           final color = isActive ? UIUtils.getPingColor(ping) : Colors.grey.withOpacity(0.2);
           
-          return Container(
-            width: 4,
-            height: 8 + (index * 3),
-            margin: const EdgeInsets.symmetric(horizontal: 1),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          );
+          // 如果是选中或已连接状态，添加描边效果
+          if ((widget.isSelected || widget.isConnected) && isActive) {
+            return Stack(
+              children: [
+                // 淡白色描边 - 稍微放大一点
+                Container(
+                  width: 5,
+                  height: 9 + (index * 3),
+                  margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(2.5),
+                  ),
+                ),
+                // 实际的信号条
+                Container(
+                  width: 4,
+                  height: 8 + (index * 3),
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            );
+          } else {
+            // 普通状态
+            return Container(
+              width: 4,
+              height: 8 + (index * 3),
+              margin: const EdgeInsets.symmetric(horizontal: 1),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            );
+          }
         }),
       ),
     );

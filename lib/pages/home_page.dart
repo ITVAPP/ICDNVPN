@@ -280,14 +280,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     children: [
                       // 顶部状态栏
                       _buildStatusBar(isConnected, l10n),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 28), // 减少间距
                       
                       // 主连接按钮
                       SlideTransition(
                         position: _slideAnimation,
                         child: _buildConnectionButton(isConnected, connectionProvider, l10n),
                       ),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 28), // 减少间距
                       
                       // 服务器信息卡片 - 修改：传递serverProvider以获取状态
                       SlideTransition(
@@ -520,7 +520,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
@@ -706,7 +706,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
@@ -788,7 +788,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10), // 添加与节点卡片相同的margin
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: theme.brightness == Brightness.dark
@@ -860,14 +860,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 图标添加白色描边
+              // 图标添加淡白色描边
               Stack(
                 children: [
-                  // 白色描边效果
+                  // 淡白色描边效果
                   Icon(
                     icon,
-                    color: Colors.white,
-                    size: 30,
+                    color: Colors.white.withOpacity(0.7),
+                    size: 29,
                   ),
                   Icon(
                     icon,
@@ -877,10 +877,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ],
               ),
               const SizedBox(height: 6),
-              // 标签文字添加白色描边
+              // 标签文字添加淡白色描边
               Stack(
                 children: [
-                  // 白色描边
+                  // 淡白色描边
                   Text(
                     label,
                     style: TextStyle(
@@ -888,8 +888,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       fontWeight: FontWeight.w600,
                       foreground: Paint()
                         ..style = PaintingStyle.stroke
-                        ..strokeWidth = 2
-                        ..color = Colors.white,
+                        ..strokeWidth = 1
+                        ..color = Colors.white.withOpacity(0.7),
                     ),
                   ),
                   // 实际文字
@@ -905,10 +905,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ],
           ),
-          // 右侧：流量数值 - 添加白色描边
+          // 右侧：流量数值 - 添加淡白色描边
           Stack(
             children: [
-              // 白色描边
+              // 淡白色描边
               Text(
                 value,
                 style: TextStyle(
@@ -916,8 +916,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   fontWeight: FontWeight.bold,
                   foreground: Paint()
                     ..style = PaintingStyle.stroke
-                    ..strokeWidth = 2
-                    ..color = Colors.white,
+                    ..strokeWidth = 1
+                    ..color = Colors.white.withOpacity(0.7),
                 ),
               ),
               // 实际文字

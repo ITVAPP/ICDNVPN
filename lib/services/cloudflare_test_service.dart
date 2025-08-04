@@ -25,7 +25,7 @@ class CloudflareTestService {
   // 下载测试相关常量 - 使用HTTP协议避免证书问题
   static const String _downloadTestUrl = 'http://speed.cloudflare.com/__down?bytes=2000000'; // 2MB，使用HTTP
   static const Duration _downloadTimeout = Duration(seconds: 3); // 优化为3秒
-  static const int _bufferSize = 1024; // 下载缓冲区大小
+  static const int _bufferSize = 65536; // 修改：从1KB提升到64KB，提高下载性能
   
   // HTTPing 模式相关配置
   static bool httping = false; // 是否启用 HTTPing 模式
@@ -180,53 +180,82 @@ class CloudflareTestService {
           scheme: 'http',
           host: ip,
           port: port,
-          path: '/',  // 使用根路径，支持HEAD请求
+          path: '/cdn-cgi/trace',  // 使用官方诊断端点
         );
         
-        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: HEAD $uri', tag: _logTag);
+        await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: GET $uri', tag: _logTag);
         
         final stopwatch = Stopwatch()..start();
         
-        // 使用HEAD请求（更快，不返回响应体）
-        final request = await httpClient.headUrl(uri);
-        request.headers.set('Host', 'cloudflare.com');
+        // 使用GET请求（trace端点需要GET请求）
+        final request = await httpClient.getUrl(uri);
         request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        request.headers.set('Accept', '*/*');
+        request.headers.set('Accept', 'text/plain');
         request.headers.set('Connection', 'close');
         
-        await _log.debug('[HTTPing] 发送HEAD请求，等待响应...', tag: _logTag);
+        await _log.debug('[HTTPing] 发送GET请求，等待响应...', tag: _logTag);
         
-        final response = await request.close().timeout(
-          Duration(milliseconds: maxLatency),  // 使用传入的maxLatency
+        // 发送请求并获取响应流
+        final responseStream = await request.close();
+        
+        // 创建completer等待第一个字节
+        final completer = Completer<void>();
+        bool receivedData = false;
+        int statusCode = 0;
+        
+        // 监听响应流
+        responseStream.listen(
+          (data) {
+            if (!receivedData && data.isNotEmpty) {
+              receivedData = true;
+              stopwatch.stop();  // 收到第一个字节就停止计时
+              statusCode = responseStream.statusCode;
+              _log.debug('[HTTPing] 收到第一个字节响应，状态码: $statusCode', tag: _logTag);
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            }
+          },
+          onDone: () {
+            if (!completer.isCompleted) {
+              completer.completeError('连接关闭，未收到数据');
+            }
+          },
+          onError: (e) {
+            if (!completer.isCompleted) {
+              completer.completeError(e);
+            }
+          },
+          cancelOnError: true,
+        );
+        
+        // 等待第一个字节或超时
+        await completer.future.timeout(
+          Duration(milliseconds: maxLatency),
           onTimeout: () {
-            _log.debug('[HTTPing] HTTP请求超时', tag: _logTag);
-            throw TimeoutException('HTTP请求超时');
+            _log.debug('[HTTPing] HTTP响应超时', tag: _logTag);
+            throw TimeoutException('HTTP响应超时');
           },
         );
         
-        stopwatch.stop();
         final latency = stopwatch.elapsedMilliseconds;
+        await _log.debug('[HTTPing] 耗时: ${latency}ms', tag: _logTag);
         
-        await _log.debug('[HTTPing] 收到响应，状态码: ${response.statusCode}, 耗时: ${latency}ms', tag: _logTag);
-        
-        // 不需要消费响应体（HEAD请求没有响应体）
-        // 但仍需要正确关闭响应
-        response.listen((_) {}).cancel();
+        // 消费剩余的响应数据（避免连接泄漏）
+        responseStream.listen((_) {}).cancel();
         
         // 检查HTTP状态码
         bool isValidResponse = false;
         if (httpingStatusCode == 0) {
-          // 默认接受 200, 301, 302
-          isValidResponse = response.statusCode == 200 || 
-                           response.statusCode == 301 || 
-                           response.statusCode == 302;
+          // 默认只接受 200（trace端点应该返回200）
+          isValidResponse = statusCode == 200;
         } else {
           // 指定的状态码
-          isValidResponse = response.statusCode == httpingStatusCode;
+          isValidResponse = statusCode == httpingStatusCode;
         }
         
         if (!isValidResponse) {
-          await _log.debug('[HTTPing] 状态码无效: ${response.statusCode}，期望: ${httpingStatusCode == 0 ? "200/301/302" : httpingStatusCode.toString()}', tag: _logTag);
+          await _log.debug('[HTTPing] 状态码无效: $statusCode，期望: ${httpingStatusCode == 0 ? "200" : httpingStatusCode.toString()}', tag: _logTag);
           continue;
         }
         
@@ -1004,11 +1033,7 @@ class CloudflareTestService {
             Duration(milliseconds: responseTimeout),
             onTimeout: () {
               _log.debug('[TCPing] 等待响应超时 (${responseTimeout}ms)', tag: _logTag);
-              // 如果只是响应超时但连接成功，仍记录连接时间
-              if (connectTime < maxLatency) {
-                latencies.add(connectTime);
-                successCount++;
-              }
+              // 修复：响应超时不应该记录为成功
               throw TimeoutException('响应超时');
             },
           );
@@ -1109,11 +1134,11 @@ class CloudflareTestService {
       // 解析测试URL
       final testUri = Uri.parse(_downloadTestUrl);
       
-      // 创建直接连接到IP的URI - 根据URL协议选择正确端口
+      // 修复：下载测试始终使用80端口，忽略传入的port参数
       final directUri = Uri(
         scheme: testUri.scheme,
         host: ip,
-        port: testUri.scheme == 'http' ? 80 : 443,  // 关键：根据协议选择端口
+        port: 80,  // 修复：始终使用80端口进行HTTP下载测试
         path: testUri.path,
         queryParameters: testUri.queryParameters,
       );
