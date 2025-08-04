@@ -32,9 +32,6 @@ dependencies:
   # 窗口管理
   window_manager: ^0.3.7
   
-  # 系统托盘
-  # system_tray: ^2.0.3
-  
   # 路径处理
   path: ^1.8.3
   
