@@ -1326,6 +1326,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     }
   }
   
+  // 修改：使用统一的保存方法
   void _saveResults(List<ServerModel> servers) async {
     final l10n = AppLocalizations.of(context);
     final serverProvider = context.read<ServerProvider>();
@@ -1333,10 +1334,8 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     // 先清空所有旧节点
     await serverProvider.clearAllServers();
     
-    // 再逐个添加新节点
-    for (final server in servers) {
-      await serverProvider.addServer(server);
-    }
+    // 使用统一的保存方法（关键修改）
+    await serverProvider.setServersFromTest(servers);
     
     setState(() {
       _isCompleted = true;
