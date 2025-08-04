@@ -490,7 +490,10 @@ class TextAdCard extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              color: theme.cardColor, // 使用与节点卡片相同的背景色
+              colors: [
+                theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
+                theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
+              ],
               borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
               boxShadow: [
                 BoxShadow(
@@ -558,8 +561,7 @@ class TextAdCard extends StatelessWidget {
                         Text(
                           ad.content.text ?? '',
                           style: TextStyle(
-                            fontSize: 16, // 与节点名称字号一致
-                            fontWeight: FontWeight.w600,
+                            fontSize: 14, // 与节点名称字号一致
                             color: theme.textTheme.bodyLarge?.color,
                           ),
                           maxLines: 2,
