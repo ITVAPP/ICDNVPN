@@ -1137,14 +1137,8 @@ class CloudflareTestService {
       await _log.debug('[下载测试] 响应状态码: ${response.statusCode}', tag: _logTag);
       
       if (response.statusCode != 200) {
-        // 尝试读取错误信息
-        try {
-          final body = await response.transform(utf8.decoder).take(500).join();
-          await _log.warn('[下载测试] 错误响应: $body', tag: _logTag);
-        } catch (e) {
-          // 忽略
-        }
-        return 0.0;
+        await _log.warn('[下载测试] 错误响应码: ${response.statusCode}，跳过该节点', tag: _logTag);
+        return 0.0;  // 直接返回，不尝试读取响应体
       }
       
       // 下载数据并计算速度
