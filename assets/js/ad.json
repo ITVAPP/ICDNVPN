@@ -84,7 +84,7 @@
       "type": "image",
       "pages": ["home"],
       "content": {
-        "imageUrl": "https://via.placeholder.com/800x400/4285F4/FFFFFF?text=New+Year+Special+Offer",
+        "imageUrl": "https://static-cse.canva.com/blob/1145855/create_short-video-maker_hero_desktop-min.jpg",
         "url": "https://example.com/new-year-promo",
         "displayDuration": 5
       },
@@ -96,7 +96,7 @@
       "type": "image",
       "pages": ["home"],
       "content": {
-        "imageUrl": "https://via.placeholder.com/800x400/34A853/FFFFFF?text=Premium+Upgrade+50%25+OFF",
+        "imageUrl": "https://blog.novecore.com/wp-content/uploads/2024/01/music-videos-1024x683.png",
         "url": "https://example.com/premium-offer",
         "displayDuration": 4
       },
@@ -108,7 +108,7 @@
       "type": "image",
       "pages": ["servers"],
       "content": {
-        "imageUrl": "https://via.placeholder.com/800x400/EA4335/FFFFFF?text=Unlock+Global+Nodes",
+        "imageUrl": "https://blog.novecore.com/wp-content/uploads/2024/01/music-videos-1024x683.png",
         "url": "https://example.com/global-nodes",
         "displayDuration": 3
       },
