@@ -654,36 +654,52 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     } else {
       // 其他情况（正常显示暂无节点）
-      content = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.cloud_off,
-            size: 48,
-            color: theme.hintColor.withOpacity(0.5),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            l10n.noNodesHint,
-            style: TextStyle(
-              fontSize: 16,
-              color: theme.hintColor,
+      content = InkWell(
+        onTap: serverProvider.isInitializing ? null : () async {
+          await serverProvider.refreshFromCloudflare();
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off,
+              size: 48,
+              color: theme.hintColor.withOpacity(0.5),
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          // 手动获取按钮 - 添加防重复点击保护
-          TextButton.icon(
-            onPressed: serverProvider.isInitializing ? null : () async {
-              await serverProvider.refreshFromCloudflare();
-            },
-            icon: const Icon(Icons.cloud_download, size: 18),
-            label: Text(l10n.fromCloudflare),
-            style: TextButton.styleFrom(
-              foregroundColor: theme.primaryColor,
+            const SizedBox(height: 12),
+            // 文字本身作为可点击链接
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    l10n.noNodesHint,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: serverProvider.isInitializing 
+                          ? theme.hintColor 
+                          : theme.primaryColor, // 非初始化时使用主题色表示可点击
+                      fontWeight: FontWeight.w500,
+                      decoration: serverProvider.isInitializing 
+                          ? null 
+                          : TextDecoration.underline, // 添加下划线表示链接
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                if (!serverProvider.isInitializing) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.cloud_download,
+                    size: 18,
+                    color: theme.primaryColor,
+                  ),
+                ],
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     

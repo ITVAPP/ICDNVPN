@@ -360,8 +360,9 @@ class ServerProvider with ChangeNotifier {
         throw 'noValidNodes';  // 使用国际化键值
       }
       
-      // 使用统一的保存方法
-      await setServersFromTest(servers);
+      // 直接替换服务器列表（不是追加）
+      _servers = _generateNamedServers(servers);
+      await _saveServers();
       
       // 成功消息主要用于日志，保持中文即可
       _initMessage = '';  // 成功时清空消息
@@ -388,14 +389,6 @@ class ServerProvider with ChangeNotifier {
       _progress = 0.0;
       notifyListeners();
     }
-  }
-
-  // 新增：统一的保存测试结果方法（供手动添加和自动添加共用）
-  Future<void> setServersFromTest(List<ServerModel> servers) async {
-    // 直接替换服务器列表（不是追加）
-    _servers = _generateNamedServers(servers);
-    await _saveServers();
-    notifyListeners();
   }
 
   // 获取本地化的消息
@@ -465,8 +458,6 @@ class ServerProvider with ChangeNotifier {
         ip: server.ip,
         port: server.port,
         ping: server.ping,
-        downloadSpeed: server.downloadSpeed,  // 保留下载速度
-        isSelected: server.isSelected,
       ));
     }
     
@@ -493,7 +484,6 @@ class ServerProvider with ChangeNotifier {
     if (existingIndex != -1) {
       // 更新延迟信息
       _servers[existingIndex].ping = server.ping;
-      _servers[existingIndex].downloadSpeed = server.downloadSpeed;  // 更新下载速度
     } else {
       // 生成正确的名称
       if (server.name == server.ip || server.name.isEmpty) {
@@ -506,8 +496,6 @@ class ServerProvider with ChangeNotifier {
           ip: server.ip,
           port: server.port,
           ping: server.ping,
-          downloadSpeed: server.downloadSpeed,  // 保留下载速度
-          isSelected: server.isSelected,
         );
       }
       _servers.add(server);
