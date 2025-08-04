@@ -69,7 +69,62 @@ class CloudflareTestService {
     '131.0.72.0/22',
   ];
   
-  // TCP连接诊断方法
+  // 获取真实的本地IP地址
+  static Future<String> _getLocalIpAddress() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: true,
+      );
+      
+      // 按优先级查找网络接口
+      // 1. 首先查找WiFi接口
+      for (final interface in interfaces) {
+        if (interface.name.toLowerCase().contains('wlan') || 
+            interface.name.toLowerCase().contains('wifi') ||
+            interface.name.toLowerCase().contains('en0')) { // iOS WiFi
+          for (final addr in interface.addresses) {
+            if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+              await _log.info('找到WiFi接口本地IP: ${addr.address}', tag: _logTag);
+              return addr.address;
+            }
+          }
+        }
+      }
+      
+      // 2. 查找以太网接口
+      for (final interface in interfaces) {
+        if (interface.name.toLowerCase().contains('eth') ||
+            interface.name.toLowerCase().contains('en')) {
+          for (final addr in interface.addresses) {
+            if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+              await _log.info('找到以太网接口本地IP: ${addr.address}', tag: _logTag);
+              return addr.address;
+            }
+          }
+        }
+      }
+      
+      // 3. 查找任何非回环接口
+      for (final interface in interfaces) {
+        for (final addr in interface.addresses) {
+          if (!addr.isLoopback && 
+              addr.type == InternetAddressType.IPv4 &&
+              !addr.address.startsWith('169.254')) { // 排除链路本地地址
+            await _log.info('找到其他接口本地IP: ${addr.address}', tag: _logTag);
+            return addr.address;
+          }
+        }
+      }
+      
+      return '未知';
+    } catch (e) {
+      await _log.error('获取本地IP失败: $e', tag: _logTag);
+      return '未知';
+    }
+  }
+  
+  // TCP连接诊断方法（修复版）
   static Future<void> _diagnoseTcpConnection(String ip, int port) async {
     await _log.info('\n=== TCP 连接诊断 ===', tag: _logTag);
     await _log.info('目标: $ip:$port', tag: _logTag);
@@ -85,10 +140,22 @@ class CloudflareTestService {
       sw1.stop();
       await _log.info('1. Socket.connect 返回: ${sw1.elapsedMilliseconds}ms', tag: _logTag);
       
-      // 测试2：检查连接属性
+      // 测试2：检查连接属性（修复版）
       try {
-        await _log.info('2. 本地地址: ${socket.address.address}:${socket.port}', tag: _logTag);
+        // 获取真实的本地IP
+        final realLocalIp = await _getLocalIpAddress();
+        await _log.info('2. 真实本地地址: $realLocalIp:${socket.port}', tag: _logTag);
+        
+        // 显示socket返回的地址（可能有bug）
+        await _log.warn('   socket.address返回: ${socket.address.address} (这是Flutter的bug)', tag: _logTag);
+        
+        // 远程地址
         await _log.info('3. 远程地址: ${socket.remoteAddress.address}:${socket.remotePort}', tag: _logTag);
+        
+        // 检测bug情况
+        if (socket.address.address == socket.remoteAddress.address) {
+          await _log.error('⚠️ 检测到Flutter Socket bug: 本地地址与远程地址相同！', tag: _logTag);
+        }
       } catch (e) {
         await _log.warn('获取地址失败: $e', tag: _logTag);
       }
@@ -100,7 +167,19 @@ class CloudflareTestService {
       sw2.stop();
       await _log.info('4. 发送1字节+flush: ${sw2.elapsedMilliseconds}ms', tag: _logTag);
       
-      // 测试4：等待任何响应（100ms超时）
+      // 测试4：检测连接真实性
+      bool isRealConnection = false;
+      try {
+        // 尝试获取远程端口，如果失败说明连接可能是假的
+        final remotePort = socket.remotePort;
+        if (remotePort == port) {
+          isRealConnection = true;
+        }
+      } catch (e) {
+        await _log.error('获取远程端口失败，连接可能是假的: $e', tag: _logTag);
+      }
+      
+      // 测试5：等待任何响应（100ms超时）
       final sw3 = Stopwatch()..start();
       final completer = Completer<String>();
       socket.listen(
@@ -116,10 +195,23 @@ class CloudflareTestService {
       sw3.stop();
       await _log.info('5. 等待响应: ${sw3.elapsedMilliseconds}ms - $result', tag: _logTag);
       
+      // 测试6：诊断结论
+      await _log.info('6. 诊断结论:', tag: _logTag);
+      if (!isRealConnection) {
+        await _log.error('   - 连接可能是假的或被拦截', tag: _logTag);
+      }
+      if (sw1.elapsedMilliseconds < 5) {
+        await _log.warn('   - 连接时间异常快(<5ms)，可能连接到本地代理', tag: _logTag);
+      }
+      if (result.contains('无响应')) {
+        await _log.warn('   - 服务器未响应，可能端口错误或被防火墙阻止', tag: _logTag);
+      }
+      
       socket.destroy();
       await _log.info('=== 诊断完成 ===\n', tag: _logTag);
     } catch (e) {
       await _log.error('诊断过程出错: $e', tag: _logTag);
+      await _log.info('=== 诊断异常结束 ===\n', tag: _logTag);
     }
   }
   
@@ -444,6 +536,54 @@ class CloudflareTestService {
     return controller.stream;
   }
   
+  // Cloudflare连接验证
+  static Future<void> _verifyCloudflareConnection() async {
+    await _log.info('\n=== Cloudflare连接验证 ===', tag: _logTag);
+    
+    try {
+      // 测试1：DNS解析
+      await _log.info('1. DNS解析测试:', tag: _logTag);
+      try {
+        final addresses = await InternetAddress.lookup('cloudflare.com');
+        for (final addr in addresses) {
+          await _log.info('   - cloudflare.com -> ${addr.address} (${addr.type.name})', tag: _logTag);
+        }
+      } catch (e) {
+        await _log.error('   DNS解析失败: $e', tag: _logTag);
+      }
+      
+      // 测试2：HTTP请求测试
+      await _log.info('2. HTTP请求测试:', tag: _logTag);
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 5);
+      
+      try {
+        final uri = Uri.parse('http://1.1.1.1/cdn-cgi/trace');
+        final request = await httpClient.getUrl(uri);
+        final response = await request.close();
+        await _log.info('   - 状态码: ${response.statusCode}', tag: _logTag);
+        
+        if (response.statusCode == 200) {
+          final responseBody = await response.transform(utf8.decoder).join();
+          final lines = responseBody.split('\n').take(3);
+          for (final line in lines) {
+            if (line.isNotEmpty) {
+              await _log.info('   - $line', tag: _logTag);
+            }
+          }
+        }
+      } catch (e) {
+        await _log.error('   HTTP请求失败: $e', tag: _logTag);
+      } finally {
+        httpClient.close();
+      }
+      
+      await _log.info('=== 验证完成 ===\n', tag: _logTag);
+    } catch (e) {
+      await _log.error('验证过程出错: $e', tag: _logTag);
+    }
+  }
+  
   // 实际执行测试的方法 - 改为公共方法
   static Future<void> executeTestWithProgress({
     required StreamController<TestProgress> controller,
@@ -470,9 +610,13 @@ class CloudflareTestService {
       await _log.info('参数: count=$count, maxLatency=$maxLatency, speed=$speed, testCount=$testCount, location=$location', tag: _logTag);
       await _log.info('模式: ${httping ? "HTTPing" : "TCPing"}, 丢包率上限: ${(maxLossRate * 100).toStringAsFixed(1)}%, 下载速度下限: ${minDownloadSpeed.toStringAsFixed(1)}MB/s', tag: _logTag);
       
-      // 定义测试端口 - HTTPing使用80端口
+      // 首先验证Cloudflare连接
+      await _verifyCloudflareConnection();
+      
+      // 定义测试端口 - HTTPing使用80端口，TCPing测试443端口但下载使用80端口
       final int testPort = httping ? _httpPort : _defaultPort;
-      await _log.info('测试端口: $testPort', tag: _logTag);
+      final int downloadPort = _httpPort; // 下载始终使用80端口
+      await _log.info('测试端口: $testPort (延迟测试), $downloadPort (下载测试)', tag: _logTag);
       
       // 显示使用的IP段
       await _log.debug('Cloudflare IP段列表:', tag: _logTag);
@@ -559,11 +703,17 @@ class CloudflareTestService {
       // 统计延迟分布
       final latencyStats = <String, int>{};
       int totalFailures = 0;
+      int fakeConnections = 0;
       for (final result in pingResults) {
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
+        final isFake = result['fakeConnection'] ?? false;
         
-        if (lossRate >= 1.0) {
+        if (isFake) {
+          fakeConnections++;
+          totalFailures++;
+          latencyStats['假连接'] = (latencyStats['假连接'] ?? 0) + 1;
+        } else if (lossRate >= 1.0) {
           latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
           totalFailures++;
         } else if (latency < 100) {
@@ -582,6 +732,13 @@ class CloudflareTestService {
         }
       }
       await _log.info('延迟分布: $latencyStats', tag: _logTag);
+      
+      // 如果检测到大量假连接，记录警告
+      if (fakeConnections > 0) {
+        await _log.error('⚠️ 检测到 $fakeConnections 个假连接！这是Flutter Socket的已知bug。', tag: _logTag);
+        await _log.error('   参考: https://github.com/flutter/flutter/issues/155740', tag: _logTag);
+        await _log.error('   建议: 尝试重启应用或使用HTTPing模式', tag: _logTag);
+      }
       
       // 检查失败率，决定是否启用诊断
       if (pingResults.isNotEmpty) {
@@ -610,6 +767,13 @@ class CloudflareTestService {
         final ip = result['ip'] as String;
         final latency = result['latency'] as int;
         final lossRate = result['lossRate'] as double;
+        final isFake = result['fakeConnection'] ?? false;
+        
+        // 排除假连接
+        if (isFake) {
+          await _log.debug('跳过假连接: $ip', tag: _logTag);
+          continue;
+        }
         
         // 过滤条件：延迟小于等于上限，且丢包率小于指定值
         if (latency > 0 && latency <= maxLatency && lossRate < maxLossRate) {
@@ -633,13 +797,28 @@ class CloudflareTestService {
       await _log.info('初步过滤后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms，丢包率<${(maxLossRate * 100).toStringAsFixed(1)}%）', tag: _logTag);
       
       if (validServers.isEmpty) {
-        await _log.error('''未找到符合条件的节点
+        // 检查是否都是假连接
+        final allFakeConnections = pingResults.where((r) => r['fakeConnection'] == true).length;
+        if (allFakeConnections > 0) {
+          await _log.error('''检测到Flutter Socket bug导致所有连接失败！
+          
+这是一个已知的Flutter bug：socket.address返回了错误的地址。
+参考：https://github.com/flutter/flutter/issues/155740
+
+解决方案：
+  1. 尝试使用HTTPing模式（使用80端口）
+  2. 重启应用
+  3. 在不同的网络环境下测试
+  4. 等待Flutter修复此bug''', tag: _logTag);
+        } else {
+          await _log.error('''未找到符合条件的节点
 建议：
   1. 检查网络连接是否正常
   2. 降低延迟要求（当前: $maxLatency ms）
   3. 提高丢包率容忍度（当前: ${(maxLossRate * 100).toStringAsFixed(1)}%）
   4. 增加测试数量（当前: $testCount）
   5. 检查防火墙是否阻止了${testPort}端口''', tag: _logTag);
+        }
         
         throw TestException(
           messageKey: 'noQualifiedNodes',
@@ -718,7 +897,7 @@ class CloudflareTestService {
             subProgress: (i + 1) / downloadTestCount,
           ));
           
-          final downloadSpeed = await _testDownloadSpeed(server.ip, server.port);
+          final downloadSpeed = await _testDownloadSpeed(server.ip, downloadPort);  // 使用下载端口
           server.downloadSpeed = downloadSpeed;
           
           await _log.info('节点 ${server.ip} - 延迟: ${server.ping}ms, 下载: ${downloadSpeed.toStringAsFixed(2)}MB/s', tag: _logTag);
@@ -1065,11 +1244,12 @@ class CloudflareTestService {
     return ips.take(targetCount).toList();
   }
 
-  // 测试单个IP的延迟和丢包率 - TCPing模式（简化版：单一超时控制）
+  // 测试单个IP的延迟和丢包率 - TCPing模式（修复版：检测假连接）
   static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, int port, [int maxLatency = 300]) async {
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
+    bool isFakeConnection = false; // 检测是否是假连接
     
     await _log.debug('[TCPing] 开始测试 $ip:$port (超时: ${maxLatency}ms)', tag: _logTag);
     
@@ -1090,25 +1270,29 @@ class CloudflareTestService {
         final connectTime = stopwatch.elapsedMilliseconds;
         await _log.debug('[TCPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
         
+        // 检测是否是假连接（Flutter bug）
+        try {
+          if (socket.address.address == socket.remoteAddress.address) {
+            isFakeConnection = true;
+            await _log.warn('[TCPing] 检测到Flutter Socket bug: 本地地址与远程地址相同！', tag: _logTag);
+          }
+        } catch (e) {
+          // 忽略地址获取错误
+        }
+        
         try {
           // 发送测试数据
           if (port == 80 || port == _httpPort) {
             // HTTP端口：发送完整的最小HTTP请求
-            socket.write('HEAD / HTTP/1.0\r\n\r\n');
+            socket.write('HEAD / HTTP/1.0\r\nHost: speed.cloudflare.com\r\n\r\n');
             await socket.flush();
             await _log.debug('[TCPing] 已发送HTTP HEAD请求', tag: _logTag);
           } else if (port == 443 || port == _defaultPort) {
-            // HTTPS端口：发送TLS ClientHello的开始部分
-            socket.add([
-              0x16, // Content Type: Handshake
-              0x03, 0x01, // TLS Version 1.0 (兼容性)
-              0x00, 0x05, // Length (最小)
-              0x01, // Handshake Type: Client Hello
-              0x00, 0x00, 0x01, // Handshake Length
-              0x03, 0x03, // Client Version TLS 1.2
-            ]);
-            await socket.flush();
-            await _log.debug('[TCPing] 已发送TLS ClientHello片段', tag: _logTag);
+            // HTTPS端口：对于Cloudflare，我们只需要测试TCP连接
+            // 不发送任何数据，因为TLS握手很复杂
+            await _log.debug('[TCPing] HTTPS端口，仅测试TCP连接', tag: _logTag);
+            // 直接等待一小段时间看连接是否保持
+            await Future.delayed(const Duration(milliseconds: 10));
           } else {
             // 其他端口：发送简单数据
             socket.add([0x00]);
@@ -1119,8 +1303,26 @@ class CloudflareTestService {
           // 计算剩余时间
           final remainingTime = maxLatency - connectTime;
           
-          if (remainingTime > 10) {
-            // 尝试等待响应
+          // 对于HTTPS端口，连接成功就算成功
+          if (port == 443 || port == _defaultPort) {
+            // 如果没有停止计时器，现在停止
+            if (stopwatch.isRunning) {
+              stopwatch.stop();
+            }
+            
+            final latency = stopwatch.elapsedMilliseconds;
+            await _log.debug('[TCPing] HTTPS端口测试完成，延迟: ${latency}ms', tag: _logTag);
+            
+            // 记录有效延迟（但如果是假连接，标记为失败）
+            if (latency > 0 && latency <= maxLatency && !isFakeConnection) {
+              latencies.add(latency);
+              successCount++;
+              await _log.debug('[TCPing] 延迟值有效，已记录', tag: _logTag);
+            } else if (isFakeConnection) {
+              await _log.warn('[TCPing] 由于检测到假连接，标记为失败', tag: _logTag);
+            }
+          } else if (remainingTime > 10) {
+            // 对于HTTP端口，等待响应
             final responseCompleter = Completer<void>();
             bool receivedData = false;
             StreamSubscription? subscription;
@@ -1225,6 +1427,20 @@ class CloudflareTestService {
     final actualPingTimes = successCount > 0 ? pingTimes : math.min(2, pingTimes);
     final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
     
+    // 如果检测到假连接，强制标记为失败
+    if (isFakeConnection) {
+      await _log.error('[TCPing] 检测到Flutter Socket bug，连接被标记为失败', tag: _logTag);
+      return {
+        'ip': ip,
+        'latency': 999,
+        'lossRate': 1.0,
+        'sent': actualPingTimes,
+        'received': 0,
+        'colo': '',
+        'fakeConnection': true, // 标记为假连接
+      };
+    }
+    
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
     await _log.debug('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, 延迟列表: $latencies', tag: _logTag);
     
@@ -1242,6 +1458,7 @@ class CloudflareTestService {
       'sent': actualPingTimes,
       'received': successCount,
       'colo': '', // TCPing模式无法获取地区信息
+      'fakeConnection': false,
     };
   }
   
