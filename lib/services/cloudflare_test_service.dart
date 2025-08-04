@@ -72,7 +72,6 @@ class CloudflareTestService {
     bool singleTest = false,  // 是否单个测试
     bool useHttping = false,  // 是否使用HTTPing
     Function(int current, int total)? onProgress,  // 进度回调
-    int? maxLatency,  // 最大延迟限制
   }) async {
     // HTTPing模式强制使用80端口，避免证书问题
     final testPort = port ?? (useHttping ? _httpPort : _defaultPort);
@@ -97,51 +96,43 @@ class CloudflareTestService {
       
       await _log.debug('测试批次 ${(i / batchSize).floor() + 1}/${((ips.length - 1) / batchSize).floor() + 1}，包含 ${batch.length} 个IP', tag: _logTag);
       
-      for (int j = 0; j < batch.length; j++) {
-        final ip = batch[j];
-        
-        // 🔧 核心修改：为每个连接添加递增延迟，避免批处理效应
-        final delay = j * 10;  // 0ms, 10ms, 20ms, 30ms...
-        
-        futures.add(
-          Future.delayed(Duration(milliseconds: delay), () {
-            final testMethod = useHttping 
-                ? _testSingleHttping(ip, testPort, maxLatency: maxLatency)
-                : _testSingleIpLatencyWithLossRate(ip, testPort, maxLatency: maxLatency);
-            return testMethod;
-          }).then((result) {
-            results.add(result);
-            tested++;
+      for (final ip in batch) {
+        final testMethod = useHttping 
+            ? _testSingleHttping(ip, testPort)
+            : _testSingleIpLatencyWithLossRate(ip, testPort);
             
-            final latency = result['latency'] as int;
-            final lossRate = result['lossRate'] as double;
-            
-            if (latency > 0 && latency < 999 && lossRate < 1.0) {
-              successCount++;
-              _log.debug('✓ IP $ip 延迟: ${latency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(2)}%', tag: _logTag);
-            } else {
-              failCount++;
-            }
-            
-            // 进度回调
-            onProgress?.call(tested, ips.length);
-            
-          }).catchError((e) {
+        futures.add(testMethod.then((result) {
+          results.add(result);
+          tested++;
+          
+          final latency = result['latency'] as int;
+          final lossRate = result['lossRate'] as double;
+          
+          if (latency > 0 && latency < 999 && lossRate < 1.0) {
+            successCount++;
+            _log.debug('✓ IP $ip 延迟: ${latency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(2)}%', tag: _logTag);
+          } else {
             failCount++;
-            tested++;
-            results.add({
-              'ip': ip,
-              'latency': 999,
-              'lossRate': 1.0,
-              'colo': '',
-            });
-            _log.debug('× IP $ip 测试异常: $e', tag: _logTag);
-            
-            // 进度回调
-            onProgress?.call(tested, ips.length);
-            return null;
-          })
-        );
+          }
+          
+          // 进度回调
+          onProgress?.call(tested, ips.length);
+          
+        }).catchError((e) {
+          failCount++;
+          tested++;
+          results.add({
+            'ip': ip,
+            'latency': 999,
+            'lossRate': 1.0,
+            'colo': '',
+          });
+          _log.debug('× IP $ip 测试异常: $e', tag: _logTag);
+          
+          // 进度回调
+          onProgress?.call(tested, ips.length);
+          return null;
+        }));
       }
       
       await Future.wait(futures);
@@ -163,7 +154,7 @@ class CloudflareTestService {
   }
   
   // HTTPing 模式测试单个IP（强制使用HTTP 80端口，避免证书问题）
-  static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, {int? maxLatency}) async {
+  static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port) async {
     await _log.debug('[HTTPing] 开始测试 $ip:$port', tag: _logTag);
     
     const int pingTimes = 3;
@@ -171,7 +162,6 @@ class CloudflareTestService {
     int successCount = 0;
     String colo = '';
     
-    // 在for循环外定义httpClient，复用连接
     final httpClient = HttpClient();
     httpClient.connectionTimeout = const Duration(seconds: 2);  // 🔧 从3秒降到2秒
     
@@ -187,14 +177,14 @@ class CloudflareTestService {
           scheme: 'http',
           host: ip,
           port: port,
-          path: '/cdn-cgi/trace',  // 使用Cloudflare的trace端点
+          path: '/cdn-cgi/trace',  // 修改：使用Cloudflare的trace端点而不是根路径
         );
         
         await _log.debug('[HTTPing] 测试 ${i + 1}/$pingTimes: $uri', tag: _logTag);
         
         final stopwatch = Stopwatch()..start();
         
-        // 使用GET请求（trace端点需要GET而不是HEAD）
+        // 使用GET请求（修改：trace端点需要GET而不是HEAD）
         final request = await httpClient.getUrl(uri);
         request.headers.set('Host', 'cloudflare.com');
         request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -208,14 +198,12 @@ class CloudflareTestService {
           },
         );
         
-        // 🔧 关键修改：收到响应头后立即停止计时
         stopwatch.stop();
-        final latency = stopwatch.elapsedMilliseconds;
         
-        await _log.debug('[HTTPing] 响应状态码: ${response.statusCode}, 耗时: ${latency}ms', tag: _logTag);
+        // 必须消费响应体
+        await response.drain();
         
-        // 不需要等待响应体，只需要丢弃连接
-        response.drain().ignore();
+        await _log.debug('[HTTPing] 响应状态码: ${response.statusCode}, 耗时: ${stopwatch.elapsedMilliseconds}ms', tag: _logTag);
         
         // 检查HTTP状态码
         bool isValidResponse = false;
@@ -234,7 +222,7 @@ class CloudflareTestService {
           continue;
         }
         
-        // 记录成功的延迟
+        final latency = stopwatch.elapsedMilliseconds;
         latencies.add(latency);
         successCount++;
         
@@ -266,7 +254,7 @@ class CloudflareTestService {
       
       // 测试间隔
       if (i < pingTimes - 1) {
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
     
@@ -431,7 +419,6 @@ class CloudflareTestService {
         ips: sampleIps,
         port: testPort,
         useHttping: httping,
-        maxLatency: maxLatency,  // 传递最大延迟参数
         onProgress: (current, total) {
           controller.add(TestProgress(
             step: currentStep,
@@ -933,7 +920,8 @@ class CloudflareTestService {
   }
 
   // 测试单个IP的延迟和丢包率 - TCPing模式（修改：第一次失败就停止）
-  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, int testPort, {int? maxLatency}) async {
+  static Future<Map<String, dynamic>> _testSingleIpLatencyWithLossRate(String ip, [int? port]) async {
+    final testPort = port ?? _defaultPort;
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
@@ -945,14 +933,11 @@ class CloudflareTestService {
       try {
         final stopwatch = Stopwatch()..start();
         
-        // 🔧 优化超时设置：基于maxLatency动态设置
-        final timeoutMs = (maxLatency ?? 300) + 100;  // 留100ms余量
-        
         // 🔧 纯TCP连接测试 - 移除HTTP请求
         final socket = await Socket.connect(
           ip,
           testPort,
-          timeout: Duration(milliseconds: timeoutMs), 
+          timeout: const Duration(milliseconds: 1000), 
         );
         
         stopwatch.stop();
@@ -987,9 +972,9 @@ class CloudflareTestService {
         break;  // 立即退出循环
       }
       
-      // 测试间隔 - 100ms足够避免网络拥塞
+      // 测试间隔 - 保持200ms避免网络拥塞
       if (i < pingTimes - 1) {
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
     
