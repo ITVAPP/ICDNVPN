@@ -694,11 +694,11 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
       opacity: _fadeAnimation,
       child: Stack(
         children: [
-          // 半透明背景
+          // 透明背景，仅用于防止点击穿透
           GestureDetector(
             onTap: () {}, // 防止点击穿透
             child: Container(
-              color: Colors.black.withOpacity(0.7),
+              color: Colors.transparent,
             ),
           ),
           // 中心内容
