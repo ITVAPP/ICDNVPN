@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "enabled": true,
+  "ads": [
+    {
+      "id": "text_home_001",
+      "type": "text",
+      "pages": ["home"],
+      "content": {
+        "text": "🎉 新用户专享：首月免费试用高速节点，立即体验极速网络",
+        "url": "https://example.com/trial"
+      },
+      "priority": 1,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_home_002",
+      "type": "text",
+      "pages": ["home"],
+      "content": {
+        "text": "📢 系统维护通知：今晚22:00-23:00部分节点维护，请提前切换其他节点",
+        "url": null
+      },
+      "priority": 2,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_home_003",
+      "type": "text",
+      "pages": ["home"],
+      "content": {
+        "text": "💰 限时优惠：年付套餐享8折优惠，赠送额外3个月使用时长",
+        "url": "https://example.com/discount"
+      },
+      "priority": 3,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_servers_001",
+      "type": "text",
+      "pages": ["servers"],
+      "content": {
+        "text": "⚡ 推荐节点：香港CN2优化线路，延迟低至20ms，适合游戏加速",
+        "url": "https://example.com/hk-line"
+      },
+      "priority": 1,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_servers_002",
+      "type": "text",
+      "pages": ["servers"],
+      "content": {
+        "text": "🚀 升级专业版解锁更多高速节点，支持4K流媒体，不限流量",
+        "url": "https://example.com/upgrade"
+      },
+      "priority": 2,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_servers_003",
+      "type": "text",
+      "pages": ["servers"],
+      "content": {
+        "text": "💡 使用技巧：选择延迟最低的节点可获得最佳体验，建议定期测速",
+        "url": "https://example.com/tips"
+      },
+      "priority": 3,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "text_servers_004",
+      "type": "text",
+      "pages": ["servers"],
+      "content": {
+        "text": "🎯 新增节点：美国西海岸直连线路已上线，Netflix观看体验极佳",
+        "url": "https://example.com/new-nodes"
+      },
+      "priority": 4,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "image_home_001",
+      "type": "image",
+      "pages": ["home"],
+      "content": {
+        "imageUrl": "https://via.placeholder.com/800x400/4285F4/FFFFFF?text=New+Year+Special+Offer",
+        "url": "https://example.com/new-year-promo",
+        "displayDuration": 5
+      },
+      "priority": 1,
+      "validUntil": "2025-01-31T23:59:59Z"
+    },
+    {
+      "id": "image_home_002",
+      "type": "image",
+      "pages": ["home"],
+      "content": {
+        "imageUrl": "https://via.placeholder.com/800x400/34A853/FFFFFF?text=Premium+Upgrade+50%25+OFF",
+        "url": "https://example.com/premium-offer",
+        "displayDuration": 4
+      },
+      "priority": 2,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "image_servers_001",
+      "type": "image",
+      "pages": ["servers"],
+      "content": {
+        "imageUrl": "https://via.placeholder.com/800x400/EA4335/FFFFFF?text=Unlock+Global+Nodes",
+        "url": "https://example.com/global-nodes",
+        "displayDuration": 3
+      },
+      "priority": 1,
+      "validUntil": "2025-12-31T23:59:59Z"
+    }
+  ]
+}
