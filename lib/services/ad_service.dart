@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../config/app_config.dart';
+import '../app_config.dart';
 
 // ==================== 广告数据模型 ====================
 
