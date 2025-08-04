@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/cloudflare_test_service.dart';
+import '../services/ad_service.dart';
 import '../models/server_model.dart';
 import '../providers/app_provider.dart';
 import '../l10n/app_localizations.dart';
@@ -17,6 +18,45 @@ class _ServersPageState extends State<ServersPage> {
   bool _isAscending = true;
   bool _isTesting = false;
   bool _isSwitching = false; // 添加切换状态标志
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // 新增：检查是否显示图片广告
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndShowImageAd();
+    });
+  }
+
+  // 新增：检查并显示图片广告
+  void _checkAndShowImageAd() async {
+    final adService = context.read<AdService>();
+    final imageAd = await adService.getImageAdForPageAsync('servers');
+    
+    if (imageAd != null) {
+      // 延迟显示，等页面完全加载
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _showImageAdOverlay(imageAd);
+        }
+      });
+    }
+  }
+
+  // 新增：显示图片广告遮罩
+  void _showImageAdOverlay(dynamic ad) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (context) => ImageAdOverlay(
+        ad: ad,
+        adService: context.read<AdService>(),
+        onClose: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
 
   void _addCloudflareServer(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -221,8 +261,8 @@ class _ServersPageState extends State<ServersPage> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Consumer2<ServerProvider, ConnectionProvider>(
-        builder: (context, serverProvider, connectionProvider, child) {
+      body: Consumer3<ServerProvider, ConnectionProvider, AdService>(
+        builder: (context, serverProvider, connectionProvider, adService, child) {
           // 显示初始化进度
           if (serverProvider.isInitializing) {
             return Center(
@@ -276,7 +316,11 @@ class _ServersPageState extends State<ServersPage> {
             servers.sort((a, b) => b.ping.compareTo(a.ping));
           }
 
-          if (servers.isEmpty) {
+          // 新增：获取服务器页面的文字广告（最多2条）
+          final textAds = adService.getTextAdsForPage('servers', limit: 2);
+
+          // 如果服务器列表为空，显示空状态
+          if (servers.isEmpty && textAds.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -311,165 +355,221 @@ class _ServersPageState extends State<ServersPage> {
             );
           }
 
+          // 构建混合列表（服务器 + 广告）- 优化插入逻辑
+          final List<dynamic> mixedItems = [];
+          
+          // 根据服务器数量决定广告插入位置
+          if (servers.isEmpty) {
+            // 如果没有服务器，只显示广告
+            mixedItems.addAll(textAds);
+          } else if (servers.length <= 2 && textAds.isNotEmpty) {
+            // 服务器少于3个，在末尾添加广告
+            mixedItems.addAll(servers);
+            mixedItems.addAll(textAds);
+          } else if (servers.length <= 5 && textAds.isNotEmpty) {
+            // 服务器3-5个，在第3个位置插入第一个广告
+            mixedItems.addAll(servers.take(2));
+            if (textAds.isNotEmpty) {
+              mixedItems.add(textAds[0]);
+            }
+            mixedItems.addAll(servers.skip(2));
+            // 如果有第二个广告，添加到末尾
+            if (textAds.length > 1) {
+              mixedItems.add(textAds[1]);
+            }
+          } else {
+            // 服务器6个以上，在第3和第6个位置插入广告
+            int serverIndex = 0;
+            int adIndex = 0;
+            
+            for (int i = 0; i < servers.length + textAds.length; i++) {
+              // 在第3个(index=2)和第6个(index=5)位置插入广告
+              if ((i == 2 || i == 5) && adIndex < textAds.length) {
+                mixedItems.add(textAds[adIndex]);
+                adIndex++;
+              } else if (serverIndex < servers.length) {
+                mixedItems.add(servers[serverIndex]);
+                serverIndex++;
+              }
+            }
+            
+            // 如果还有剩余的广告，添加到末尾
+            while (adIndex < textAds.length) {
+              mixedItems.add(textAds[adIndex]);
+              adIndex++;
+            }
+          }
+
           return ListView.builder(
             padding: const EdgeInsets.all(8),
-            itemCount: servers.length,
+            itemCount: mixedItems.length,
             itemBuilder: (context, index) {
-              final server = servers[index];
-              final isSelected = connectionProvider.currentServer?.id == server.id;
-              final isConnected = connectionProvider.isConnected && isSelected;
+              final item = mixedItems[index];
               
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: ServerListItem(
-                  server: server,
-                  isSelected: isSelected,
-                  isConnected: isConnected,
-                  onTap: () async {
-                    // 如果正在切换中，忽略点击
-                    if (_isSwitching) {
-                      return;
-                    }
-                    
-                    // 如果选择的是当前已连接的服务器，不做任何操作
-                    if (connectionProvider.currentServer?.id == server.id) {
-                      return;
-                    }
-                    
-                    // 如果当前已连接，询问是否切换
-                    if (connectionProvider.isConnected) {
-                      final confirmed = await showDialog<bool>(
+              // 判断是广告还是服务器
+              if (item is ServerModel) {
+                final server = item;
+                final isSelected = connectionProvider.currentServer?.id == server.id;
+                final isConnected = connectionProvider.isConnected && isSelected;
+                
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: ServerListItem(
+                    server: server,
+                    isSelected: isSelected,
+                    isConnected: isConnected,
+                    onTap: () async {
+                      // 如果正在切换中，忽略点击
+                      if (_isSwitching) {
+                        return;
+                      }
+                      
+                      // 如果选择的是当前已连接的服务器，不做任何操作
+                      if (connectionProvider.currentServer?.id == server.id) {
+                        return;
+                      }
+                      
+                      // 如果当前已连接，询问是否切换
+                      if (connectionProvider.isConnected) {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('切换节点'),
+                            content: Text('是否切换到 ${server.name}？\n当前连接将会断开并重新连接。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('取消'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('切换'),
+                              ),
+                            ],
+                          ),
+                        ) ?? false;
+                        
+                        if (!confirmed) return;
+                        
+                        // 设置切换状态
+                        setState(() {
+                          _isSwitching = true;
+                        });
+                        
+                        // 显示切换进度
+                        if (!context.mounted) return;
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const AlertDialog(
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 16),
+                                Text('正在切换节点...'),
+                              ],
+                            ),
+                          ),
+                        );
+                        
+                        try {
+                          // 先设置新服务器
+                          await connectionProvider.setCurrentServer(server);
+                          // 断开当前连接
+                          await connectionProvider.disconnect();
+                          // 等待一下确保断开完成
+                          await Future.delayed(const Duration(milliseconds: 500));
+                          // 连接到新服务器
+                          await connectionProvider.connect();
+                          
+                          if (!context.mounted) return;
+                          
+                          // 关闭进度对话框
+                          Navigator.pop(context);
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('已切换到 ${server.name}'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          
+                          // 关闭进度对话框
+                          Navigator.pop(context);
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('切换失败: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        } finally {
+                          // 重置切换状态，延迟2秒防止快速重复点击
+                          Future.delayed(const Duration(milliseconds: 2000), () {
+                            if (mounted) {
+                              setState(() {
+                                _isSwitching = false;
+                              });
+                            }
+                          });
+                        }
+                      } else {
+                        // 未连接状态，直接选择
+                        connectionProvider.setCurrentServer(server);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${l10n.selectServer} ${server.name}'),
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                      }
+                    },
+                    onDelete: () async {
+                      final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: const Text('切换节点'),
-                          content: Text('是否切换到 ${server.name}？\n当前连接将会断开并重新连接。'),
+                          title: Text(l10n.confirmDelete),
+                          content: Text('${l10n.confirmDelete} ${server.name}？'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: const Text('取消'),
+                              child: Text(l10n.disconnect),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(context, true),
-                              child: const Text('切换'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                              child: Text(l10n.deleteServer),
                             ),
                           ],
                         ),
                       ) ?? false;
-                      
-                      if (!confirmed) return;
-                      
-                      // 设置切换状态
-                      setState(() {
-                        _isSwitching = true;
-                      });
-                      
-                      // 显示切换进度
-                      if (!context.mounted) return;
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (context) => const AlertDialog(
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
-                              Text('正在切换节点...'),
-                            ],
-                          ),
-                        ),
-                      );
-                      
-                      try {
-                        // 先设置新服务器
-                        await connectionProvider.setCurrentServer(server);
-                        // 断开当前连接
-                        await connectionProvider.disconnect();
-                        // 等待一下确保断开完成
-                        await Future.delayed(const Duration(milliseconds: 500));
-                        // 连接到新服务器
-                        await connectionProvider.connect();
-                        
-                        if (!context.mounted) return;
-                        
-                        // 关闭进度对话框
-                        Navigator.pop(context);
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('已切换到 ${server.name}'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        
-                        // 关闭进度对话框
-                        Navigator.pop(context);
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('切换失败: ${e.toString()}'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      } finally {
-                        // 重置切换状态，延迟2秒防止快速重复点击
-                        Future.delayed(const Duration(milliseconds: 2000), () {
-                          if (mounted) {
-                            setState(() {
-                              _isSwitching = false;
-                            });
-                          }
-                        });
-                      }
-                    } else {
-                      // 未连接状态，直接选择
-                      connectionProvider.setCurrentServer(server);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${l10n.selectServer} ${server.name}'),
-                          duration: const Duration(seconds: 1),
-                        ),
-                      );
-                    }
-                  },
-                  onDelete: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: Text(l10n.confirmDelete),
-                        content: Text('${l10n.confirmDelete} ${server.name}？'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: Text(l10n.disconnect),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
-                            child: Text(l10n.deleteServer),
-                          ),
-                        ],
-                      ),
-                    ) ?? false;
 
-                    if (confirm) {
-                      serverProvider.deleteServer(server.id);
-                      if (connectionProvider.currentServer?.id == server.id) {
-                        connectionProvider.setCurrentServer(null);
+                      if (confirm) {
+                        serverProvider.deleteServer(server.id);
+                        if (connectionProvider.currentServer?.id == server.id) {
+                          connectionProvider.setCurrentServer(null);
+                        }
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${l10n.serverDeleted} ${server.name}')),
+                        );
                       }
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('${l10n.serverDeleted} ${server.name}')),
-                      );
-                    }
-                  },
-                ),
-              );
+                    },
+                  ),
+                );
+              } else {
+                // 显示广告卡片
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: TextAdCard(ad: item),
+                );
+              }
             },
           );
         },
