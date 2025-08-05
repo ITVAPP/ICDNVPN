@@ -155,16 +155,13 @@ class CloudflareTestService {
     return results;
   }
   
-  // HTTPing 模式测试单个IP（修复版：解决Stream重复监听和超时问题）
+  // HTTPing 模式测试单个IP（优化版：单次测试，快速返回）
   static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, [int maxLatency = 300]) async {
     // HTTPing使用更长的超时时间
     final httpingTimeout = math.max(maxLatency, 1000);
     await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${httpingTimeout}ms)', tag: _logTag);
     
-    const int maxAttempts = 3;  // 最大尝试次数
     const int httpOverhead = 100;  // HTTP协议开销（毫秒）
-    List<int> latencies = [];
-    int successCount = 0;
     
     final httpClient = HttpClient();
     // 使用更合理的超时设置
@@ -176,110 +173,101 @@ class CloudflareTestService {
       await _log.warn('[HTTPing] 警告：HTTPing模式应使用80端口，当前端口: $port', tag: _logTag);
     }
     
-    // 进行多次测试（与TCPing保持一致）
-    for (int i = 0; i < maxAttempts; i++) {
-      try {
-        // HTTPing始终使用HTTP协议
-        final uri = Uri(
-          scheme: 'http',
-          host: ip,
-          port: port,
-          path: '/cdn-cgi/trace',  // 使用官方诊断端点
-        );
-        
-        await _log.debug('[HTTPing] 尝试 ${i + 1}/$maxAttempts: GET $uri', tag: _logTag);
-        
-        final stopwatch = Stopwatch()..start();
-        
-        // 创建请求
-        final request = await httpClient.getUrl(uri);
-        
-        // 记录连接时间（调试用）
-        final connectTime = stopwatch.elapsedMilliseconds;
-        await _log.debug('[HTTPing] 连接建立: ${connectTime}ms', tag: _logTag);
-        
-        // 设置请求头
-        request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        request.headers.set('Accept', 'text/plain');
-        request.headers.set('Connection', 'close');
-        
-        // 发送请求并等待响应头
-        final response = await request.close();
-        
-        // 停止计时（收到响应头即可）
-        stopwatch.stop();
-        final totalTime = stopwatch.elapsedMilliseconds;
-        
-        await _log.debug('[HTTPing] 收到响应，状态码: ${response.statusCode}，原始耗时: ${totalTime}ms', tag: _logTag);
-        
-        // 检查状态码
-        bool statusOk = false;
-        if (httpingStatusCode == 0) {
-          // 默认只接受 200
-          statusOk = (response.statusCode == 200);
-        } else {
-          // 检查指定的状态码
-          statusOk = (response.statusCode == httpingStatusCode);
-        }
-        
-        // 清理响应流（避免资源泄漏）
-        await response.drain();
-        
-        if (statusOk) {
-          // 验证延迟值的合理性
-          if (totalTime > 0 && totalTime < httpingTimeout) {
-            // 减去HTTP开销，使延迟值与TCPing更接近
-            final adjustedLatency = math.max(totalTime - httpOverhead, 1);
-            latencies.add(adjustedLatency);
-            successCount++;
-            await _log.info('[HTTPing] 测试成功，原始延迟: ${totalTime}ms，调整后: ${adjustedLatency}ms', tag: _logTag);
-          } else {
-            await _log.warn('[HTTPing] 延迟异常: ${totalTime}ms', tag: _logTag);
-          }
-        } else {
-          await _log.warn('[HTTPing] 状态码不匹配: ${response.statusCode}', tag: _logTag);
-        }
-        
-      } catch (e) {
-        // 统一的错误日志处理
-        String errorDetail = '';
-        if (e is SocketException) {
-          errorDetail = '网络错误: ${e.message}';
-        } else if (e is TimeoutException) {
-          errorDetail = '请求超时';
-        } else if (e is HttpException) {
-          errorDetail = 'HTTP错误: ${e.message}';
-        } else {
-          errorDetail = '未知错误: $e';
-        }
-        
-        await _log.debug('[HTTPing] 尝试 ${i + 1} 失败: $errorDetail', tag: _logTag);
+    try {
+      // HTTPing始终使用HTTP协议
+      final uri = Uri(
+        scheme: 'http',
+        host: ip,
+        port: port,
+        path: '/cdn-cgi/trace',  // 使用官方诊断端点
+      );
+      
+      await _log.debug('[HTTPing] GET $uri', tag: _logTag);
+      
+      final stopwatch = Stopwatch()..start();
+      
+      // 创建请求
+      final request = await httpClient.getUrl(uri);
+      
+      // 记录连接时间（调试用）
+      final connectTime = stopwatch.elapsedMilliseconds;
+      await _log.debug('[HTTPing] 连接建立: ${connectTime}ms', tag: _logTag);
+      
+      // 设置请求头
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      request.headers.set('Accept', 'text/plain');
+      request.headers.set('Connection', 'close');
+      
+      // 发送请求并等待响应头
+      final response = await request.close();
+      
+      // 停止计时（收到响应头即可）
+      stopwatch.stop();
+      final totalTime = stopwatch.elapsedMilliseconds;
+      
+      await _log.debug('[HTTPing] 收到响应，状态码: ${response.statusCode}，原始耗时: ${totalTime}ms', tag: _logTag);
+      
+      // 检查状态码
+      bool statusOk = false;
+      if (httpingStatusCode == 0) {
+        // 默认只接受 200
+        statusOk = (response.statusCode == 200);
+      } else {
+        // 检查指定的状态码
+        statusOk = (response.statusCode == httpingStatusCode);
       }
       
-      // 测试间隔（除非是最后一次）
-      if (i < maxAttempts - 1) {
-        await Future.delayed(const Duration(milliseconds: 100));
+      // 清理响应流（避免资源泄漏）
+      await response.drain();
+      
+      if (statusOk && totalTime > 0 && totalTime < httpingTimeout) {
+        // 减去HTTP开销，使延迟值与TCPing更接近
+        final adjustedLatency = math.max(totalTime - httpOverhead, 1);
+        await _log.info('[HTTPing] 成功 $ip - 原始延迟: ${totalTime}ms，调整后: ${adjustedLatency}ms', tag: _logTag);
+        
+        httpClient.close();
+        return {
+          'ip': ip,
+          'latency': adjustedLatency,
+          'lossRate': 0.0,
+          'sent': 1,
+          'received': 1,
+          'colo': '',  // 统一返回空，让上层使用_detectLocationFromIp
+        };
+      } else {
+        if (!statusOk) {
+          await _log.warn('[HTTPing] 状态码不匹配: ${response.statusCode}', tag: _logTag);
+        } else {
+          await _log.warn('[HTTPing] 延迟异常: ${totalTime}ms', tag: _logTag);
+        }
+        throw Exception('HTTPing test failed');
       }
+      
+    } catch (e) {
+      // 统一的错误日志处理
+      String errorDetail = '';
+      if (e is SocketException) {
+        errorDetail = '网络错误: ${e.message}';
+      } else if (e is TimeoutException) {
+        errorDetail = '请求超时';
+      } else if (e is HttpException) {
+        errorDetail = 'HTTP错误: ${e.message}';
+      } else {
+        errorDetail = e.toString();
+      }
+      
+      await _log.debug('[HTTPing] 失败: $errorDetail', tag: _logTag);
+      
+      httpClient.close();
+      return {
+        'ip': ip,
+        'latency': 999,
+        'lossRate': 1.0,
+        'sent': 1,
+        'received': 0,
+        'colo': '',
+      };
     }
-    
-    httpClient.close();
-    
-    // 计算结果
-    final avgLatency = successCount > 0 
-        ? latencies.reduce((a, b) => a + b) ~/ successCount 
-        : 999;
-    final lossRate = (maxAttempts - successCount) / maxAttempts.toDouble();
-    
-    await _log.info('[HTTPing] 完成 $ip - 调整后延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%, 成功: $successCount/$maxAttempts', tag: _logTag);
-    
-    return {
-      'ip': ip,
-      'latency': avgLatency,
-      'lossRate': lossRate,
-      'sent': maxAttempts,
-      'received': successCount,
-      'colo': '',  // 统一返回空，让上层使用_detectLocationFromIp
-    };
   }
   
   // 保持原有的公共接口以兼容旧代码
