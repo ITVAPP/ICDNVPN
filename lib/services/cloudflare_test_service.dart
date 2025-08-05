@@ -1005,83 +1005,10 @@ class CloudflareTestService {
         await _log.debug('[TCPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
         
         try {
-          // 发送测试数据
-          if (port == 80 || port == _httpPort) {
-            // HTTP端口：发送完整的最小HTTP请求
-            socket.write('HEAD / HTTP/1.0\r\n\r\n');
-            await socket.flush();
-            await _log.debug('[TCPing] 已发送HTTP HEAD请求', tag: _logTag);
-          } else if (port == 443 || port == _defaultPort) {
-            // HTTPS端口：发送TLS ClientHello的开始部分
-            socket.add([
-              0x16, // Content Type: Handshake
-              0x03, 0x01, // TLS Version 1.0 (兼容性)
-              0x00, 0x05, // Length (最小)
-              0x01, // Handshake Type: Client Hello
-              0x00, 0x00, 0x01, // Handshake Length
-              0x03, 0x03, // Client Version TLS 1.2
-            ]);
-            await socket.flush();
-            await _log.debug('[TCPing] 已发送TLS ClientHello片段', tag: _logTag);
-          } else {
-            // 其他端口：发送简单数据
-            socket.add([0x00]);
-            await socket.flush();
-            await _log.debug('[TCPing] 已发送测试数据', tag: _logTag);
-          }
-          
-          // 计算剩余时间
-          final remainingTime = maxLatency - connectTime;
-          
-          if (remainingTime > 10) {
-            // 尝试等待响应
-            final responseCompleter = Completer<void>();
-            bool receivedData = false;
-            StreamSubscription? subscription;
-            
-            subscription = socket.listen(
-              (data) {
-                if (!receivedData && data.isNotEmpty) {
-                  receivedData = true;
-                  stopwatch.stop();
-                  _log.debug('[TCPing] 收到响应，${data.length}字节', tag: _logTag);
-                  if (!responseCompleter.isCompleted) {
-                    responseCompleter.complete();
-                  }
-                }
-              },
-              onDone: () {
-                if (!responseCompleter.isCompleted) {
-                  responseCompleter.completeError('连接关闭');
-                }
-              },
-              onError: (e) {
-                if (!responseCompleter.isCompleted) {
-                  responseCompleter.completeError(e);
-                }
-              },
-              cancelOnError: true,
-            );
-            
-            // 等待响应或超时
-            await responseCompleter.future.timeout(
-              Duration(milliseconds: remainingTime),
-              onTimeout: () {
-                subscription?.cancel();
-                // 移除重复的日志，timeout本身就说明了问题
-                return null; // 超时不抛异常，继续处理
-              },
-            );
-            
-            subscription?.cancel();
-          } else {
-            await _log.debug('[TCPing] 剩余时间不足(${remainingTime}ms)，跳过等待响应', tag: _logTag);
-          }
-          
-          // 如果没有停止计时器，现在停止
-          if (stopwatch.isRunning) {
-            stopwatch.stop();
-          }
+          // TCPing模式：连接成功即可，不发送数据
+          // 立即停止计时
+          stopwatch.stop();
+          await _log.debug('[TCPing] 连接成功即完成测试，不发送数据', tag: _logTag);
           
           final latency = stopwatch.elapsedMilliseconds;
           await _log.debug('[TCPing] 测试完成，延迟: ${latency}ms', tag: _logTag);
