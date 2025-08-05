@@ -161,7 +161,7 @@ class CloudflareTestService {
     final httpingTimeout = math.max(maxLatency, 1000);
     await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${httpingTimeout}ms)', tag: _logTag);
     
-    const int httpOverhead = 100;  // HTTP协议开销（毫秒）
+    const int httpOverhead = 300;  // HTTP协议开销（毫秒）
     
     final httpClient = HttpClient();
     // 使用更合理的超时设置
