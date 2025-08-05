@@ -86,7 +86,7 @@ class CloudflareTestService {
     await _log.info('开始${useHttping ? "HTTPing" : "TCPing"}测试 ${ips.length} 个IP，端口: $testPort', tag: _logTag);
     
     // 单个测试时不需要批处理，批量测试时根据maxLatency动态调整并发数
-    final batchSize = singleTest ? 1 : math.min(20, math.max(5, 1000 ~/ maxLatency));
+    final batchSize = singleTest ? 1 : math.min(20, math.max(10, 1000 ~/ maxLatency));
     await _log.debug('批处理大小: $batchSize (基于maxLatency: ${maxLatency}ms)', tag: _logTag);
     int successCount = 0;
     int failCount = 0;
@@ -155,28 +155,29 @@ class CloudflareTestService {
     return results;
   }
   
-  // HTTPing 模式测试单个IP（优化版：单一超时控制，成功即返回）
+  // HTTPing 模式测试单个IP（修复版：解决Stream重复监听和超时问题）
   static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, [int maxLatency = 300]) async {
-    await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${maxLatency}ms)', tag: _logTag);
+    // HTTPing使用更长的超时时间
+    final httpingTimeout = math.max(maxLatency, 1000);
+    await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${httpingTimeout}ms)', tag: _logTag);
     
     const int maxAttempts = 3;  // 最大尝试次数
-    int attempts = 0;
-    int successLatency = 0;
+    const int httpOverhead = 100;  // HTTP协议开销（毫秒）
+    List<int> latencies = [];
+    int successCount = 0;
     
     final httpClient = HttpClient();
-    // 使用单一超时控制
-    httpClient.connectionTimeout = Duration(milliseconds: maxLatency);
-    await _log.debug('[HTTPing] 连接超时设置: ${maxLatency}ms', tag: _logTag);
+    // 使用更合理的超时设置
+    httpClient.connectionTimeout = Duration(milliseconds: httpingTimeout);
+    await _log.debug('[HTTPing] 连接超时设置: ${httpingTimeout}ms', tag: _logTag);
     
     // HTTPing 强制使用 HTTP 协议（80端口），避免证书问题
     if (port != 80 && port != _httpPort) {
       await _log.warn('[HTTPing] 警告：HTTPing模式应使用80端口，当前端口: $port', tag: _logTag);
     }
     
-    // 最多尝试3次，但成功一次就足够
+    // 进行多次测试（与TCPing保持一致）
     for (int i = 0; i < maxAttempts; i++) {
-      attempts++;
-      
       try {
         // HTTPing始终使用HTTP协议
         final uri = Uri(
@@ -190,108 +191,53 @@ class CloudflareTestService {
         
         final stopwatch = Stopwatch()..start();
         
-        // 使用GET请求（trace端点需要GET请求）
+        // 创建请求
         final request = await httpClient.getUrl(uri);
+        
+        // 记录连接时间（调试用）
+        final connectTime = stopwatch.elapsedMilliseconds;
+        await _log.debug('[HTTPing] 连接建立: ${connectTime}ms', tag: _logTag);
+        
+        // 设置请求头
         request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         request.headers.set('Accept', 'text/plain');
         request.headers.set('Connection', 'close');
         
-        final connectTime = stopwatch.elapsedMilliseconds;
-        await _log.debug('[HTTPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
+        // 发送请求并等待响应头
+        final response = await request.close();
         
-        // 计算剩余时间
-        final remainingTime = maxLatency - connectTime;
+        // 停止计时（收到响应头即可）
+        stopwatch.stop();
+        final totalTime = stopwatch.elapsedMilliseconds;
         
-        if (remainingTime <= 10) {
-          await _log.debug('[HTTPing] 剩余时间不足，跳过响应等待', tag: _logTag);
-          request.close(); // 关闭请求
-          continue; // 尝试下一次
+        await _log.debug('[HTTPing] 收到响应，状态码: ${response.statusCode}，原始耗时: ${totalTime}ms', tag: _logTag);
+        
+        // 检查状态码
+        bool statusOk = false;
+        if (httpingStatusCode == 0) {
+          // 默认只接受 200
+          statusOk = (response.statusCode == 200);
+        } else {
+          // 检查指定的状态码
+          statusOk = (response.statusCode == httpingStatusCode);
         }
         
-        await _log.debug('[HTTPing] 发送请求，等待响应（剩余时间: ${remainingTime}ms）', tag: _logTag);
+        // 清理响应流（避免资源泄漏）
+        await response.drain();
         
-        // 发送请求并获取响应流
-        final responseStream = await request.close();
-        
-        // 创建completer等待第一个字节
-        final completer = Completer<void>();
-        bool receivedData = false;
-        int statusCode = 0;
-        
-        // 监听响应流
-        StreamSubscription? subscription;
-        subscription = responseStream.listen(
-          (data) {
-            if (!receivedData && data.isNotEmpty) {
-              receivedData = true;
-              stopwatch.stop();  // 收到第一个字节就停止计时
-              statusCode = responseStream.statusCode;
-              _log.debug('[HTTPing] 收到响应，状态码: $statusCode', tag: _logTag);
-              
-              // 立即检查状态码
-              if (httpingStatusCode == 0) {
-                // 默认只接受 200
-                if (statusCode == 200) {
-                  if (!completer.isCompleted) {
-                    completer.complete();
-                  }
-                } else {
-                  // 非200状态码，立即失败
-                  if (!completer.isCompleted) {
-                    completer.completeError('无效状态码: $statusCode');
-                  }
-                }
-              } else {
-                // 检查指定的状态码
-                if (statusCode == httpingStatusCode) {
-                  if (!completer.isCompleted) {
-                    completer.complete();
-                  }
-                } else {
-                  if (!completer.isCompleted) {
-                    completer.completeError('状态码不匹配: $statusCode != $httpingStatusCode');
-                  }
-                }
-              }
-              
-              subscription?.cancel();
-            }
-          },
-          onDone: () {
-            if (!completer.isCompleted) {
-              completer.completeError('连接关闭，未收到数据');
-            }
-          },
-          onError: (e) {
-            if (!completer.isCompleted) {
-              completer.completeError(e);
-            }
-          },
-          cancelOnError: true,
-        );
-        
-        // 等待第一个字节或超时
-        await completer.future.timeout(
-          Duration(milliseconds: remainingTime),
-          onTimeout: () {
-            subscription?.cancel();
-            throw TimeoutException('HTTP响应超时');
-          },
-        );
-        
-        final latency = stopwatch.elapsedMilliseconds;
-        await _log.debug('[HTTPing] 成功，延迟: ${latency}ms', tag: _logTag);
-        
-        // 消费剩余的响应数据（避免连接泄漏）
-        responseStream.listen((_) {}).cancel();
-        
-        // 验证延迟值并记录
-        if (latency > 0 && latency < maxLatency) {
-          successLatency = latency;
-          await _log.info('[HTTPing] 测试成功，延迟: ${latency}ms，立即返回结果', tag: _logTag);
-          break;  // 成功一次就足够，立即退出循环
+        if (statusOk) {
+          // 验证延迟值的合理性
+          if (totalTime > 0 && totalTime < httpingTimeout) {
+            // 减去HTTP开销，使延迟值与TCPing更接近
+            final adjustedLatency = math.max(totalTime - httpOverhead, 1);
+            latencies.add(adjustedLatency);
+            successCount++;
+            await _log.info('[HTTPing] 测试成功，原始延迟: ${totalTime}ms，调整后: ${adjustedLatency}ms', tag: _logTag);
+          } else {
+            await _log.warn('[HTTPing] 延迟异常: ${totalTime}ms', tag: _logTag);
+          }
         } else {
-          await _log.warn('[HTTPing] 延迟异常: ${latency}ms', tag: _logTag);
+          await _log.warn('[HTTPing] 状态码不匹配: ${response.statusCode}', tag: _logTag);
         }
         
       } catch (e) {
@@ -303,8 +249,6 @@ class CloudflareTestService {
           errorDetail = '请求超时';
         } else if (e is HttpException) {
           errorDetail = 'HTTP错误: ${e.message}';
-        } else if (e.toString().contains('状态码')) {
-          errorDetail = e.toString();
         } else {
           errorDetail = '未知错误: $e';
         }
@@ -321,18 +265,19 @@ class CloudflareTestService {
     httpClient.close();
     
     // 计算结果
-    final success = successLatency > 0;
-    final avgLatency = success ? successLatency : 999;
-    final lossRate = success ? 0.0 : 1.0;
+    final avgLatency = successCount > 0 
+        ? latencies.reduce((a, b) => a + b) ~/ successCount 
+        : 999;
+    final lossRate = (maxAttempts - successCount) / maxAttempts.toDouble();
     
-    await _log.info('[HTTPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%, 尝试次数: $attempts', tag: _logTag);
+    await _log.info('[HTTPing] 完成 $ip - 调整后延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%, 成功: $successCount/$maxAttempts', tag: _logTag);
     
     return {
       'ip': ip,
       'latency': avgLatency,
       'lossRate': lossRate,
-      'sent': attempts,
-      'received': success ? 1 : 0,
+      'sent': maxAttempts,
+      'received': successCount,
       'colo': '',  // 统一返回空，让上层使用_detectLocationFromIp
     };
   }
@@ -475,7 +420,7 @@ class CloudflareTestService {
       ));
       
       await _log.info('开始${httping ? "HTTPing" : "TCPing"}延迟测速...', tag: _logTag);
-      final pingResults = await testLatencyUnified(
+      var pingResults = await testLatencyUnified(
         ips: sampleIps,
         port: testPort,
         useHttping: httping,
@@ -492,6 +437,35 @@ class CloudflareTestService {
           ));
         },
       );
+      
+      // 如果是TCPing模式且没有找到有效节点，自动切换到HTTPing重试
+      if (!httping && pingResults.where((r) => r['lossRate'] as double < 1.0).isEmpty) {
+        await _log.warn('TCPing测试全部失败，自动切换到HTTPing重试...', tag: _logTag);
+        
+        // 重置进度，使用HTTPing重新测试
+        final httpingResults = await testLatencyUnified(
+          ips: sampleIps,
+          port: _httpPort,  // HTTPing使用80端口
+          useHttping: true,  // 强制使用HTTPing
+          maxLatency: maxLatency,
+          onProgress: (current, total) {
+            controller.add(TestProgress(
+              step: currentStep,
+              totalSteps: totalSteps,
+              messageKey: 'testingDelay',
+              detailKey: 'nodeProgress',
+              detailParams: {'current': current, 'total': total},
+              progress: (currentStep - 1 + current / total) / totalSteps,
+              subProgress: current / total,
+            ));
+          },
+        );
+        
+        // 使用HTTPing的结果
+        pingResults.clear();
+        pingResults.addAll(httpingResults);
+      }
+      
       await _log.info('延迟测速完成，获得 ${pingResults.length} 个结果', tag: _logTag);
       
       // 统计延迟分布
@@ -984,11 +958,13 @@ class CloudflareTestService {
     const int pingTimes = 3; // 测试次数
     List<int> latencies = [];
     int successCount = 0;
+    int actualAttempts = 0; // 实际尝试次数
     
     await _log.debug('[TCPing] 开始测试 $ip:$port (超时: ${maxLatency}ms)', tag: _logTag);
     
     // 进行多次测试
     for (int i = 0; i < pingTimes; i++) {
+      actualAttempts++; // 记录实际尝试次数
       await _log.debug('[TCPing] 第 ${i + 1}/$pingTimes 次测试', tag: _logTag);
       
       try {
@@ -1001,17 +977,14 @@ class CloudflareTestService {
           timeout: Duration(milliseconds: maxLatency),
         );
         
-        final connectTime = stopwatch.elapsedMilliseconds;
-        await _log.debug('[TCPing] 连接成功，耗时: ${connectTime}ms', tag: _logTag);
+        // TCPing模式：连接成功即可，立即停止计时
+        stopwatch.stop();
+        final latency = stopwatch.elapsedMilliseconds;
+        
+        await _log.debug('[TCPing] 连接成功，延迟: ${latency}ms', tag: _logTag);
         
         try {
-          // TCPing模式：连接成功即可，不发送数据
-          // 立即停止计时
-          stopwatch.stop();
           await _log.debug('[TCPing] 连接成功即完成测试，不发送数据', tag: _logTag);
-          
-          final latency = stopwatch.elapsedMilliseconds;
-          await _log.debug('[TCPing] 测试完成，延迟: ${latency}ms', tag: _logTag);
           
           // 记录有效延迟 - 修改：检查最小延迟阈值
           if (latency >= _minValidTcpLatency && latency <= maxLatency) {
@@ -1062,18 +1035,17 @@ class CloudflareTestService {
         ? latencies.reduce((a, b) => a + b) ~/ successCount 
         : 999;
     
-    // 实际测试次数
-    final actualPingTimes = successCount > 0 ? pingTimes : math.min(2, pingTimes);
-    final lossRate = (actualPingTimes - successCount) / actualPingTimes.toDouble();
+    // 使用实际尝试次数计算丢包率
+    final lossRate = (actualAttempts - successCount) / actualAttempts.toDouble();
     
     await _log.info('[TCPing] 完成 $ip - 平均延迟: ${avgLatency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
-    await _log.debug('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualPingTimes, 延迟列表: $latencies', tag: _logTag);
+    await _log.debug('[TCPing] 统计 - 成功: $successCount, 实际测试: $actualAttempts, 延迟列表: $latencies', tag: _logTag);
     
     return {
       'ip': ip,
       'latency': avgLatency,
       'lossRate': lossRate,
-      'sent': actualPingTimes,
+      'sent': actualAttempts,
       'received': successCount,
       'colo': '', // TCPing模式无法获取地区信息
     };
@@ -1489,6 +1461,17 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
             size: 48,
             color: Colors.green[400],
           ),
+        // 修改：错误状态时显示关闭按钮
+        if (_currentProgress?.hasError == true) ...[
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.close),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+          ),
+        ],
       ],
     );
   }

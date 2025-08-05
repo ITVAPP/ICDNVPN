@@ -606,11 +606,33 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
           color: Colors.blue,
           onTap: () {
             Navigator.pop(context);
-            // 显示Cloudflare测试对话框
+            // 显示Cloudflare测试对话框 - 修改：直接使用CloudflareTestDialog
             showDialog(
               context: context,
               barrierDismissible: false,
-              builder: (context) => _CloudflareTestAlertDialog(),
+              builder: (context) => AlertDialog(
+                title: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.cloud_download, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        Text(l10n.addFromCloudflare),
+                      ],
+                    ),
+                    // 诊断按钮
+                    IconButton(
+                      icon: const Icon(Icons.bug_report, size: 20),
+                      tooltip: l10n.diagnosticTool,
+                      onPressed: () {
+                        CloudflareDiagnosticTool.showDiagnosticDialog(context);
+                      },
+                    ),
+                  ],
+                ),
+                content: const CloudflareTestDialog(),
+              ),
             );
           },
         ),
@@ -766,63 +788,6 @@ class _WindowControlButtonState extends State<_WindowControlButton> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// 新增：Cloudflare测试对话框包装器
-class _CloudflareTestAlertDialog extends StatefulWidget {
-  @override
-  State<_CloudflareTestAlertDialog> createState() => _CloudflareTestAlertDialogState();
-}
-
-class _CloudflareTestAlertDialogState extends State<_CloudflareTestAlertDialog> {
-  bool _isComplete = false;
-  bool _hasError = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    
-    return AlertDialog(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.cloud_download, color: Colors.blue),
-              const SizedBox(width: 8),
-              Text(l10n.addFromCloudflare),
-            ],
-          ),
-          // 诊断按钮
-          IconButton(
-            icon: const Icon(Icons.bug_report, size: 20),
-            tooltip: l10n.diagnosticTool,
-            onPressed: () {
-              CloudflareDiagnosticTool.showDiagnosticDialog(context);
-            },
-          ),
-        ],
-      ),
-      content: CloudflareTestDialog(
-        onComplete: () {
-          setState(() {
-            _isComplete = true;
-          });
-        },
-        onError: () {
-          setState(() {
-            _hasError = true;
-          });
-        },
-      ),
-      actions: (_isComplete || _hasError) ? [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.close),
-        ),
-      ] : null,
     );
   }
 }
