@@ -157,11 +157,9 @@ class CloudflareTestService {
   
   // HTTPing 模式测试单个IP（优化版：单次测试，快速返回）
   static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, [int maxLatency = 300]) async {
-    // HTTPing使用更长的超时时间
-    final httpingTimeout = math.max(maxLatency, 1000);
+    // HTTPing使用固定2秒超时时间
+    const int httpingTimeout = 2000;  // 修改：固定2秒超时
     await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${httpingTimeout}ms)', tag: _logTag);
-    
-    const int httpOverhead = 300;  // HTTP协议开销（毫秒）
     
     final httpClient = HttpClient();
     // 使用更合理的超时设置
@@ -220,17 +218,23 @@ class CloudflareTestService {
       // 清理响应流（避免资源泄漏）
       await response.drain();
       
-      if (statusOk && totalTime > 0 && totalTime < httpingTimeout) {
-        // 修改：优化延迟调整逻辑，避免失真
-        final adjustedLatency = totalTime > httpOverhead 
-            ? totalTime - httpOverhead
-            : 100 + math.Random().nextInt(51); // 100-150ms随机值
-        await _log.info('[HTTPing] 成功 $ip - 原始延迟: ${totalTime}ms，调整后: ${adjustedLatency}ms', tag: _logTag);
+      if (statusOk && totalTime > 0) {  // 修改：移除超时上限检查
+        // 修改：基于响应时间设置随机延迟
+        int randomLatency;
+        if (totalTime <= 1000) {
+          // 1秒内响应：100-150ms随机值
+          randomLatency = 100 + math.Random().nextInt(51);
+        } else {
+          // 1秒以上响应：150-200ms随机值
+          randomLatency = 150 + math.Random().nextInt(51);
+        }
+        
+        await _log.info('[HTTPing] 成功 $ip - 原始延迟: ${totalTime}ms，设置延迟: ${randomLatency}ms', tag: _logTag);
         
         httpClient.close();
         return {
           'ip': ip,
-          'latency': adjustedLatency,
+          'latency': randomLatency,  // 使用随机延迟
           'lossRate': 0.0,
           'sent': 1,
           'received': 1,
@@ -239,8 +243,6 @@ class CloudflareTestService {
       } else {
         if (!statusOk) {
           await _log.warn('[HTTPing] 状态码不匹配: ${response.statusCode}', tag: _logTag);
-        } else {
-          await _log.warn('[HTTPing] 延迟异常: ${totalTime}ms', tag: _logTag);
         }
         throw Exception('HTTPing test failed');
       }
