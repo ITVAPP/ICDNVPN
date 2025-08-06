@@ -2,10 +2,12 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:win32/win32.dart';
 import 'package:ffi/ffi.dart';
+import '../app_config.dart';
 
 class AutoStartService {
   static const String _registryPath = 'Software\\Microsoft\\Windows\\CurrentVersion\\Run';
-  static const String _appName = 'CFVPN';
+  // 修改：使用AppConfig.appName
+  static String get _appName => AppConfig.appName;
 
   static bool isAutoStartEnabled() {
     final keyPath = _registryPath.toNativeUtf16();
@@ -29,7 +31,7 @@ class AutoStartService {
         try {
           final queryResult = RegQueryValueEx(
             phkResult.value,
-            _appName.toNativeUtf16(),
+            _appName.toNativeUtf16(),  // 使用_appName
             nullptr,
             type,
             data,
@@ -72,7 +74,7 @@ class AutoStartService {
           try {
             final setResult = RegSetValueEx(
               phkResult.value,
-              _appName.toNativeUtf16(),
+              _appName.toNativeUtf16(),  // 使用_appName
               0,
               REG_SZ,
               valueData.cast<BYTE>(),
@@ -85,7 +87,7 @@ class AutoStartService {
         } else {
           final deleteResult = RegDeleteValue(
             phkResult.value,
-            _appName.toNativeUtf16(),
+            _appName.toNativeUtf16(),  // 使用_appName
           );
           return deleteResult == ERROR_SUCCESS;
         }

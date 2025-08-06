@@ -1,6 +1,122 @@
+import 'dart:math' as math;
+
 /// 应用全局配置
 class AppConfig {
-  // 广告配置
+  // ===== 应用基础信息 =====
+  static const String appName = 'CFVPN';
+  static const String currentVersion = '1.0.1'; // 当前版本号
+  static const String officialWebsite = 'https://www.example.com'; // 官方网站
+  static const String contactEmail = 'abc@abc.com'; // 联系邮箱
+  
+  // ===== V2Ray端口配置 =====
+  static const int v2raySocksPort = 7898; // SOCKS5代理端口
+  static const int v2rayHttpPort = 7899; // HTTP代理端口
+  static const int v2rayApiPort = 10085; // V2Ray API端口
+  static const int v2rayDefaultServerPort = 443; // 默认服务器端口
+  
+  // ===== V2Ray服务配置 =====
+  static const Duration v2rayStartupWait = Duration(seconds: 3); // V2Ray启动后等待时间
+  static const Duration v2rayCheckDelay = Duration(seconds: 2); // V2Ray状态检查延迟
+  static const Duration portCheckTimeout = Duration(seconds: 1); // 端口检查超时时间
+  static const int v2rayTerminateRetries = 6; // V2Ray进程终止重试次数
+  static const Duration v2rayTerminateInterval = Duration(milliseconds: 500); // 终止重试间隔
+  
+  // ===== V2Ray服务器群组配置 =====
+  // 如果配置了服务器群组，将随机使用其中一个，忽略v2ray_config.json的服务器设置
+  // 留空列表则使用v2ray_config.json的默认配置
+  static const List<Map<String, dynamic>> serverGroup = [
+    // 示例配置，可根据需要添加多个服务器
+    // {
+    //   'address': 'pages-vless-a9f.pages.dev',
+    //   'port': 443,
+    //   'serverName': 'pages-vless-a9f.pages.dev',
+    // },
+    // {
+    //   'address': 'another-server.pages.dev',
+    //   'port': 443,
+    //   'serverName': 'another-server.pages.dev',
+    // },
+  ];
+  
+  // 获取随机服务器
+  static Map<String, dynamic>? getRandomServer() {
+    if (serverGroup.isEmpty) return null;
+    final random = math.Random();
+    return serverGroup[random.nextInt(serverGroup.length)];
+  }
+  
+  // ===== Cloudflare配置 =====
+  // Cloudflare官方IP段（2025年最新版本）
+  static const List<String> cloudflareIpRanges = [
+    '173.245.48.0/20',
+    '103.21.244.0/22',
+    '103.22.200.0/22',
+    '103.31.4.0/22',
+    '141.101.64.0/18',
+    '108.162.192.0/18',
+    '190.93.240.0/20',
+    '188.114.96.0/20',
+    '197.234.240.0/22',
+    '198.41.128.0/17',
+    '162.158.0.0/15',
+    '104.16.0.0/12',
+    '172.64.0.0/17',
+    '172.64.128.0/18',
+    '172.64.192.0/19',
+    '172.64.224.0/22',
+    '172.64.229.0/24',
+    '172.64.230.0/23',
+    '172.64.232.0/21',
+    '172.64.240.0/21',
+    '172.64.248.0/21',
+    '172.65.0.0/16',
+    '172.66.0.0/16',
+    '172.67.0.0/16',
+    '131.0.72.0/22',
+  ];
+  
+  // ===== 网络测试配置 =====
+  // 测试参数配置
+  static const int defaultSampleCount = 500; // 默认采样IP数量
+  static const int defaultTestNodeCount = 5; // 默认最终选择节点数
+  static const int defaultMaxLatency = 300; // 默认最大可接受延迟(ms)
+  
+  // TCPing配置
+  static const Duration tcpTimeout = Duration(seconds: 1); // TCP连接超时时间
+  static const int tcpPingTimes = 3; // TCPing测试次数
+  static const int minValidTcpLatency = 30; // TCPing最小有效延迟(ms)，避免假连接
+  static const Duration tcpTestInterval = Duration(milliseconds: 50); // TCPing测试间隔
+  
+  // HTTPing配置
+  static const int httpingTimeout = 2000; // HTTPing超时时间(ms)
+  static const int httpingTestIpCount = 200; // TCPing失败后HTTPing重试的IP数量
+  
+  // 批处理配置
+  static const int minBatchSize = 10; // 最小批处理大小
+  static const int maxBatchSize = 20; // 最大批处理大小
+  
+  // ===== 服务器管理配置 =====
+  static const int autoSelectLatencyThreshold = 200; // 自动选择服务器的延迟阈值(ms)
+  static const int autoSelectRangeThreshold = 30; // 自动选择服务器的延迟范围(ms)
+  static const int goodNodeLatencyThreshold = 300; // 优质节点延迟阈值(ms)
+  static const double goodNodeLossRateThreshold = 0.1; // 优质节点丢包率阈值(10%)
+  static const int earlyStopGoodNodeCount = 10; // 提前结束测试的优质节点数量
+  
+  // ===== 性能配置 =====
+  static const Duration trafficStatsInterval = Duration(seconds: 10); // 流量统计更新间隔
+  
+  // ===== 缓存配置 =====
+  static const Duration userInfoCacheExpiry = Duration(hours: 72); // 用户信息缓存过期时间
+  static const Duration versionCheckCacheExpiry = Duration(hours: 1); // 版本检查结果缓存时间
+  
+  // ===== 窗口配置（桌面平台） =====
+  static const double defaultWindowWidth = 400; // 默认窗口宽度
+  static const double defaultWindowHeight = 720; // 默认窗口高度
+  static const double minWindowWidth = 380; // 最小窗口宽度
+  static const double minWindowHeight = 650; // 最小窗口高度
+  static const double customTitleBarHeight = 40; // 自定义标题栏高度
+  
+  // ===== 广告配置 =====
   static const String adConfigUrl = 'assets/js/ad.json'; // 本地测试
   // static const String adConfigUrl = 'https://example.com/api/ad.json'; // 线上地址
   
@@ -16,4 +132,52 @@ class AppConfig {
   
   // 图片广告显示时长（统一10秒）
   static const int imageAdDisplaySeconds = 10;
+  
+  // ===== 版本更新配置 =====
+  // 版本检查API（本地测试用assets，生产用https）
+  static const String versionApiUrl = 'assets/js/version.json';
+  // static const String versionApiUrl = 'https://your-api.com/version.json';
+  
+  // 备用版本API（可选）
+  static const String? versionApiBackupUrl = null;
+  // static const String? versionApiBackupUrl = 'https://backup-api.com/version.json';
+  
+  // 检查间隔
+  static const Duration updateCheckInterval = Duration(hours: 24);
+  static const Duration updatePromptInterval = Duration(hours: 24);
+  
+  // ===== 应用商店配置 =====
+  // iOS App Store ID（用于跳转到App Store）
+  static const String? iosAppStoreId = null; // 例如: '1234567890'
+  // static const String? iosAppStoreId = '1234567890';
+  
+  // macOS App Store ID（如果有Mac版本）
+  static const String? macAppStoreId = null;
+  
+  // 各平台下载地址模板（版本更新时使用）
+  // 可以使用 {version} 占位符替换版本号
+  static const String androidDownloadUrlTemplate = 'https://example.com/download/android/cfvpn_{version}.apk';
+  static const String windowsDownloadUrlTemplate = 'https://example.com/download/windows/cfvpn_{version}_setup.exe';
+  static const String macosDownloadUrlTemplate = 'https://example.com/download/macos/cfvpn_{version}.dmg';
+  static const String linuxDownloadUrlTemplate = 'https://example.com/download/linux/cfvpn_{version}.AppImage';
+  
+  // 获取iOS App Store链接
+  static String? getIosAppStoreUrl() {
+    if (iosAppStoreId == null) return null;
+    return 'https://apps.apple.com/app/id$iosAppStoreId';
+  }
+  
+  // 获取macOS App Store链接
+  static String? getMacAppStoreUrl() {
+    if (macAppStoreId == null) return null;
+    return 'https://apps.apple.com/app/id$macAppStoreId';
+  }
+  
+  // ===== 统计配置 =====
+  // 统计API地址（留空表示不统计）
+  static const String analyticsApiUrl = '';
+  // static const String analyticsApiUrl = 'https://your-analytics.com/api/track';
+  
+  // 统计间隔
+  static const Duration analyticsInterval = Duration(hours: 24);
 }

@@ -7,6 +7,7 @@ import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
 import '../services/v2ray_service.dart';
 import '../services/ad_service.dart';
+import '../services/location_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
 
@@ -96,6 +97,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       
       // 新增：检查是否显示图片广告
       _checkAndShowImageAd();
+      
+      // 新增：发送页面统计（异步，不阻塞）
+      LocationService().sendAnalytics(context, 'home');
     });
   }
 

@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/app_provider.dart';
 import '../services/autostart_service.dart';
+import '../services/version_service.dart';  // 新增：引入版本服务
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../app_config.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -15,14 +17,17 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _autoStart = false;
-  final String _version = 'v1.0.1';
-  final String _officialWebsite = 'https://www.example.com';
-  final String _contactEmail = 'abc@abc.com';
+  // 修改：使用AppConfig替代硬编码值
+  
+  // 新增：版本状态
+  bool _isCheckingVersion = false;
+  VersionInfo? _latestVersion;
 
   @override
   void initState() {
     super.initState();
     _loadAutoStartStatus();
+    _checkVersionStatus();  // 新增：初始化时检查版本状态
   }
 
   Future<void> _loadAutoStartStatus() async {
@@ -30,6 +35,148 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _autoStart = enabled;
     });
+  }
+  
+  // 新增：检查版本状态（使用缓存）
+  Future<void> _checkVersionStatus() async {
+    final versionService = VersionService();
+    if (versionService.hasNewVersion && versionService.latestVersionInfo != null) {
+      setState(() {
+        _latestVersion = versionService.latestVersionInfo;
+      });
+    }
+  }
+  
+  // 新增：手动检查更新
+  Future<void> _manualCheckUpdate() async {
+    if (_isCheckingVersion) return;
+    
+    setState(() {
+      _isCheckingVersion = true;
+    });
+    
+    final l10n = AppLocalizations.of(context);
+    
+    try {
+      final versionService = VersionService();
+      final result = await versionService.checkVersion(forceCheck: true);
+      
+      if (result.hasUpdate && result.versionInfo != null) {
+        // 更新状态
+        setState(() {
+          _latestVersion = result.versionInfo;
+        });
+        
+        // 显示更新对话框
+        if (mounted) {
+          _showUpdateDialog(result.versionInfo!, result.isForceUpdate);
+        }
+      } else {
+        // 已是最新版本
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.alreadyLatestVersion),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // 检查失败
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('检查更新失败: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingVersion = false;
+        });
+      }
+    }
+  }
+  
+  // 新增：显示更新对话框（与main.dart类似）
+  void _showUpdateDialog(VersionInfo versionInfo, bool isForceUpdate) {
+    final l10n = AppLocalizations.of(context);
+    
+    showDialog(
+      context: context,
+      barrierDismissible: !isForceUpdate,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.system_update, color: Colors.blue),
+            const SizedBox(width: 8),
+            Text(isForceUpdate ? '重要更新' : '发现新版本'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '版本 ${versionInfo.version}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (isForceUpdate)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '此版本包含重要更新，需要立即升级',
+                        style: TextStyle(color: Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            const Text('更新内容：', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(versionInfo.updateContent),
+          ],
+        ),
+        actions: [
+          if (!isForceUpdate)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await VersionService().recordUpdatePrompt();
+              },
+              child: const Text('稍后提醒'),
+            ),
+          ElevatedButton(
+            onPressed: () async {
+              final uri = Uri.parse(versionInfo.getPlatformDownloadUrl());
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: const Text('前往更新'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -113,28 +260,18 @@ class _SettingsPageState extends State<SettingsPage> {
             // 关于
             const _SectionDivider(),
             _SectionHeader(title: l10n.about),
-            // 版本信息行（包含检查更新按钮）
+            // 修改：版本信息行（使用AppConfig）
             ListTile(
               title: Text(l10n.currentVersion),
-              subtitle: Text(_version),
-              trailing: TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(l10n.alreadyLatestVersion),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
-                child: Text(l10n.checkUpdate),
-              ),
+              subtitle: Text('v${AppConfig.currentVersion}'),  // 使用AppConfig
+              trailing: _buildVersionTrailing(l10n),
             ),
             _SettingTile(
               title: l10n.officialWebsite,
-              subtitle: _officialWebsite,
+              subtitle: AppConfig.officialWebsite,  // 使用AppConfig
               trailing: const Icon(Icons.open_in_new, size: 18),
               onTap: () async {
-                final uri = Uri.parse(_officialWebsite);
+                final uri = Uri.parse(AppConfig.officialWebsite);  // 使用AppConfig
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
                 }
@@ -142,12 +279,12 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             _SettingTile(
               title: l10n.contactEmail,
-              subtitle: _contactEmail,
+              subtitle: AppConfig.contactEmail,  // 使用AppConfig
               trailing: const Icon(Icons.email_outlined, size: 18),
               onTap: () async {
                 final uri = Uri(
                   scheme: 'mailto',
-                  path: _contactEmail,
+                  path: AppConfig.contactEmail,  // 使用AppConfig
                 );
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri);
@@ -237,6 +374,55 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
         ),
       ),
+    );
+  }
+  
+  // 新增：构建版本状态显示
+  Widget _buildVersionTrailing(AppLocalizations l10n) {
+    // 如果正在检查
+    if (_isCheckingVersion) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    
+    // 如果有新版本
+    if (_latestVersion != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.withOpacity(0.5)),
+        ),
+        child: InkWell(
+          onTap: _manualCheckUpdate,
+          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.new_releases, size: 16, color: Colors.orange),
+              const SizedBox(width: 4),
+              Text(
+                '新版 ${_latestVersion!.version}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // 默认显示检查更新按钮
+    return TextButton(
+      onPressed: _manualCheckUpdate,
+      child: Text(l10n.checkUpdate),
     );
   }
 

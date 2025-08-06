@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:win32_registry/win32_registry.dart';
+import '../app_config.dart';
 
 class ProxyService {
   static const _registryPath = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-  static const _proxyServer = '127.0.0.1:7899'; // HTTP 代理地址
+  // 修改：使用AppConfig构建代理服务器地址
+  static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
 
   static Future<void> enableSystemProxy() async {
     if (!Platform.isWindows) return;

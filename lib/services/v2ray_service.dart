@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
+import '../app_config.dart';
 
 /// V2Ray连接状态
 enum V2RayConnectionState {
@@ -205,11 +206,11 @@ class V2RayService {
     return _currentStatus.state;
   }
   
-  // 检查端口是否在监听
+  // 检查端口是否在监听 - 使用AppConfig
   static Future<bool> isPortListening(int port) async {
     try {
       final client = await Socket.connect('127.0.0.1', port, 
-        timeout: const Duration(seconds: 1));
+        timeout: AppConfig.portCheckTimeout);
       await client.close();
       return true;
     } catch (e) {
@@ -244,6 +245,16 @@ class V2RayService {
     try {
       // 加载配置模板
       Map<String, dynamic> config = await _loadConfigTemplate();
+      
+      // 检查是否有服务器群组配置
+      final groupServer = AppConfig.getRandomServer();
+      if (groupServer != null) {
+        // 使用群组中的服务器
+        serverIp = groupServer['address'];
+        serverPort = groupServer['port'] ?? 443;
+        serverName = groupServer['serverName'];
+        await _log.info('使用服务器群组: $serverIp:$serverPort', tag: _logTag);
+      }
       
       // 替换动态参数
       // 更新入站端口 - 添加类型检查
@@ -401,6 +412,16 @@ class V2RayService {
           final String jsonString = await rootBundle.loadString(_CONFIG_PATH);
           Map<String, dynamic> configMap = jsonDecode(jsonString);
           
+          // 检查是否有服务器群组配置（移动端也要支持）
+          final groupServer = AppConfig.getRandomServer();
+          if (groupServer != null) {
+            // 使用群组中的服务器
+            serverIp = groupServer['address'];
+            serverPort = groupServer['port'] ?? 443;
+            serverName = groupServer['serverName'];
+            await _log.info('移动平台使用服务器群组: $serverIp:$serverPort', tag: _logTag);
+          }
+          
           // 更新服务器信息
           if (configMap['outbounds'] is List) {
             for (var outbound in configMap['outbounds']) {
@@ -448,8 +469,8 @@ class V2RayService {
           throw 'Failed to start V2Ray: $e';
         }
         
-        // 等待一段时间后查询实际状态
-        await Future.delayed(const Duration(seconds: 2));
+        // 等待一段时间后查询实际状态 - 使用AppConfig
+        await Future.delayed(AppConfig.v2rayCheckDelay);
         final actualState = await queryConnectionState();
         _updateStatus(V2RayStatus(state: actualState));
         
@@ -460,14 +481,20 @@ class V2RayService {
       }
       
       // 桌面平台原有逻辑
-      if (!await isPortAvailable(7898) || !await isPortAvailable(7899)) {
-        await _log.error('端口 7898 或 7899 已被占用', tag: _logTag);
+      if (!await isPortAvailable(AppConfig.v2raySocksPort) || !await isPortAvailable(AppConfig.v2rayHttpPort)) {
+        await _log.error('端口 ${AppConfig.v2raySocksPort} 或 ${AppConfig.v2rayHttpPort} 已被占用', tag: _logTag);
         _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-        throw 'Port 7898 or 7899 is already in use';
+        throw 'Port ${AppConfig.v2raySocksPort} or ${AppConfig.v2rayHttpPort} is already in use';
       }
 
       // 只在桌面平台生成配置文件
-      await generateConfig(serverIp: serverIp, serverPort: serverPort, serverName: serverName);
+      await generateConfig(
+        serverIp: serverIp, 
+        serverPort: serverPort, 
+        serverName: serverName,
+        localPort: AppConfig.v2raySocksPort,
+        httpPort: AppConfig.v2rayHttpPort,
+      );
 
       final v2rayPath = await _getV2RayPath();
       if (!await File(v2rayPath).exists()) {
@@ -549,11 +576,11 @@ class V2RayService {
         }
       });
 
-      // 等待并验证启动
-      await Future.delayed(const Duration(seconds: 3));
+      // 等待并验证启动 - 使用AppConfig
+      await Future.delayed(AppConfig.v2rayStartupWait);
       
       // 检查端口是否真的在监听
-      if (await isPortListening(7898)) {
+      if (await isPortListening(AppConfig.v2raySocksPort)) {
         _isRunning = true;
         _uploadTotal = 0;
         _downloadTotal = 0;
@@ -624,8 +651,9 @@ class V2RayService {
           _v2rayProcess!.kill(ProcessSignal.sigterm);
           
           bool processExited = false;
-          for (int i = 0; i < 6; i++) {
-            await Future.delayed(const Duration(milliseconds: 500));
+          // 使用AppConfig的重试次数和间隔
+          for (int i = 0; i < AppConfig.v2rayTerminateRetries; i++) {
+            await Future.delayed(AppConfig.v2rayTerminateInterval);
             try {
               final exitCode = await _v2rayProcess!.exitCode.timeout(
                 const Duration(milliseconds: 100),
@@ -697,8 +725,8 @@ class V2RayService {
         
         _updateTrafficStatsFromAPI();
         
-        // 修改：从5秒改为10秒
-        _statsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        // 修改：使用AppConfig的统计间隔
+        _statsTimer = Timer.periodic(AppConfig.trafficStatsInterval, (_) {
           if (_isRunning) {
             _updateTrafficStatsFromAPI();
           }
@@ -737,7 +765,7 @@ class V2RayService {
       if (hasV2ctl) {
         apiCmd = [
           'api',
-          '--server=127.0.0.1:10085',
+          '--server=127.0.0.1:${AppConfig.v2rayApiPort}',  // 使用AppConfig
           'StatsService.QueryStats',
           'pattern: "" reset: false'
         ];
@@ -790,7 +818,7 @@ class V2RayService {
           }
         }
       } else {
-        apiCmd = ['api', 'statsquery', '--server=127.0.0.1:10085'];
+        apiCmd = ['api', 'statsquery', '--server=127.0.0.1:${AppConfig.v2rayApiPort}'];  // 使用AppConfig
         
         final processResult = await Process.run(
           apiExe,

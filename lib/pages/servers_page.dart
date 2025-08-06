@@ -413,7 +413,7 @@ class _ServersPageState extends State<ServersPage> {
                 final isConnected = connectionProvider.isConnected && isSelected;
                 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 8),  // 修改：从 4 改为 8
                   child: ServerListItem(
                     server: server,
                     isSelected: isSelected,
@@ -566,7 +566,7 @@ class _ServersPageState extends State<ServersPage> {
               } else {
                 // 显示广告卡片
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 8),  // 修改：从 4 改为 8
                   child: TextAdCard(ad: item),
                 );
               }

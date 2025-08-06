@@ -1,4 +1,5 @@
 import 'dart:io' show Platform, exit;
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,9 @@ import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
 import 'providers/app_provider.dart';
 import 'pages/home_page.dart';
 import 'pages/servers_page.dart';
@@ -15,7 +19,9 @@ import 'utils/diagnostic_tool.dart';
 import 'services/v2ray_service.dart';
 import 'services/proxy_service.dart';
 import 'services/ad_service.dart';
+import 'services/version_service.dart';  // 新增：引入版本服务
 import 'l10n/app_localizations.dart';
+import 'app_config.dart';
 
 // 自定义滚动行为类 - 用于控制滚动条在桌面平台的显示
 class CustomScrollBehavior extends MaterialScrollBehavior {
@@ -62,17 +68,17 @@ void main() async {
     ),
   );
   
-  // 初始化窗口管理器（仅桌面平台）
+  // 初始化窗口管理器（仅桌面平台）- 使用AppConfig
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
     
     // 等待窗口准备就绪
     await windowManager.waitUntilReadyToShow();
     
-    // 设置窗口选项
-    WindowOptions windowOptions = const WindowOptions(
-      size: Size(400, 720), // 增加默认高度以适应内容
-      minimumSize: Size(380, 650),
+    // 设置窗口选项 - 使用AppConfig
+    WindowOptions windowOptions = WindowOptions(
+      size: Size(AppConfig.defaultWindowWidth, AppConfig.defaultWindowHeight),
+      minimumSize: Size(AppConfig.minWindowWidth, AppConfig.minWindowHeight),
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
@@ -102,12 +108,13 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ServerProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
-        ChangeNotifierProvider(create: (_) => AdService()..initialize()), // 新增：广告服务
+        ChangeNotifierProvider(create: (_) => AdService()..initialize()),
+        ChangeNotifierProvider(create: (_) => DownloadProvider()), // 新增：下载服务
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
         builder: (context, themeProvider, localeProvider, child) {
           return MaterialApp(
-            title: 'CFVPN',
+            title: AppConfig.appName,
             debugShowCheckedModeBanner: false,
             scrollBehavior: CustomScrollBehavior(), // 使用自定义滚动行为
             themeMode: themeProvider.themeMode,
@@ -305,6 +312,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       curve: Curves.easeInOut,
     ));
     _fabAnimController.forward();
+    
+    // 修改：使用版本服务进行检查
+    Future.delayed(const Duration(seconds: 2), _checkVersion);
   }
 
   @override
@@ -389,6 +399,323 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       }
     }
   }
+  
+  // 修改：使用版本服务进行版本检查
+  Future<void> _checkVersion() async {
+    try {
+      final versionService = VersionService();
+      final result = await versionService.checkVersion();
+      
+      if (result.hasUpdate && result.versionInfo != null) {
+        // 如果不是强制更新，检查是否应该显示提示
+        if (!result.isForceUpdate) {
+          final shouldShow = await versionService.shouldShowUpdatePrompt();
+          if (!shouldShow) return;
+        }
+        
+        // 显示更新对话框
+        if (mounted) {
+          _showUpdateDialog(result.versionInfo!, result.isForceUpdate);
+        }
+      }
+    } catch (e) {
+      print('版本检查失败: $e');
+    }
+  }
+  
+  // 修改：优化更新对话框，支持多平台 - 使用AppConfig
+  void _showUpdateDialog(VersionInfo versionInfo, bool isForceUpdate) {
+    final l10n = AppLocalizations.of(context);
+    
+    showDialog(
+      context: context,
+      barrierDismissible: !isForceUpdate, // 强制更新不可关闭
+      builder: (context) => WillPopScope(
+        onWillPop: () async => !isForceUpdate, // 强制更新不可返回
+        child: AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.system_update, color: Colors.blue),
+              const SizedBox(width: 8),
+              Text(isForceUpdate ? '重要更新' : '发现新版本'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '版本 ${versionInfo.version}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (isForceUpdate)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '此版本包含重要更新，需要立即升级',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+              const Text('更新内容：', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(versionInfo.updateContent),
+            ],
+          ),
+          actions: [
+            if (!isForceUpdate)
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  // 记录提示时间
+                  await VersionService().recordUpdatePrompt();
+                },
+                child: const Text('稍后提醒'),
+              ),
+            // 根据平台显示不同的更新按钮
+            _buildUpdateButton(versionInfo, isForceUpdate),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // 新增：构建平台特定的更新按钮 - 使用AppConfig
+  Widget _buildUpdateButton(VersionInfo versionInfo, bool isForceUpdate) {
+    // Android平台 - 下载APK
+    if (Platform.isAndroid) {
+      return Consumer<DownloadProvider>(
+        builder: (context, provider, child) {
+          if (provider.isDownloading) {
+            // 下载中显示进度
+            return Container(
+              width: 120,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LinearProgressIndicator(value: provider.progress),
+                  const SizedBox(height: 4),
+                  Text('${(provider.progress * 100).toStringAsFixed(0)}%'),
+                ],
+              ),
+            );
+          }
+          
+          return ElevatedButton(
+            onPressed: () async {
+              // 下载APK
+              final filePath = await provider.downloadApk(versionInfo.getPlatformDownloadUrl());
+              
+              if (filePath != null) {
+                // 尝试使用url_launcher安装
+                final uri = Uri.file(filePath);
+                
+                // 优先尝试intent方式（Android专用）
+                final intentUri = Uri(
+                  scheme: 'intent',
+                  path: filePath,
+                  queryParameters: {
+                    'action': 'android.intent.action.VIEW',
+                    'type': 'application/vnd.android.package-archive',
+                    'flags': '0x10000000', // FLAG_ACTIVITY_NEW_TASK
+                  },
+                );
+                
+                bool launched = false;
+                
+                // 先尝试intent方式
+                if (await canLaunchUrl(intentUri)) {
+                  try {
+                    await launchUrl(intentUri);
+                    launched = true;
+                  } catch (e) {
+                    print('Intent方式启动失败: $e');
+                  }
+                }
+                
+                // 如果intent失败，尝试file协议
+                if (!launched && await canLaunchUrl(uri)) {
+                  try {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    launched = true;
+                  } catch (e) {
+                    print('File协议启动失败: $e');
+                  }
+                }
+                
+                // 如果都失败，提示手动安装
+                if (!launched && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('请手动安装APK文件：\n$filePath'),
+                      duration: const Duration(seconds: 10),
+                      action: SnackBarAction(
+                        label: '复制路径',
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: filePath));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('路径已复制到剪贴板'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                }
+              } else {
+                // 下载失败，提供备用方案
+                if (context.mounted) {
+                  final shouldOpenBrowser = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('下载失败'),
+                      content: Text('下载失败: ${provider.error ?? "未知错误"}\n\n是否打开浏览器下载？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('取消'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('打开浏览器'),
+                        ),
+                      ],
+                    ),
+                  ) ?? false;
+                  
+                  if (shouldOpenBrowser) {
+                    final uri = Uri.parse(versionInfo.getPlatformDownloadUrl());
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  }
+                }
+              }
+            },
+            child: const Text('立即更新'),
+          );
+        },
+      );
+    }
+    
+    // iOS平台 - 跳转App Store（使用AppConfig）
+    if (Platform.isIOS) {
+      return ElevatedButton(
+        onPressed: () async {
+          // 优先使用配置的App Store ID
+          final appStoreUrl = AppConfig.getIosAppStoreUrl();
+          if (appStoreUrl != null) {
+            final uri = Uri.parse(appStoreUrl);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              return;
+            }
+          }
+          
+          // 如果没有配置App Store ID，使用下载链接
+          final downloadUrl = versionInfo.getPlatformDownloadUrl();
+          final uri = Uri.parse(downloadUrl);
+          
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            // 如果无法打开链接，复制到剪贴板
+            if (context.mounted) {
+              await Clipboard.setData(ClipboardData(text: downloadUrl));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('下载链接已复制到剪贴板'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          }
+        },
+        child: const Text('前往App Store'),
+      );
+    }
+    
+    // macOS平台 - 跳转Mac App Store或下载链接（使用AppConfig）
+    if (Platform.isMacOS) {
+      return ElevatedButton(
+        onPressed: () async {
+          // 优先使用配置的Mac App Store ID
+          final macAppStoreUrl = AppConfig.getMacAppStoreUrl();
+          if (macAppStoreUrl != null) {
+            final uri = Uri.parse(macAppStoreUrl);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              return;
+            }
+          }
+          
+          // 如果没有配置Mac App Store ID，使用下载链接
+          final downloadUrl = versionInfo.getPlatformDownloadUrl();
+          final uri = Uri.parse(downloadUrl);
+          
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            // 如果无法打开链接，复制到剪贴板
+            if (context.mounted) {
+              await Clipboard.setData(ClipboardData(text: downloadUrl));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('下载链接已复制到剪贴板'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          }
+        },
+        child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
+      );
+    }
+    
+    // Windows、Linux - 跳转外部链接
+    return ElevatedButton(
+      onPressed: () async {
+        final downloadUrl = versionInfo.getPlatformDownloadUrl();
+        final uri = Uri.parse(downloadUrl);
+        
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          // 如果无法打开链接，复制到剪贴板
+          if (context.mounted) {
+            await Clipboard.setData(ClipboardData(text: downloadUrl));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('下载链接已复制到剪贴板'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      },
+      child: const Text('前往下载'),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -408,7 +735,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
   }
 
-  // 自定义应用栏（包含窗口控制按钮）
+  // 自定义应用栏（包含窗口控制按钮）- 使用AppConfig
   PreferredSizeWidget? _buildCustomAppBar(BuildContext context, bool isDark) {
     // 移动平台不显示自定义应用栏
     if (kIsWeb || (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS)) {
@@ -416,7 +743,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     }
 
     return PreferredSize(
-      preferredSize: const Size.fromHeight(40),
+      preferredSize: Size.fromHeight(AppConfig.customTitleBarHeight),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onPanStart: (details) {
@@ -444,7 +771,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'CFVPN',
+                    AppConfig.appName,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -594,84 +921,87 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
   }
 
-  Widget _buildQuickAddOptions() {
-    final l10n = AppLocalizations.of(context);
-    
-    return Column(
-      children: [
-        _buildAddOption(
-          icon: Icons.cloud,
-          title: l10n.addFromCloudflare,
-          subtitle: l10n.autoGetBestNodes,
-          color: Colors.blue,
-          onTap: () {
-            Navigator.pop(context);
-            // 显示Cloudflare测试对话框 - 修改：直接使用CloudflareTestDialog
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => AlertDialog(
-                title: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.cloud_download, color: Colors.blue),
-                        const SizedBox(width: 8),
-                        Text(l10n.addFromCloudflare),
-                      ],
-                    ),
-                    // 诊断按钮
-                    IconButton(
-                      icon: const Icon(Icons.bug_report, size: 20),
-                      tooltip: l10n.diagnosticTool,
-                      onPressed: () {
-                        CloudflareDiagnosticTool.showDiagnosticDialog(context);
-                      },
-                    ),
-                  ],
-                ),
-                content: const CloudflareTestDialog(),
+// 只包含需要修改的部分
+
+// 在 _showAddServerDialog 方法中，修改 CloudflareTestDialog 的使用
+Widget _buildQuickAddOptions() {
+  final l10n = AppLocalizations.of(context);
+  
+  return Column(
+    children: [
+      _buildAddOption(
+        icon: Icons.cloud,
+        title: l10n.addFromCloudflare,
+        subtitle: l10n.autoGetBestNodes,
+        color: Colors.blue,
+        onTap: () {
+          Navigator.pop(context);
+          // 显示Cloudflare测试对话框 - 修改：移除speed参数
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.cloud_download, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      Text(l10n.addFromCloudflare),
+                    ],
+                  ),
+                  // 诊断按钮
+                  IconButton(
+                    icon: const Icon(Icons.bug_report, size: 20),
+                    tooltip: l10n.diagnosticTool,
+                    onPressed: () {
+                      CloudflareDiagnosticTool.showDiagnosticDialog(context);
+                    },
+                  ),
+                ],
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildAddOption(
-          icon: Icons.edit,
-          title: l10n.manualAdd,
-          subtitle: l10n.inputServerInfo,
-          color: Colors.green,
-          onTap: () {
-            Navigator.pop(context);
-            // TODO: 显示手动添加对话框
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildAddOption(
-          icon: Icons.qr_code,
-          title: l10n.scanQrCode,
-          subtitle: l10n.importFromQrCode,
-          color: Colors.orange,
-          onTap: () {
-            Navigator.pop(context);
-            // TODO: 打开二维码扫描
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildAddOption(
-          icon: Icons.file_copy,
-          title: l10n.importFromClipboard,
-          subtitle: l10n.pasteServerConfig,
-          color: Colors.purple,
-          onTap: () {
-            Navigator.pop(context);
-            // TODO: 从剪贴板导入
-          },
-        ),
-      ],
-    );
-  }
+              content: const CloudflareTestDialog(),
+            ),
+          );
+        },
+      ),
+      const SizedBox(height: 12),
+      _buildAddOption(
+        icon: Icons.edit,
+        title: l10n.manualAdd,
+        subtitle: l10n.inputServerInfo,
+        color: Colors.green,
+        onTap: () {
+          Navigator.pop(context);
+          // TODO: 显示手动添加对话框
+        },
+      ),
+      const SizedBox(height: 12),
+      _buildAddOption(
+        icon: Icons.qr_code,
+        title: l10n.scanQrCode,
+        subtitle: l10n.importFromQrCode,
+        color: Colors.orange,
+        onTap: () {
+          Navigator.pop(context);
+          // TODO: 打开二维码扫描
+        },
+      ),
+      const SizedBox(height: 12),
+      _buildAddOption(
+        icon: Icons.file_copy,
+        title: l10n.importFromClipboard,
+        subtitle: l10n.pasteServerConfig,
+        color: Colors.purple,
+        onTap: () {
+          Navigator.pop(context);
+          // TODO: 从剪贴板导入
+        },
+      ),
+    ],
+  );
+}
 
   Widget _buildAddOption({
     required IconData icon,
@@ -769,7 +1099,7 @@ class _WindowControlButtonState extends State<_WindowControlButton> {
         onTap: widget.onPressed,
         child: Container(
           width: 46,
-          height: 40,
+          height: AppConfig.customTitleBarHeight,
           decoration: BoxDecoration(
             color: _isHovered
                 ? widget.isClose

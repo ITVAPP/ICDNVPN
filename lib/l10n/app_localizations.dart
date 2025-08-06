@@ -118,15 +118,13 @@ class AppLocalizations {
   String get generatingTestIPs => _get('generatingTestIPs');
   String get samplingFromIPRanges => _get('samplingFromIPRanges');
   String get testingDelay => _get('testingDelay');
-  String get testingDownloadSpeed => _get('testingDownloadSpeed');
-  String get startingSpeedTest => _get('startingSpeedTest');
+  String get testingResponseSpeed => _get('testingResponseSpeed');  // 修改
+  String get startingTraceTest => _get('startingTraceTest');      // 修改
   String get foundQualityNodes => _get('foundQualityNodes');
   
   // 新增的测试相关文本
   String get noQualifiedNodes => _get('noQualifiedNodes');
   String get checkNetworkOrRequirements => _get('checkNetworkOrRequirements');
-  String get noServersMetSpeedRequirement => _get('noServersMetSpeedRequirement');
-  String get lowerSpeedRequirement => _get('lowerSpeedRequirement');
   String get nodeProgress => _get('nodeProgress');
   String get ipRanges => _get('ipRanges');
   
@@ -303,15 +301,13 @@ const Map<String, String> _zhCnTranslations = {
   'generatingTestIPs': '生成测试IP',
   'samplingFromIPRanges': '从 %s 个IP段采样',
   'testingDelay': '测试延迟',
-  'testingDownloadSpeed': '测试下载速度',
-  'startingSpeedTest': '开始测速',
+  'testingResponseSpeed': '测试响应速度',        // 修改
+  'startingTraceTest': '开始响应速度测试',       // 修改
   'foundQualityNodes': '找到 %s 个优质节点',
   
   // 新增的测试相关文本
   'noQualifiedNodes': '未找到符合条件的节点',
   'checkNetworkOrRequirements': '请检查网络连接或降低筛选要求',
-  'noServersMetSpeedRequirement': '没有服务器满足下载速度要求',
-  'lowerSpeedRequirement': '请降低速度要求或检查网络',
   'nodeProgress': '%s/%s',
   'ipRanges': '%s 个IP段',
   
@@ -340,69 +336,24 @@ const Map<String, String> _zhCnTranslations = {
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
-  'servers': 'Servers',
-  'settings': 'Settings',
-  'disconnect': 'Disconnect',
-  'connected': 'Connected',
-  'disconnected': 'Disconnected',
-  'connecting': 'Connecting...',
-  'disconnecting': 'Disconnecting...',
-  'close': 'Close',
-  'vpnDisconnected': 'VPN connection lost',
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
-  'servers': '伺服器',
-  'settings': '設定',
-  'disconnect': '斷開',
-  'connected': '已連線',
-  'disconnected': '未連線',
-  'connecting': '正在連線...',
-  'disconnecting': '正在斷開...',
-  'close': '關閉',
-  'vpnDisconnected': 'VPN連線已斷開',
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
-  'servers': 'Servidores',
-  'settings': 'Configuración',
-  'disconnect': 'Desconectar',
-  'connected': 'Conectado',
-  'disconnected': 'Desconectado',
-  'connecting': 'Conectando...',
-  'disconnecting': 'Desconectando...',
-  'close': 'Cerrar',
-  'vpnDisconnected': 'Conexión VPN perdida',
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
-  'servers': 'Серверы',
-  'settings': 'Настройки',
-  'disconnect': 'Отключить',
-  'connected': 'Подключено',
-  'disconnected': 'Отключено',
-  'connecting': 'Подключение...',
-  'disconnecting': 'Отключение...',
-  'close': 'Закрыть',
-  'vpnDisconnected': 'VPN-соединение потеряно',
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
-  'servers': 'الخوادم',
-  'settings': 'الإعدادات',
-  'disconnect': 'قطع الاتصال',
-  'connected': 'متصل',
-  'disconnected': 'غير متصل',
-  'connecting': 'جاري الاتصال...',
-  'disconnecting': 'جاري قطع الاتصال...',
-  'close': 'إغلاق',
-  'vpnDisconnected': 'انقطع اتصال VPN',
 };
