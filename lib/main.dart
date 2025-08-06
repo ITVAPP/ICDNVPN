@@ -160,12 +160,9 @@ class MyApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(
         seedColor: Colors.blue,
         brightness: Brightness.light,
-      ),
-      // 卡片主题
-      cardTheme: const CardTheme(
-        elevation: 0,
-        color: Colors.white,
-        surfaceTintColor: Colors.transparent,
+      ).copyWith(
+        surface: Colors.white,
+        surfaceVariant: const Color(0xFFF5F5F5),
       ),
       // 应用栏主题
       appBarTheme: const AppBarTheme(
@@ -220,12 +217,9 @@ class MyApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(
         seedColor: Colors.blue,
         brightness: Brightness.dark,
-      ),
-      // 卡片主题
-      cardTheme: const CardTheme(
-        elevation: 0,
-        color: Color(0xFF1E1E1E),
-        surfaceTintColor: Colors.transparent,
+      ).copyWith(
+        surface: const Color(0xFF1E1E1E),
+        surfaceVariant: const Color(0xFF2C2C2C),
       ),
       // 应用栏主题
       appBarTheme: const AppBarTheme(
