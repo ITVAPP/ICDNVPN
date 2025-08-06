@@ -162,11 +162,8 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.light,
       ),
       // 卡片主题
-      cardTheme: CardTheme(
+      cardTheme: const CardTheme(
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
         color: Colors.white,
         surfaceTintColor: Colors.transparent,
       ),
@@ -225,13 +222,10 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.dark,
       ),
       // 卡片主题
-      cardTheme: CardTheme(
+      cardTheme: const CardTheme(
         elevation: 0,
-        color: const Color(0xFF1E1E1E),
+        color: Color(0xFF1E1E1E),
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
       ),
       // 应用栏主题
       appBarTheme: const AppBarTheme(
