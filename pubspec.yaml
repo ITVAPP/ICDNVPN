@@ -40,7 +40,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   
   # 新增：设备信息获取
-  device_info_plus: ^11.5.0
+  device_info_plus: ^11.2.0
 
 dev_dependencies:
   flutter_test:
