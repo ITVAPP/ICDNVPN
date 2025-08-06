@@ -528,7 +528,7 @@ class ServerProvider with ChangeNotifier {
   int _getMaxNumberForCountry(String countryCode) {
     int maxNumber = 0;
     for (final server in _servers) {
-      final match = RegExp(r'^([A-Z]{2})(\d+)).firstMatch(server.name);
+      final match = RegExp(r'^([A-Z]{2})(\d+)').firstMatch(server.name);
       if (match != null && match.group(1) == countryCode) {
         final number = int.parse(match.group(2)!);
         if (number > maxNumber) {

@@ -656,41 +656,43 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     }
     
     // macOS平台 - 跳转Mac App Store或下载链接（使用AppConfig）
-  if (Platform.isMacOS) {
-    return ElevatedButton(
-      onPressed: () async {
-        // 优先使用配置的Mac App Store ID
-        final macAppStoreUrl = AppConfig.getMacAppStoreUrl();  // 修复：改为方法调用
-        if (macAppStoreUrl != null) {
-          final uri = Uri.parse(macAppStoreUrl);
+    if (Platform.isMacOS) {
+      // 修复：将变量声明移到外层，使其在整个if块中可见
+      final macAppStoreUrl = AppConfig.getMacAppStoreUrl();
+      
+      return ElevatedButton(
+        onPressed: () async {
+          // 优先使用配置的Mac App Store ID
+          if (macAppStoreUrl != null) {
+            final uri = Uri.parse(macAppStoreUrl);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              return;
+            }
+          }
+          
+          // 如果没有配置Mac App Store ID，使用下载链接
+          final downloadUrl = versionInfo.getPlatformDownloadUrl();
+          final uri = Uri.parse(downloadUrl);
+          
           if (await canLaunchUrl(uri)) {
             await launchUrl(uri, mode: LaunchMode.externalApplication);
-            return;
+          } else {
+            // 如果无法打开链接，复制到剪贴板
+            if (context.mounted) {
+              await Clipboard.setData(ClipboardData(text: downloadUrl));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('下载链接已复制到剪贴板'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
           }
-        }
-        
-        // 如果没有配置Mac App Store ID，使用下载链接
-        final downloadUrl = versionInfo.getPlatformDownloadUrl();
-        final uri = Uri.parse(downloadUrl);
-        
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          // 如果无法打开链接，复制到剪贴板
-          if (context.mounted) {
-            await Clipboard.setData(ClipboardData(text: downloadUrl));
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('下载链接已复制到剪贴板'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-      },
-      child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
-    );
-  }
+        },
+        child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
+      );
+    }
     
     // Windows、Linux - 跳转外部链接
     return ElevatedButton(
@@ -921,87 +923,87 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
   }
 
-// 只包含需要修改的部分
+  // 只包含需要修改的部分
 
-// 在 _showAddServerDialog 方法中，修改 CloudflareTestDialog 的使用
-Widget _buildQuickAddOptions() {
-  final l10n = AppLocalizations.of(context);
-  
-  return Column(
-    children: [
-      _buildAddOption(
-        icon: Icons.cloud,
-        title: l10n.addFromCloudflare,
-        subtitle: l10n.autoGetBestNodes,
-        color: Colors.blue,
-        onTap: () {
-          Navigator.pop(context);
-          // 显示Cloudflare测试对话框 - 修改：移除speed参数
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.cloud_download, color: Colors.blue),
-                      const SizedBox(width: 8),
-                      Text(l10n.addFromCloudflare),
-                    ],
-                  ),
-                  // 诊断按钮
-                  IconButton(
-                    icon: const Icon(Icons.bug_report, size: 20),
-                    tooltip: l10n.diagnosticTool,
-                    onPressed: () {
-                      CloudflareDiagnosticTool.showDiagnosticDialog(context);
-                    },
-                  ),
-                ],
+  // 在 _showAddServerDialog 方法中，修改 CloudflareTestDialog 的使用
+  Widget _buildQuickAddOptions() {
+    final l10n = AppLocalizations.of(context);
+    
+    return Column(
+      children: [
+        _buildAddOption(
+          icon: Icons.cloud,
+          title: l10n.addFromCloudflare,
+          subtitle: l10n.autoGetBestNodes,
+          color: Colors.blue,
+          onTap: () {
+            Navigator.pop(context);
+            // 显示Cloudflare测试对话框 - 修改：移除speed参数
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                title: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.cloud_download, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        Text(l10n.addFromCloudflare),
+                      ],
+                    ),
+                    // 诊断按钮
+                    IconButton(
+                      icon: const Icon(Icons.bug_report, size: 20),
+                      tooltip: l10n.diagnosticTool,
+                      onPressed: () {
+                        CloudflareDiagnosticTool.showDiagnosticDialog(context);
+                      },
+                    ),
+                  ],
+                ),
+                content: const CloudflareTestDialog(),
               ),
-              content: const CloudflareTestDialog(),
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 12),
-      _buildAddOption(
-        icon: Icons.edit,
-        title: l10n.manualAdd,
-        subtitle: l10n.inputServerInfo,
-        color: Colors.green,
-        onTap: () {
-          Navigator.pop(context);
-          // TODO: 显示手动添加对话框
-        },
-      ),
-      const SizedBox(height: 12),
-      _buildAddOption(
-        icon: Icons.qr_code,
-        title: l10n.scanQrCode,
-        subtitle: l10n.importFromQrCode,
-        color: Colors.orange,
-        onTap: () {
-          Navigator.pop(context);
-          // TODO: 打开二维码扫描
-        },
-      ),
-      const SizedBox(height: 12),
-      _buildAddOption(
-        icon: Icons.file_copy,
-        title: l10n.importFromClipboard,
-        subtitle: l10n.pasteServerConfig,
-        color: Colors.purple,
-        onTap: () {
-          Navigator.pop(context);
-          // TODO: 从剪贴板导入
-        },
-      ),
-    ],
-  );
-}
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildAddOption(
+          icon: Icons.edit,
+          title: l10n.manualAdd,
+          subtitle: l10n.inputServerInfo,
+          color: Colors.green,
+          onTap: () {
+            Navigator.pop(context);
+            // TODO: 显示手动添加对话框
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildAddOption(
+          icon: Icons.qr_code,
+          title: l10n.scanQrCode,
+          subtitle: l10n.importFromQrCode,
+          color: Colors.orange,
+          onTap: () {
+            Navigator.pop(context);
+            // TODO: 打开二维码扫描
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildAddOption(
+          icon: Icons.file_copy,
+          title: l10n.importFromClipboard,
+          subtitle: l10n.pasteServerConfig,
+          color: Colors.purple,
+          onTap: () {
+            Navigator.pop(context);
+            // TODO: 从剪贴板导入
+          },
+        ),
+      ],
+    );
+  }
 
   Widget _buildAddOption({
     required IconData icon,
