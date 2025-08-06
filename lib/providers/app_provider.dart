@@ -12,6 +12,7 @@ import '../models/server_model.dart';
 import '../services/v2ray_service.dart';
 import '../services/proxy_service.dart';
 import '../services/cloudflare_test_service.dart';
+import '../services/version_service.dart';  // 导入版本服务，使用其中的VersionInfo类
 import '../app_config.dart';
 
 // ===== 连接状态管理（原 connection_provider.dart） =====
@@ -312,145 +313,145 @@ class ServerProvider with ChangeNotifier {
   }
 
   // 添加一个专门的标志防止重复调用
-Future<void> refreshFromCloudflare() async {
-  // 防止重复调用 - 使用独立的标志
-  if (_isRefreshing) {
-    print('已经在获取节点中，忽略重复调用');
-    return;
-  }
-  
-  _isRefreshing = true; // 设置刷新标志
-  _isInitializing = true;
-  _initMessage = 'gettingBestNodes';  // 使用国际化键值
-  _initDetail = 'preparingTestEnvironment';  // 使用国际化键值
-  _progress = 0.0;
-  
-  // 立即清空现有节点列表
-  _servers.clear();
-  await _saveServers();  // 立即保存到本地，确保清空缓存
-  notifyListeners();
-
-  try {
-    print('开始从Cloudflare获取节点');
-    
-    // 创建 StreamController
-    final controller = StreamController<TestProgress>();
-    
-    // 使用公共的 executeTestWithProgress 方法
-    final completer = Completer<List<ServerModel>>();
-    final subscription = controller.stream.listen(
-      (progress) {
-        // 更新进度消息 - 使用本地化消息
-        if (!progress.hasError) {
-          _initMessage = _getLocalizedMessage(progress);
-          _initDetail = _getLocalizedDetail(progress);
-          _progress = progress.progress;
-          notifyListeners();
-        }
-        
-        // 如果完成，返回结果
-        if (progress.isCompleted && progress.servers != null) {
-          completer.complete(progress.servers);
-        } else if (progress.hasError) {
-          completer.completeError(progress.error);
-        }
-      },
-      onError: (error) {
-        completer.completeError(error);
-      },
-    );
-    
-    // 调用公共方法 - 修改：移除speed参数
-    CloudflareTestService.executeTestWithProgress(
-      controller: controller,
-      count: AppConfig.defaultTestNodeCount,
-      maxLatency: AppConfig.defaultMaxLatency,
-      testCount: AppConfig.defaultSampleCount,
-      location: 'AUTO',
-      useHttping: false,
-    );
-    
-    // 等待结果
-    final servers = await completer.future;
-    await subscription.cancel();
-    
-    if (servers.isEmpty) {
-      throw 'noValidNodes';  // 使用国际化键值
+  Future<void> refreshFromCloudflare() async {
+    // 防止重复调用 - 使用独立的标志
+    if (_isRefreshing) {
+      print('已经在获取节点中，忽略重复调用');
+      return;
     }
     
-    // 直接替换服务器列表（不是追加）
-    _servers = _generateNamedServers(servers);
-    await _saveServers();
-    
-    // 成功消息主要用于日志，保持中文即可
-    _initMessage = '';  // 成功时清空消息
-    _progress = 1.0;
-    print('成功获取 ${_servers.length} 个节点');
-    
-  } catch (e) {
-    print('获取节点失败: $e');
-    _initMessage = 'failed';  // 使用标记表示失败，UI层会显示国际化文字
+    _isRefreshing = true; // 设置刷新标志
+    _isInitializing = true;
+    _initMessage = 'gettingBestNodes';  // 使用国际化键值
+    _initDetail = 'preparingTestEnvironment';  // 使用国际化键值
     _progress = 0.0;
-    // 清空服务器列表
+    
+    // 立即清空现有节点列表
     _servers.clear();
-    await _saveServers();
-  } finally {
-    await Future.delayed(const Duration(seconds: 1));
-    _isInitializing = false;
-    _isRefreshing = false; // 重置刷新标志
-    // 修改：在失败时不清空 _initMessage，让UI能够判断是否失败
-    if (_servers.isNotEmpty) {
-      // 只有成功时才清空消息
-      _initMessage = '';
-    }
-    _initDetail = '';
-    _progress = 0.0;
+    await _saveServers();  // 立即保存到本地，确保清空缓存
     notifyListeners();
-  }
-}
 
-// 获取本地化的消息 - 需要修改以支持新的键
-String _getLocalizedMessage(TestProgress progress) {
-  // 这里简化处理，实际使用时需要通过context获取本地化
-  switch (progress.messageKey) {
-    case 'preparingTestEnvironment':
-      return '准备测试环境';
-    case 'generatingTestIPs':
-      return '生成测试IP';
-    case 'testingDelay':
-      return '测试延迟';
-    case 'testingResponseSpeed':  // 新增
-      return '测试响应速度';
-    case 'testCompleted':
-      return '测试完成';
-    default:
-      return progress.messageKey;
+    try {
+      print('开始从Cloudflare获取节点');
+      
+      // 创建 StreamController
+      final controller = StreamController<TestProgress>();
+      
+      // 使用公共的 executeTestWithProgress 方法
+      final completer = Completer<List<ServerModel>>();
+      final subscription = controller.stream.listen(
+        (progress) {
+          // 更新进度消息 - 使用本地化消息
+          if (!progress.hasError) {
+            _initMessage = _getLocalizedMessage(progress);
+            _initDetail = _getLocalizedDetail(progress);
+            _progress = progress.progress;
+            notifyListeners();
+          }
+          
+          // 如果完成，返回结果
+          if (progress.isCompleted && progress.servers != null) {
+            completer.complete(progress.servers);
+          } else if (progress.hasError) {
+            completer.completeError(progress.error);
+          }
+        },
+        onError: (error) {
+          completer.completeError(error);
+        },
+      );
+      
+      // 调用公共方法 - 修改：移除speed参数
+      CloudflareTestService.executeTestWithProgress(
+        controller: controller,
+        count: AppConfig.defaultTestNodeCount,
+        maxLatency: AppConfig.defaultMaxLatency,
+        testCount: AppConfig.defaultSampleCount,
+        location: 'AUTO',
+        useHttping: false,
+      );
+      
+      // 等待结果
+      final servers = await completer.future;
+      await subscription.cancel();
+      
+      if (servers.isEmpty) {
+        throw 'noValidNodes';  // 使用国际化键值
+      }
+      
+      // 直接替换服务器列表（不是追加）
+      _servers = _generateNamedServers(servers);
+      await _saveServers();
+      
+      // 成功消息主要用于日志，保持中文即可
+      _initMessage = '';  // 成功时清空消息
+      _progress = 1.0;
+      print('成功获取 ${_servers.length} 个节点');
+      
+    } catch (e) {
+      print('获取节点失败: $e');
+      _initMessage = 'failed';  // 使用标记表示失败，UI层会显示国际化文字
+      _progress = 0.0;
+      // 清空服务器列表
+      _servers.clear();
+      await _saveServers();
+    } finally {
+      await Future.delayed(const Duration(seconds: 1));
+      _isInitializing = false;
+      _isRefreshing = false; // 重置刷新标志
+      // 修改：在失败时不清空 _initMessage，让UI能够判断是否失败
+      if (_servers.isNotEmpty) {
+        // 只有成功时才清空消息
+        _initMessage = '';
+      }
+      _initDetail = '';
+      _progress = 0.0;
+      notifyListeners();
+    }
   }
-}
 
-// 获取本地化的详情 - 需要修改以支持新的键
-String _getLocalizedDetail(TestProgress progress) {
-  if (progress.detailKey == null) return '';
-  
-  switch (progress.detailKey!) {
-    case 'initializing':
-      return '正在初始化';
-    case 'startingTraceTest':  // 新增
-      return '开始Trace测试';
-    case 'ipRanges':
-      final count = progress.detailParams?['count'] ?? 0;
-      return '从 $count 个IP段采样';
-    case 'nodeProgress':
-      final current = progress.detailParams?['current'] ?? 0;
-      final total = progress.detailParams?['total'] ?? 0;
-      return '$current/$total';
-    case 'foundQualityNodes':
-      final count = progress.detailParams?['count'] ?? 0;
-      return '找到 $count 个优质节点';
-    default:
-      return progress.detailKey!;
+  // 获取本地化的消息 - 需要修改以支持新的键
+  String _getLocalizedMessage(TestProgress progress) {
+    // 这里简化处理，实际使用时需要通过context获取本地化
+    switch (progress.messageKey) {
+      case 'preparingTestEnvironment':
+        return '准备测试环境';
+      case 'generatingTestIPs':
+        return '生成测试IP';
+      case 'testingDelay':
+        return '测试延迟';
+      case 'testingResponseSpeed':  // 新增
+        return '测试响应速度';
+      case 'testCompleted':
+        return '测试完成';
+      default:
+        return progress.messageKey;
+    }
   }
-}
+
+  // 获取本地化的详情 - 需要修改以支持新的键
+  String _getLocalizedDetail(TestProgress progress) {
+    if (progress.detailKey == null) return '';
+    
+    switch (progress.detailKey!) {
+      case 'initializing':
+        return '正在初始化';
+      case 'startingTraceTest':  // 新增
+        return '开始Trace测试';
+      case 'ipRanges':
+        final count = progress.detailParams?['count'] ?? 0;
+        return '从 $count 个IP段采样';
+      case 'nodeProgress':
+        final current = progress.detailParams?['current'] ?? 0;
+        final total = progress.detailParams?['total'] ?? 0;
+        return '$current/$total';
+      case 'foundQualityNodes':
+        final count = progress.detailParams?['count'] ?? 0;
+        return '找到 $count 个优质节点';
+      default:
+        return progress.detailKey!;
+    }
+  }
 
   // 生成带有正确名称的服务器列表
   List<ServerModel> _generateNamedServers(List<ServerModel> servers) {
@@ -527,7 +528,7 @@ String _getLocalizedDetail(TestProgress progress) {
   int _getMaxNumberForCountry(String countryCode) {
     int maxNumber = 0;
     for (final server in _servers) {
-      final match = RegExp(r'^([A-Z]{2})(\d+)$').firstMatch(server.name);
+      final match = RegExp(r'^([A-Z]{2})(\d+)).firstMatch(server.name);
       if (match != null && match.group(1) == countryCode) {
         final number = int.parse(match.group(2)!);
         if (number > maxNumber) {
@@ -767,118 +768,4 @@ class DownloadProvider extends ChangeNotifier {
       return null;
     }
   }
-}
-
-// ===== 新增：版本信息实体类 =====
-class VersionInfo {
-  final String version;
-  final String? minVersion;
-  final String downloadUrl;
-  final String updateContent;
-  final String? downloadUrlWindows;  // Windows下载链接
-  final String? downloadUrlMac;      // macOS下载链接
-  final String? downloadUrlLinux;    // Linux下载链接
-  
-  VersionInfo({
-    required this.version,
-    this.minVersion,
-    required this.downloadUrl,
-    required this.updateContent,
-    this.downloadUrlWindows,
-    this.downloadUrlMac,
-    this.downloadUrlLinux,
-  });
-  
-  factory VersionInfo.fromJson(Map<String, dynamic> json) {
-    return VersionInfo(
-      version: json['version'] ?? '',
-      minVersion: json['minVersion'],
-      downloadUrl: json['downloadUrl'] ?? '',
-      updateContent: json['updateContent'] ?? '',
-      downloadUrlWindows: json['downloadUrlWindows'],
-      downloadUrlMac: json['downloadUrlMac'],
-      downloadUrlLinux: json['downloadUrlLinux'],
-    );
-  }
-  
-  // 获取当前平台的下载链接
-  String getPlatformDownloadUrl() {
-    if (Platform.isWindows && downloadUrlWindows != null) {
-      return downloadUrlWindows!;
-    } else if (Platform.isMacOS && downloadUrlMac != null) {
-      return downloadUrlMac!;
-    } else if (Platform.isLinux && downloadUrlLinux != null) {
-      return downloadUrlLinux!;
-    } else if (Platform.isIOS && AppConfig.iosAppStoreId != null) {
-      // iOS使用App Store链接
-      return AppConfig.getIosAppStoreUrl()!;
-    } else if (Platform.isAndroid) {
-      // Android使用默认下载链接或模板
-      if (downloadUrl.isNotEmpty) {
-        return downloadUrl;
-      }
-      // 使用模板生成下载链接
-      return AppConfig.androidDownloadUrlTemplate.replaceAll('{version}', version);
-    }
-    return downloadUrl;
-  }
-}
-
-// ===== 新增：语义化版本比较（从原项目复制） =====
-class SemanticVersion {
-  final List<int> _version;
-  final String _originalString;
-  
-  SemanticVersion._(this._version, this._originalString);
-  
-  static SemanticVersion? parse(String versionString) {
-    if (versionString.isEmpty) return null;
-    
-    String cleanVersion = versionString;
-    if (cleanVersion.startsWith('v') || cleanVersion.startsWith('V')) {
-      cleanVersion = cleanVersion.substring(1);
-    }
-    
-    // 移除构建号和预发布标识
-    if (cleanVersion.contains('+')) {
-      cleanVersion = cleanVersion.split('+')[0];
-    }
-    if (cleanVersion.contains('-')) {
-      cleanVersion = cleanVersion.split('-')[0];
-    }
-    
-    final segments = cleanVersion.split('.');
-    final versionNumbers = <int>[];
-    
-    for (final segment in segments) {
-      final num = int.tryParse(segment);
-      if (num == null) return null;
-      versionNumbers.add(num);
-    }
-    
-    if (versionNumbers.isEmpty) return null;
-    
-    // 补齐到3位
-    while (versionNumbers.length < 3) {
-      versionNumbers.add(0);
-    }
-    
-    return SemanticVersion._(versionNumbers, versionString);
-  }
-  
-  int compareTo(SemanticVersion other) {
-    final minLength = _version.length < other._version.length 
-        ? _version.length 
-        : other._version.length;
-    
-    for (int i = 0; i < minLength; i++) {
-      final comparison = _version[i].compareTo(other._version[i]);
-      if (comparison != 0) return comparison;
-    }
-    
-    return _version.length.compareTo(other._version.length);
-  }
-  
-  bool isLessThan(SemanticVersion other) => compareTo(other) < 0;
-  bool isGreaterThan(SemanticVersion other) => compareTo(other) > 0;
 }

@@ -179,8 +179,8 @@ class _ServersPageState extends State<ServersPage> {
         return l10n.generatingTestIPs;
       case 'testingDelay':
         return l10n.testingDelay;
-      case 'testingDownloadSpeed':
-        return l10n.testingDownloadSpeed;
+      case 'testingResponseSpeed':
+        return l10n.testingResponseSpeed;
       case 'testCompleted':
         return l10n.testCompleted;
       default:
@@ -200,8 +200,8 @@ class _ServersPageState extends State<ServersPage> {
     switch (detailKey) {
       case 'initializing':
         return l10n.initializing;
-      case 'startingSpeedTest':
-        return l10n.startingSpeedTest;
+      case 'startingTraceTest':
+        return l10n.startingTraceTest;
       case 'preparingTestEnvironment':
         return l10n.preparingTestEnvironment;
       default:

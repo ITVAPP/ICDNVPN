@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_config.dart';
-import '../services/log_service.dart';
+import '../utils/log_service.dart'; 
 
 /// 用户信息内部类
 class UserInfo {

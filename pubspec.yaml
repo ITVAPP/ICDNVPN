@@ -13,8 +13,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
     
-  dio: ^5.4.0
-  flutter_svg: ^2.0.9
   path_provider: ^2.1.2
   http: ^1.1.0 
   
@@ -40,6 +38,9 @@ dependencies:
   
   # 图标
   cupertino_icons: ^1.0.6
+  
+  # 新增：设备信息获取
+  device_info_plus: ^11.5.0
 
 dev_dependencies:
   flutter_test:

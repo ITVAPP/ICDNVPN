@@ -656,41 +656,41 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     }
     
     // macOS平台 - 跳转Mac App Store或下载链接（使用AppConfig）
-    if (Platform.isMacOS) {
-      return ElevatedButton(
-        onPressed: () async {
-          // 优先使用配置的Mac App Store ID
-          final macAppStoreUrl = AppConfig.getMacAppStoreUrl();
-          if (macAppStoreUrl != null) {
-            final uri = Uri.parse(macAppStoreUrl);
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-              return;
-            }
-          }
-          
-          // 如果没有配置Mac App Store ID，使用下载链接
-          final downloadUrl = versionInfo.getPlatformDownloadUrl();
-          final uri = Uri.parse(downloadUrl);
-          
+  if (Platform.isMacOS) {
+    return ElevatedButton(
+      onPressed: () async {
+        // 优先使用配置的Mac App Store ID
+        final macAppStoreUrl = AppConfig.getMacAppStoreUrl();  // 修复：改为方法调用
+        if (macAppStoreUrl != null) {
+          final uri = Uri.parse(macAppStoreUrl);
           if (await canLaunchUrl(uri)) {
             await launchUrl(uri, mode: LaunchMode.externalApplication);
-          } else {
-            // 如果无法打开链接，复制到剪贴板
-            if (context.mounted) {
-              await Clipboard.setData(ClipboardData(text: downloadUrl));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('下载链接已复制到剪贴板'),
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            }
+            return;
           }
-        },
-        child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
-      );
-    }
+        }
+        
+        // 如果没有配置Mac App Store ID，使用下载链接
+        final downloadUrl = versionInfo.getPlatformDownloadUrl();
+        final uri = Uri.parse(downloadUrl);
+        
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          // 如果无法打开链接，复制到剪贴板
+          if (context.mounted) {
+            await Clipboard.setData(ClipboardData(text: downloadUrl));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('下载链接已复制到剪贴板'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      },
+      child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
+    );
+  }
     
     // Windows、Linux - 跳转外部链接
     return ElevatedButton(
