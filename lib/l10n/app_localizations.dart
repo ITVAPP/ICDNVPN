@@ -36,6 +36,9 @@ class AppLocalizations {
   String get connecting => _get('connecting');
   String get disconnecting => _get('disconnecting');
   String get close => _get('close');
+  String get cancel => _get('cancel');
+  String get ok => _get('ok');
+  String get unknownError => _get('unknownError');
   
   // 主页
   String get clickToConnect => _get('clickToConnect');
@@ -118,8 +121,8 @@ class AppLocalizations {
   String get generatingTestIPs => _get('generatingTestIPs');
   String get samplingFromIPRanges => _get('samplingFromIPRanges');
   String get testingDelay => _get('testingDelay');
-  String get testingResponseSpeed => _get('testingResponseSpeed');  // 修改
-  String get startingTraceTest => _get('startingTraceTest');      // 修改
+  String get testingResponseSpeed => _get('testingResponseSpeed');
+  String get startingTraceTest => _get('startingTraceTest');
   String get foundQualityNodes => _get('foundQualityNodes');
   
   // 新增的测试相关文本
@@ -133,6 +136,17 @@ class AppLocalizations {
   String get fileCheck => _get('fileCheck');
   String get networkTest => _get('networkTest');
   String get systemInfo => _get('systemInfo');
+  String get size => _get('size');
+  String get modified => _get('modified');
+  String get config => _get('config');
+  String get ipFile => _get('ipFile');
+  String get missing => _get('missing');
+  String get ipRangesCount => _get('ipRangesCount');
+  String get sample => _get('sample');
+  String get cloudflareTest => _get('cloudflareTest');
+  String get os => _get('os');
+  String get version => _get('version');
+  String get failed => _get('failed');
   
   // 退出确认
   String get confirmExit => _get('confirmExit');
@@ -144,10 +158,129 @@ class AppLocalizations {
   String get gettingBestNodes => _get('gettingBestNodes');
   String get getNodesFailed => _get('getNodesFailed');
   String get noValidNodes => _get('noValidNodes');
+  String get nodesAdded => _get('nodesAdded');
   
-  // 新增：连接断开相关文本
+  // 连接断开相关文本
   String get connectionLost => _get('connectionLost');
   String get vpnDisconnected => _get('vpnDisconnected');
+  
+  // 版本更新相关
+  String get importantUpdate => _get('importantUpdate');
+  String get newVersionFound => _get('newVersionFound');
+  String get versionLabel => _get('versionLabel');
+  String get forceUpdateNotice => _get('forceUpdateNotice');
+  String get updateContent => _get('updateContent');
+  String get remindLater => _get('remindLater');
+  String get updateNow => _get('updateNow');
+  String get downloadFailed => _get('downloadFailed');
+  String get downloadFailedMessage => _get('downloadFailedMessage');
+  String get openBrowser => _get('openBrowser');
+  String get goToAppStore => _get('goToAppStore');
+  String get goToDownload => _get('goToDownload');
+  String get pathCopied => _get('pathCopied');
+  String get manualInstallNotice => _get('manualInstallNotice');
+  String get copyPath => _get('copyPath');
+  String get linkCopied => _get('linkCopied');
+  
+  // 广告相关
+  String get adLabel => _get('adLabel');
+  String get secondsToClose => _get('secondsToClose');
+  String get tapToLearnMore => _get('tapToLearnMore');
+  
+  // V2Ray相关
+  String get proxyServer => _get('proxyServer');
+  String get v2rayRunning => _get('v2rayRunning');
+  String get disconnectButton => _get('disconnectButton');
+  
+  // 新增的UI相关文本
+  String get autoSelectBestNode => _get('autoSelectBestNode');
+  String get getNodeFailedWithRetry => _get('getNodeFailedWithRetry');
+  String get retry => _get('retry');
+  String get switchNode => _get('switchNode');
+  String get confirmSwitchNode => _get('confirmSwitchNode');
+  String get switchNodeDesc => _get('switchNodeDesc');
+  String get switching => _get('switching');
+  String get switchingNode => _get('switchingNode');
+  String get switchedToNode => _get('switchedToNode');
+  String get switchFailed => _get('switchFailed');
+  String get testingServers => _get('testingServers');
+  String get serversUnit => _get('serversUnit');
+  String get testCompletedWithCount => _get('testCompletedWithCount');
+  String get updateFailed => _get('updateFailed');
+  String get clearCacheConfirm => _get('clearCacheConfirm');
+  String get tip => _get('tip');
+  String get clearCacheDisconnectWarning => _get('clearCacheDisconnectWarning');
+  String get continue_ => _get('continue'); // 使用continue_避免关键字冲突
+  String get clearingCache => _get('clearingCache');
+  String get cacheDetails => _get('cacheDetails');
+  String get reGetNodes => _get('reGetNodes');
+  String get newVersion => _get('newVersion');
+  
+  // 国家/地区名称
+  String get countryChina => _get('countryChina');
+  String get countryHongKong => _get('countryHongKong');
+  String get countryTaiwan => _get('countryTaiwan');
+  String get countrySingapore => _get('countrySingapore');
+  String get countryJapan => _get('countryJapan');
+  String get countrySouthKorea => _get('countrySouthKorea');
+  String get countryThailand => _get('countryThailand');
+  String get countryMalaysia => _get('countryMalaysia');
+  String get countryPhilippines => _get('countryPhilippines');
+  String get countryIndonesia => _get('countryIndonesia');
+  String get countryIndia => _get('countryIndia');
+  String get countryUAE => _get('countryUAE');
+  String get countryVietnam => _get('countryVietnam');
+  String get countryTurkey => _get('countryTurkey');
+  String get countryIsrael => _get('countryIsrael');
+  String get countryUSA => _get('countryUSA');
+  String get countryCanada => _get('countryCanada');
+  String get countryMexico => _get('countryMexico');
+  String get countryUK => _get('countryUK');
+  String get countryFrance => _get('countryFrance');
+  String get countryGermany => _get('countryGermany');
+  String get countryNetherlands => _get('countryNetherlands');
+  String get countrySpain => _get('countrySpain');
+  String get countryItaly => _get('countryItaly');
+  String get countrySwitzerland => _get('countrySwitzerland');
+  String get countryAustria => _get('countryAustria');
+  String get countrySweden => _get('countrySweden');
+  String get countryDenmark => _get('countryDenmark');
+  String get countryPoland => _get('countryPoland');
+  String get countryRussia => _get('countryRussia');
+  String get countryBelgium => _get('countryBelgium');
+  String get countryCzechia => _get('countryCzechia');
+  String get countryFinland => _get('countryFinland');
+  String get countryIreland => _get('countryIreland');
+  String get countryNorway => _get('countryNorway');
+  String get countryPortugal => _get('countryPortugal');
+  String get countryGreece => _get('countryGreece');
+  String get countryRomania => _get('countryRomania');
+  String get countryUkraine => _get('countryUkraine');
+  String get countryAustralia => _get('countryAustralia');
+  String get countryNewZealand => _get('countryNewZealand');
+  String get countryBrazil => _get('countryBrazil');
+  String get countryArgentina => _get('countryArgentina');
+  String get countryChile => _get('countryChile');
+  String get countryPeru => _get('countryPeru');
+  String get countryColombia => _get('countryColombia');
+  String get countryVenezuela => _get('countryVenezuela');
+  String get countryUruguay => _get('countryUruguay');
+  String get countrySouthAfrica => _get('countrySouthAfrica');
+  String get countryEgypt => _get('countryEgypt');
+  String get countryNigeria => _get('countryNigeria');
+  String get countryKenya => _get('countryKenya');
+  String get countryMorocco => _get('countryMorocco');
+  String get countryTunisia => _get('countryTunisia');
+  String get countryEthiopia => _get('countryEthiopia');
+  
+  // 大洲名称
+  String get continentAsia => _get('continentAsia');
+  String get continentNorthAmerica => _get('continentNorthAmerica');
+  String get continentEurope => _get('continentEurope');
+  String get continentOceania => _get('continentOceania');
+  String get continentSouthAmerica => _get('continentSouthAmerica');
+  String get continentAfrica => _get('continentAfrica');
+  String get continentUnknown => _get('continentUnknown');
   
   // 带参数的文本格式化方法
   String samplingFromRanges(int count) {
@@ -158,6 +291,72 @@ class AppLocalizations {
   String foundNodes(int count) {
     final template = _get('foundQualityNodes');
     return template.replaceAll('%s', count.toString());
+  }
+  
+  String secondsToCloseFormat(int seconds) {
+    final template = _get('secondsToClose');
+    return template.replaceAll('%s', seconds.toString());
+  }
+  
+  String downloadFailedFormat(String error) {
+    final template = _get('downloadFailedMessage');
+    return template.replaceAll('%s', error);
+  }
+  
+  String manualInstallFormat(String path) {
+    final template = _get('manualInstallNotice');
+    return template.replaceAll('%s', path);
+  }
+  
+  String versionFormat(String version) {
+    final template = _get('versionLabel');
+    return template.replaceAll('%s', version);
+  }
+  
+  String nodesAddedFormat(int count) {
+    final template = _get('nodesAdded');
+    return template.replaceAll('%s', count.toString());
+  }
+  
+  // 新增的带参数方法
+  String autoSelectedBestNode(String nodeName, int ping) {
+    final template = _get('autoSelectBestNode');
+    return template.replaceAll('%name', nodeName).replaceAll('%ping', ping.toString());
+  }
+  
+  String switchToNodeConfirm(String nodeName) {
+    final template = _get('confirmSwitchNode');
+    return template.replaceAll('%s', nodeName);
+  }
+  
+  String switchedTo(String nodeName) {
+    final template = _get('switchedToNode');
+    return template.replaceAll('%s', nodeName);
+  }
+  
+  String switchFailedError(String error) {
+    final template = _get('switchFailed');
+    return template.replaceAll('%s', error);
+  }
+  
+  String testingServersCount(int count) {
+    final template = _get('testingServers');
+    return template.replaceAll('%s', count.toString());
+  }
+  
+  String testCompletedCount(int count) {
+    final template = _get('testCompletedWithCount');
+    return template.replaceAll('%s', count.toString());
+  }
+  
+  String checkUpdateFailedError(String error) {
+    final template = _get('updateFailed');
+    return template.replaceAll('%s', error);
+  }
+  
+  String newVersionFormat(String version) {
+    final template = _get('newVersion');
+    return template.replaceAll('%s', version);
   }
 }
 
@@ -219,6 +418,9 @@ const Map<String, String> _zhCnTranslations = {
   'connecting': '正在连接...',
   'disconnecting': '正在断开...',
   'close': '关闭',
+  'cancel': '取消',
+  'ok': '确定',
+  'unknownError': '未知错误',
   
   // 主页
   'clickToConnect': '点击连接',
@@ -301,8 +503,8 @@ const Map<String, String> _zhCnTranslations = {
   'generatingTestIPs': '生成测试IP',
   'samplingFromIPRanges': '从 %s 个IP段采样',
   'testingDelay': '测试延迟',
-  'testingResponseSpeed': '测试响应速度',        // 修改
-  'startingTraceTest': '开始响应速度测试',       // 修改
+  'testingResponseSpeed': '测试响应速度',
+  'startingTraceTest': '开始响应速度测试',
   'foundQualityNodes': '找到 %s 个优质节点',
   
   // 新增的测试相关文本
@@ -316,6 +518,17 @@ const Map<String, String> _zhCnTranslations = {
   'fileCheck': '文件检查',
   'networkTest': '网络测试',
   'systemInfo': '系统信息',
+  'size': '大小',
+  'modified': '修改时间',
+  'config': '配置',
+  'ipFile': 'IP文件',
+  'missing': '缺失',
+  'ipRangesCount': 'IP段数量',
+  'sample': '示例',
+  'cloudflareTest': 'Cloudflare测试',
+  'os': '操作系统',
+  'version': '版本',
+  'failed': '失败',
   
   // 退出确认
   'confirmExit': '退出确认',
@@ -327,33 +540,157 @@ const Map<String, String> _zhCnTranslations = {
   'gettingBestNodes': '正在获取最优节点...',
   'getNodesFailed': '获取节点失败，请重试',
   'noValidNodes': '无法获取有效节点',
+  'nodesAdded': '已添加 %s 个服务器',
   
-  // 新增：连接断开相关文本
+  // 连接断开相关文本
   'connectionLost': '连接已断开',
   'vpnDisconnected': 'VPN连接已断开',
+  
+  // 版本更新相关
+  'importantUpdate': '重要更新',
+  'newVersionFound': '发现新版本',
+  'versionLabel': '版本 %s',
+  'forceUpdateNotice': '此版本包含重要更新，需要立即升级',
+  'updateContent': '更新内容：',
+  'remindLater': '稍后提醒',
+  'updateNow': '立即更新',
+  'downloadFailed': '下载失败',
+  'downloadFailedMessage': '下载失败: %s\n\n是否打开浏览器下载？',
+  'openBrowser': '打开浏览器',
+  'goToAppStore': '前往App Store',
+  'goToDownload': '前往下载',
+  'pathCopied': '路径已复制到剪贴板',
+  'manualInstallNotice': '请手动安装APK文件：\n%s',
+  'copyPath': '复制路径',
+  'linkCopied': '下载链接已复制到剪贴板',
+  
+  // 广告相关
+  'adLabel': 'AD',
+  'secondsToClose': '%s秒后自动关闭',
+  'tapToLearnMore': '点击了解详情',
+  
+  // V2Ray相关
+  'proxyServer': '代理服务器',
+  'v2rayRunning': 'V2Ray运行中',
+  'disconnectButton': '断开',
+  
+  // 新增的UI相关文本
+  'autoSelectBestNode': '已自动选择最优节点: %name (%ping ms)',
+  'getNodeFailedWithRetry': '获取节点失败，请检查网络连接后重试',
+  'retry': '重试',
+  'switchNode': '切换节点',
+  'confirmSwitchNode': '是否切换到 %s？',
+  'switchNodeDesc': '当前连接将会断开并重新连接。',
+  'switching': '切换',
+  'switchingNode': '正在切换节点...',
+  'switchedToNode': '已切换到 %s',
+  'switchFailed': '切换失败: %s',
+  'testingServers': '测试中 %s 个服务器...',
+  'serversUnit': '个服务器',
+  'testCompletedWithCount': '测试完成，已更新 %s 个服务器',
+  'updateFailed': '检查更新失败: %s',
+  'clearCacheConfirm': '将清除所有缓存数据，包括服务器列表、设置等。确定要继续吗？',
+  'tip': '提示',
+  'clearCacheDisconnectWarning': '清除缓存将断开当前VPN连接，是否继续？',
+  'continue': '继续',
+  'clearingCache': '正在清除缓存...',
+  'cacheDetails': '已清除：日志文件、服务器列表、用户设置',
+  'reGetNodes': '重新获取节点',
+  'newVersion': '新版 %s',
+  
+  // 国家/地区名称
+  'countryChina': '中国',
+  'countryHongKong': '香港',
+  'countryTaiwan': '台湾',
+  'countrySingapore': '新加坡',
+  'countryJapan': '日本',
+  'countrySouthKorea': '韩国',
+  'countryThailand': '泰国',
+  'countryMalaysia': '马来西亚',
+  'countryPhilippines': '菲律宾',
+  'countryIndonesia': '印度尼西亚',
+  'countryIndia': '印度',
+  'countryUAE': '阿联酋',
+  'countryVietnam': '越南',
+  'countryTurkey': '土耳其',
+  'countryIsrael': '以色列',
+  'countryUSA': '美国',
+  'countryCanada': '加拿大',
+  'countryMexico': '墨西哥',
+  'countryUK': '英国',
+  'countryFrance': '法国',
+  'countryGermany': '德国',
+  'countryNetherlands': '荷兰',
+  'countrySpain': '西班牙',
+  'countryItaly': '意大利',
+  'countrySwitzerland': '瑞士',
+  'countryAustria': '奥地利',
+  'countrySweden': '瑞典',
+  'countryDenmark': '丹麦',
+  'countryPoland': '波兰',
+  'countryRussia': '俄罗斯',
+  'countryBelgium': '比利时',
+  'countryCzechia': '捷克',
+  'countryFinland': '芬兰',
+  'countryIreland': '爱尔兰',
+  'countryNorway': '挪威',
+  'countryPortugal': '葡萄牙',
+  'countryGreece': '希腊',
+  'countryRomania': '罗马尼亚',
+  'countryUkraine': '乌克兰',
+  'countryAustralia': '澳大利亚',
+  'countryNewZealand': '新西兰',
+  'countryBrazil': '巴西',
+  'countryArgentina': '阿根廷',
+  'countryChile': '智利',
+  'countryPeru': '秘鲁',
+  'countryColombia': '哥伦比亚',
+  'countryVenezuela': '委内瑞拉',
+  'countryUruguay': '乌拉圭',
+  'countrySouthAfrica': '南非',
+  'countryEgypt': '埃及',
+  'countryNigeria': '尼日利亚',
+  'countryKenya': '肯尼亚',
+  'countryMorocco': '摩洛哥',
+  'countryTunisia': '突尼斯',
+  'countryEthiopia': '埃塞俄比亚',
+  
+  // 大洲名称
+  'continentAsia': '亚洲',
+  'continentNorthAmerica': '北美洲',
+  'continentEurope': '欧洲',
+  'continentOceania': '大洋洲',
+  'continentSouthAmerica': '南美洲',
+  'continentAfrica': '非洲',
+  'continentUnknown': '未知',
 };
 
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
+  // 其他英文翻译待完善
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
+  // 其他繁体中文翻译待完善
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
+  // 其他西班牙语翻译待完善
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
+  // 其他俄语翻译待完善
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
+  // 其他阿拉伯语翻译待完善
 };

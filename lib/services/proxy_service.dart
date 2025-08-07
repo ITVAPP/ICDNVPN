@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'package:win32_registry/win32_registry.dart';
+import '../utils/log_service.dart';
 import '../app_config.dart';
 
 class ProxyService {
+  static const String _logTag = 'ProxyService';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   static const _registryPath = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings';
   // 修改：使用AppConfig构建代理服务器地址
   static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
@@ -11,7 +15,7 @@ class ProxyService {
     if (!Platform.isWindows) return;
 
     try {
-      print('正在启用系统代理...');
+      await _log.info('正在启用系统代理...', tag: _logTag);
       
       final key = Registry.openPath(
         RegistryHive.currentUser, 
@@ -40,9 +44,9 @@ class ProxyService {
       // 验证代理是否设置成功
       await _verifyProxySettings();
       
-      print('系统代理启用成功');
+      await _log.info('系统代理启用成功', tag: _logTag);
     } catch (e) {
-      print('启用系统代理失败: $e');
+      await _log.error('启用系统代理失败', tag: _logTag, error: e);
       throw '无法设置系统代理: $e';
     }
   }
@@ -51,7 +55,7 @@ class ProxyService {
     if (!Platform.isWindows) return;
 
     try {
-      print('正在禁用系统代理...');
+      await _log.info('正在禁用系统代理...', tag: _logTag);
       
       final key = Registry.openPath(
         RegistryHive.currentUser, 
@@ -74,9 +78,9 @@ class ProxyService {
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
       
-      print('系统代理禁用成功');
+      await _log.info('系统代理禁用成功', tag: _logTag);
     } catch (e) {
-      print('禁用系统代理失败: $e');
+      await _log.error('禁用系统代理失败', tag: _logTag, error: e);
       throw '无法禁用系统代理: $e';
     }
   }
@@ -97,7 +101,7 @@ class ProxyService {
       await Process.run('ipconfig', ['/flushdns'], runInShell: true);
       
     } catch (e) {
-      print('刷新系统代理设置时出现警告: $e');
+      await _log.warn('刷新系统代理设置时出现警告', tag: _logTag, error: e);
       // 不抛出错误，因为主要设置可能已经成功
     }
   }
@@ -117,13 +121,13 @@ class ProxyService {
       key.close();
       
       final isEnabled = proxyEnable == 1 && proxyServer == _proxyServer;
-      print('代理验证结果: ${isEnabled ? "已启用" : "未启用"}');
-      print('ProxyEnable: $proxyEnable');
-      print('ProxyServer: $proxyServer');
+      await _log.info('代理验证结果: ${isEnabled ? "已启用" : "未启用"}', tag: _logTag);
+      await _log.debug('ProxyEnable: $proxyEnable', tag: _logTag);
+      await _log.debug('ProxyServer: $proxyServer', tag: _logTag);
       
       return isEnabled;
     } catch (e) {
-      print('验证代理设置失败: $e');
+      await _log.error('验证代理设置失败', tag: _logTag, error: e);
       return false;
     }
   }

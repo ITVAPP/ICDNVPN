@@ -230,29 +230,29 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                     ),
                     if (_diagnosticResults!['v2rayExists'] == true) ...[
                       _buildDiagnosticItem(
-                        'Size',
+                        l10n.size,
                         '${(_diagnosticResults!['v2raySize'] / 1024 / 1024).toStringAsFixed(2)} MB',
                       ),
                       _buildDiagnosticItem(
-                        'Modified',
+                        l10n.modified,
                         _diagnosticResults!['v2rayModified'],
                       ),
                     ],
                     
                     const Divider(),
-                    _buildDiagnosticSection('Config'),
+                    _buildDiagnosticSection(l10n.config),
                     _buildDiagnosticItem(
                       'ip.txt',
-                      _diagnosticResults!['ipFileExists'] == true ? 'OK' : 'Missing',
+                      _diagnosticResults!['ipFileExists'] == true ? 'OK' : l10n.missing,
                       success: _diagnosticResults!['ipFileExists'] == true,
                     ),
                     if (_diagnosticResults!['ipFileExists'] == true) ...[
                       _buildDiagnosticItem(
-                        'IP Ranges',
+                        l10n.ipRangesCount,
                         '${_diagnosticResults!['validIpRanges']}',
                       ),
                       if (_diagnosticResults!['ipFileSample'] != null)
-                        _buildCodeBlock('Sample', _diagnosticResults!['ipFileSample']),
+                        _buildCodeBlock(l10n.sample, _diagnosticResults!['ipFileSample']),
                     ],
                     
                     const Divider(),
@@ -261,14 +261,14 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
                       ..._buildNetworkTestResults(_diagnosticResults!['networkTest']),
                     
                     const Divider(),
-                    _buildDiagnosticSection('Cloudflare Test'),
+                    _buildDiagnosticSection(l10n.cloudflareTest),
                     if (_diagnosticResults!['cloudflareTest'] != null)
                       ..._buildCloudflareTestResults(_diagnosticResults!['cloudflareTest']),
                     
                     const Divider(),
                     _buildDiagnosticSection(l10n.systemInfo),
-                    _buildDiagnosticItem('OS', _diagnosticResults!['platform']),
-                    _buildDiagnosticItem('Version', _diagnosticResults!['platformVersion']),
+                    _buildDiagnosticItem(l10n.os, _diagnosticResults!['platform']),
+                    _buildDiagnosticItem(l10n.version, _diagnosticResults!['platformVersion']),
                   ],
                 ),
               ),
@@ -286,7 +286,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(l10n.disconnect), // 使用"断开"作为关闭
+            child: Text(l10n.close),
           ),
         ],
       ],
@@ -376,7 +376,7 @@ class _DiagnosticDialogState extends State<_DiagnosticDialog> {
         widgets.add(
           _buildDiagnosticItem(
             'IP: $ip',
-            isOk ? '${l10n.latency}: $latency' : result['error'] ?? 'Failed',
+            isOk ? '${l10n.latency}: $latency' : result['error'] ?? l10n.failed,
             success: isOk,
           ),
         );

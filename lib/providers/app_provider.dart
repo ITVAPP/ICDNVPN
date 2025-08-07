@@ -13,10 +13,14 @@ import '../services/v2ray_service.dart';
 import '../services/proxy_service.dart';
 import '../services/cloudflare_test_service.dart';
 import '../services/version_service.dart';  // 导入版本服务，使用其中的VersionInfo类
+import '../utils/log_service.dart';  // 导入日志服务
 import '../app_config.dart';
 
 // ===== 连接状态管理（原 connection_provider.dart） =====
 class ConnectionProvider with ChangeNotifier {
+  static const String _logTag = 'ConnectionProvider';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   bool _isConnected = false;
   ServerModel? _currentServer;
   final String _storageKey = 'current_server';
@@ -44,7 +48,7 @@ class ConnectionProvider with ChangeNotifier {
     // 如果还在连接状态，断开连接
     if (_isConnected) {
       disconnect().catchError((e) {
-        print('dispose时断开连接失败: $e');
+        _log.error('dispose时断开连接失败', tag: _logTag, error: e);
       });
     }
     super.dispose();
@@ -55,13 +59,13 @@ class ConnectionProvider with ChangeNotifier {
     if (_isDisposed) return;
     
     if (_isConnected) {
-      print('V2Ray process exited unexpectedly, updating connection status...');
+      _log.warn('V2Ray process exited unexpectedly, updating connection status...', tag: _logTag);
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
       _disconnectReason = 'unexpected_exit'; // 设置断开原因
       // 清理系统代理设置
       ProxyService.disableSystemProxy().catchError((e) {
-        print('Error disabling system proxy after process exit: $e');
+        _log.error('Error disabling system proxy after process exit', tag: _logTag, error: e);
       });
       if (!_isDisposed) {
         notifyListeners();
@@ -169,16 +173,16 @@ class ConnectionProvider with ChangeNotifier {
     if (_currentServer != null && availableServers.any((s) => s.id == _currentServer!.id)) {
       // 如果用户手动选择了服务器，且该服务器仍然存在，优先使用
       serverToConnect = _currentServer;
-      print('使用用户选择的服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)');
+      await _log.info('使用用户选择的服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)', tag: _logTag);
     } else if (availableServers.length == 1) {
       // 如果只有一个服务器，直接使用
       serverToConnect = availableServers.first;
-      print('使用唯一可用服务器: ${serverToConnect.name} (${serverToConnect.ping}ms)');
+      await _log.info('使用唯一可用服务器: ${serverToConnect.name} (${serverToConnect.ping}ms)', tag: _logTag);
     } else if (availableServers.length > 1) {
       // 如果有多个服务器，自动选择最优
       serverToConnect = _getBestServer(availableServers);
       if (serverToConnect != null) {
-        print('自动选择最优服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)');
+        await _log.info('自动选择最优服务器: ${serverToConnect!.name} (${serverToConnect.ping}ms)', tag: _logTag);
         // 更新当前服务器显示，但不保存（临时选择）
         _currentServer = serverToConnect;
         if (!_isDisposed) {
@@ -212,7 +216,7 @@ class ConnectionProvider with ChangeNotifier {
           throw Exception('Failed to start V2Ray service');
         }
       } catch (e) {
-        print('Connection failed: $e');
+        await _log.error('Connection failed', tag: _logTag, error: e);
         // 确保状态一致性
         _isConnected = false;
         if (!_isDisposed) {
@@ -221,7 +225,7 @@ class ConnectionProvider with ChangeNotifier {
         rethrow;
       }
     } else {
-      print('没有可用的服务器');
+      await _log.error('没有可用的服务器', tag: _logTag);
       throw Exception('No available server');
     }
   }
@@ -238,7 +242,7 @@ class ConnectionProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      print('Error during disconnect: $e');
+      await _log.error('Error during disconnect', tag: _logTag, error: e);
       // 即使出错也要更新状态
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
@@ -260,6 +264,9 @@ class ConnectionProvider with ChangeNotifier {
 
 // ===== 服务器管理（原 server_provider.dart） =====
 class ServerProvider with ChangeNotifier {
+  static const String _logTag = 'ServerProvider';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   List<ServerModel> _servers = [];
   final String _storageKey = 'servers';
   bool _isInitializing = false;
@@ -289,16 +296,16 @@ class ServerProvider with ChangeNotifier {
         
         // 如果没有服务器，自动获取
         if (_servers.isEmpty) {
-          print('服务器列表为空，自动获取节点');
+          await _log.info('服务器列表为空，自动获取节点', tag: _logTag);
           // 不要在这里设置 _isInitializing，让 refreshFromCloudflare 自己管理
           await refreshFromCloudflare();
         } else {
-          print('已加载 ${_servers.length} 个服务器');
+          await _log.info('已加载 ${_servers.length} 个服务器', tag: _logTag);
         }
         
         notifyListeners();
       } catch (e) {
-        print('加载服务器列表失败: $e');
+        await _log.error('加载服务器列表失败', tag: _logTag, error: e);
         // 清空损坏的数据，重新初始化
         _servers.clear();
         // 不要在这里设置 _isInitializing
@@ -306,7 +313,7 @@ class ServerProvider with ChangeNotifier {
       }
     } else {
       // 首次运行，自动获取节点
-      print('首次运行，开始获取节点');
+      await _log.info('首次运行，开始获取节点', tag: _logTag);
       // 不要在这里设置 _isInitializing
       await refreshFromCloudflare();
     }
@@ -316,7 +323,7 @@ class ServerProvider with ChangeNotifier {
   Future<void> refreshFromCloudflare() async {
     // 防止重复调用 - 使用独立的标志
     if (_isRefreshing) {
-      print('已经在获取节点中，忽略重复调用');
+      await _log.warn('已经在获取节点中，忽略重复调用', tag: _logTag);
       return;
     }
     
@@ -332,7 +339,7 @@ class ServerProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      print('开始从Cloudflare获取节点');
+      await _log.info('开始从Cloudflare获取节点', tag: _logTag);
       
       // 创建 StreamController
       final controller = StreamController<TestProgress>();
@@ -386,10 +393,10 @@ class ServerProvider with ChangeNotifier {
       // 成功消息主要用于日志，保持中文即可
       _initMessage = '';  // 成功时清空消息
       _progress = 1.0;
-      print('成功获取 ${_servers.length} 个节点');
+      await _log.info('成功获取 ${_servers.length} 个节点', tag: _logTag);
       
     } catch (e) {
-      print('获取节点失败: $e');
+      await _log.error('获取节点失败', tag: _logTag, error: e);
       _initMessage = 'failed';  // 使用标记表示失败，UI层会显示国际化文字
       _progress = 0.0;
       // 清空服务器列表

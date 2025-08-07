@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// UI相关的工具类，包含通用的UI辅助方法
 class UIUtils {
@@ -288,104 +289,372 @@ class UIUtils {
   
   // ===== 地理位置工具（从 location_utils.dart 合并） =====
   
-  // 国家代码到国家信息的映射
-  static final Map<String, Map<String, String>> _locationMapping = {
+  // 国家代码到emoji标志的映射（保留用于显示emoji）
+  static final Map<String, String> _countryFlags = {
     // 亚洲
-    'CN': {'country': '中国', 'flag': '🇨🇳', 'continent': '亚洲'},
-    'HK': {'country': '香港', 'flag': '🇭🇰', 'continent': '亚洲'},
-    'TW': {'country': '台湾', 'flag': '🇹🇼', 'continent': '亚洲'},
-    'SG': {'country': '新加坡', 'flag': '🇸🇬', 'continent': '亚洲'},
-    'JP': {'country': '日本', 'flag': '🇯🇵', 'continent': '亚洲'},
-    'KR': {'country': '韩国', 'flag': '🇰🇷', 'continent': '亚洲'},
-    'TH': {'country': '泰国', 'flag': '🇹🇭', 'continent': '亚洲'},
-    'MY': {'country': '马来西亚', 'flag': '🇲🇾', 'continent': '亚洲'},
-    'PH': {'country': '菲律宾', 'flag': '🇵🇭', 'continent': '亚洲'},
-    'ID': {'country': '印度尼西亚', 'flag': '🇮🇩', 'continent': '亚洲'},
-    'IN': {'country': '印度', 'flag': '🇮🇳', 'continent': '亚洲'},
-    'AE': {'country': '阿联酋', 'flag': '🇦🇪', 'continent': '亚洲'},
-    'VN': {'country': '越南', 'flag': '🇻🇳', 'continent': '亚洲'},
-    'TR': {'country': '土耳其', 'flag': '🇹🇷', 'continent': '亚洲'},
-    'IL': {'country': '以色列', 'flag': '🇮🇱', 'continent': '亚洲'},
+    'CN': '🇨🇳',
+    'HK': '🇭🇰',
+    'TW': '🇹🇼',
+    'SG': '🇸🇬',
+    'JP': '🇯🇵',
+    'KR': '🇰🇷',
+    'TH': '🇹🇭',
+    'MY': '🇲🇾',
+    'PH': '🇵🇭',
+    'ID': '🇮🇩',
+    'IN': '🇮🇳',
+    'AE': '🇦🇪',
+    'VN': '🇻🇳',
+    'TR': '🇹🇷',
+    'IL': '🇮🇱',
     
     // 北美洲
-    'US': {'country': '美国', 'flag': '🇺🇸', 'continent': '北美洲'},
-    'CA': {'country': '加拿大', 'flag': '🇨🇦', 'continent': '北美洲'},
-    'MX': {'country': '墨西哥', 'flag': '🇲🇽', 'continent': '北美洲'},
+    'US': '🇺🇸',
+    'CA': '🇨🇦',
+    'MX': '🇲🇽',
     
     // 欧洲
-    'GB': {'country': '英国', 'flag': '🇬🇧', 'continent': '欧洲'},
-    'FR': {'country': '法国', 'flag': '🇫🇷', 'continent': '欧洲'},
-    'DE': {'country': '德国', 'flag': '🇩🇪', 'continent': '欧洲'},
-    'NL': {'country': '荷兰', 'flag': '🇳🇱', 'continent': '欧洲'},
-    'ES': {'country': '西班牙', 'flag': '🇪🇸', 'continent': '欧洲'},
-    'IT': {'country': '意大利', 'flag': '🇮🇹', 'continent': '欧洲'},
-    'CH': {'country': '瑞士', 'flag': '🇨🇭', 'continent': '欧洲'},
-    'AT': {'country': '奥地利', 'flag': '🇦🇹', 'continent': '欧洲'},
-    'SE': {'country': '瑞典', 'flag': '🇸🇪', 'continent': '欧洲'},
-    'DK': {'country': '丹麦', 'flag': '🇩🇰', 'continent': '欧洲'},
-    'PL': {'country': '波兰', 'flag': '🇵🇱', 'continent': '欧洲'},
-    'RU': {'country': '俄罗斯', 'flag': '🇷🇺', 'continent': '欧洲'},
-    'BE': {'country': '比利时', 'flag': '🇧🇪', 'continent': '欧洲'},
-    'CZ': {'country': '捷克', 'flag': '🇨🇿', 'continent': '欧洲'},
-    'FI': {'country': '芬兰', 'flag': '🇫🇮', 'continent': '欧洲'},
-    'IE': {'country': '爱尔兰', 'flag': '🇮🇪', 'continent': '欧洲'},
-    'NO': {'country': '挪威', 'flag': '🇳🇴', 'continent': '欧洲'},
-    'PT': {'country': '葡萄牙', 'flag': '🇵🇹', 'continent': '欧洲'},
-    'GR': {'country': '希腊', 'flag': '🇬🇷', 'continent': '欧洲'},
-    'RO': {'country': '罗马尼亚', 'flag': '🇷🇴', 'continent': '欧洲'},
-    'UA': {'country': '乌克兰', 'flag': '🇺🇦', 'continent': '欧洲'},
+    'GB': '🇬🇧',
+    'FR': '🇫🇷',
+    'DE': '🇩🇪',
+    'NL': '🇳🇱',
+    'ES': '🇪🇸',
+    'IT': '🇮🇹',
+    'CH': '🇨🇭',
+    'AT': '🇦🇹',
+    'SE': '🇸🇪',
+    'DK': '🇩🇰',
+    'PL': '🇵🇱',
+    'RU': '🇷🇺',
+    'BE': '🇧🇪',
+    'CZ': '🇨🇿',
+    'FI': '🇫🇮',
+    'IE': '🇮🇪',
+    'NO': '🇳🇴',
+    'PT': '🇵🇹',
+    'GR': '🇬🇷',
+    'RO': '🇷🇴',
+    'UA': '🇺🇦',
     
     // 大洋洲
-    'AU': {'country': '澳大利亚', 'flag': '🇦🇺', 'continent': '大洋洲'},
-    'NZ': {'country': '新西兰', 'flag': '🇳🇿', 'continent': '大洋洲'},
+    'AU': '🇦🇺',
+    'NZ': '🇳🇿',
     
     // 南美洲
-    'BR': {'country': '巴西', 'flag': '🇧🇷', 'continent': '南美洲'},
-    'AR': {'country': '阿根廷', 'flag': '🇦🇷', 'continent': '南美洲'},
-    'CL': {'country': '智利', 'flag': '🇨🇱', 'continent': '南美洲'},
-    'PE': {'country': '秘鲁', 'flag': '🇵🇪', 'continent': '南美洲'},
-    'CO': {'country': '哥伦比亚', 'flag': '🇨🇴', 'continent': '南美洲'},
-    'VE': {'country': '委内瑞拉', 'flag': '🇻🇪', 'continent': '南美洲'},
-    'UY': {'country': '乌拉圭', 'flag': '🇺🇾', 'continent': '南美洲'},
+    'BR': '🇧🇷',
+    'AR': '🇦🇷',
+    'CL': '🇨🇱',
+    'PE': '🇵🇪',
+    'CO': '🇨🇴',
+    'VE': '🇻🇪',
+    'UY': '🇺🇾',
     
     // 非洲
-    'ZA': {'country': '南非', 'flag': '🇿🇦', 'continent': '非洲'},
-    'EG': {'country': '埃及', 'flag': '🇪🇬', 'continent': '非洲'},
-    'NG': {'country': '尼日利亚', 'flag': '🇳🇬', 'continent': '非洲'},
-    'KE': {'country': '肯尼亚', 'flag': '🇰🇪', 'continent': '非洲'},
-    'MA': {'country': '摩洛哥', 'flag': '🇲🇦', 'continent': '非洲'},
-    'TN': {'country': '突尼斯', 'flag': '🇹🇳', 'continent': '非洲'},
-    'ET': {'country': '埃塞俄比亚', 'flag': '🇪🇹', 'continent': '非洲'},
+    'ZA': '🇿🇦',
+    'EG': '🇪🇬',
+    'NG': '🇳🇬',
+    'KE': '🇰🇪',
+    'MA': '🇲🇦',
+    'TN': '🇹🇳',
+    'ET': '🇪🇹',
   };
   
-  // 获取位置信息
-  static Map<String, String> getLocationInfo(String code) {
-    // 将代码转换为大写
+  // 国家代码到大洲的映射
+  static final Map<String, String> _countryToContinent = {
+    // 亚洲
+    'CN': 'Asia',
+    'HK': 'Asia',
+    'TW': 'Asia',
+    'SG': 'Asia',
+    'JP': 'Asia',
+    'KR': 'Asia',
+    'TH': 'Asia',
+    'MY': 'Asia',
+    'PH': 'Asia',
+    'ID': 'Asia',
+    'IN': 'Asia',
+    'AE': 'Asia',
+    'VN': 'Asia',
+    'TR': 'Asia',
+    'IL': 'Asia',
+    
+    // 北美洲
+    'US': 'NorthAmerica',
+    'CA': 'NorthAmerica',
+    'MX': 'NorthAmerica',
+    
+    // 欧洲
+    'GB': 'Europe',
+    'FR': 'Europe',
+    'DE': 'Europe',
+    'NL': 'Europe',
+    'ES': 'Europe',
+    'IT': 'Europe',
+    'CH': 'Europe',
+    'AT': 'Europe',
+    'SE': 'Europe',
+    'DK': 'Europe',
+    'PL': 'Europe',
+    'RU': 'Europe',
+    'BE': 'Europe',
+    'CZ': 'Europe',
+    'FI': 'Europe',
+    'IE': 'Europe',
+    'NO': 'Europe',
+    'PT': 'Europe',
+    'GR': 'Europe',
+    'RO': 'Europe',
+    'UA': 'Europe',
+    
+    // 大洋洲
+    'AU': 'Oceania',
+    'NZ': 'Oceania',
+    
+    // 南美洲
+    'BR': 'SouthAmerica',
+    'AR': 'SouthAmerica',
+    'CL': 'SouthAmerica',
+    'PE': 'SouthAmerica',
+    'CO': 'SouthAmerica',
+    'VE': 'SouthAmerica',
+    'UY': 'SouthAmerica',
+    
+    // 非洲
+    'ZA': 'Africa',
+    'EG': 'Africa',
+    'NG': 'Africa',
+    'KE': 'Africa',
+    'MA': 'Africa',
+    'TN': 'Africa',
+    'ET': 'Africa',
+  };
+  
+  // 默认的英文国家名称映射（用于向后兼容）
+  static final Map<String, String> _defaultCountryNames = {
+    // 亚洲
+    'CN': 'China',
+    'HK': 'Hong Kong',
+    'TW': 'Taiwan',
+    'SG': 'Singapore',
+    'JP': 'Japan',
+    'KR': 'South Korea',
+    'TH': 'Thailand',
+    'MY': 'Malaysia',
+    'PH': 'Philippines',
+    'ID': 'Indonesia',
+    'IN': 'India',
+    'AE': 'UAE',
+    'VN': 'Vietnam',
+    'TR': 'Turkey',
+    'IL': 'Israel',
+    
+    // 北美洲
+    'US': 'United States',
+    'CA': 'Canada',
+    'MX': 'Mexico',
+    
+    // 欧洲
+    'GB': 'United Kingdom',
+    'FR': 'France',
+    'DE': 'Germany',
+    'NL': 'Netherlands',
+    'ES': 'Spain',
+    'IT': 'Italy',
+    'CH': 'Switzerland',
+    'AT': 'Austria',
+    'SE': 'Sweden',
+    'DK': 'Denmark',
+    'PL': 'Poland',
+    'RU': 'Russia',
+    'BE': 'Belgium',
+    'CZ': 'Czechia',
+    'FI': 'Finland',
+    'IE': 'Ireland',
+    'NO': 'Norway',
+    'PT': 'Portugal',
+    'GR': 'Greece',
+    'RO': 'Romania',
+    'UA': 'Ukraine',
+    
+    // 大洋洲
+    'AU': 'Australia',
+    'NZ': 'New Zealand',
+    
+    // 南美洲
+    'BR': 'Brazil',
+    'AR': 'Argentina',
+    'CL': 'Chile',
+    'PE': 'Peru',
+    'CO': 'Colombia',
+    'VE': 'Venezuela',
+    'UY': 'Uruguay',
+    
+    // 非洲
+    'ZA': 'South Africa',
+    'EG': 'Egypt',
+    'NG': 'Nigeria',
+    'KE': 'Kenya',
+    'MA': 'Morocco',
+    'TN': 'Tunisia',
+    'ET': 'Ethiopia',
+  };
+  
+  // 默认的英文大洲名称（用于向后兼容）
+  static final Map<String, String> _defaultContinentNames = {
+    'Asia': 'Asia',
+    'NorthAmerica': 'North America',
+    'Europe': 'Europe',
+    'Oceania': 'Oceania',
+    'SouthAmerica': 'South America',
+    'Africa': 'Africa',
+    'Unknown': 'Unknown',
+  };
+  
+  // 获取本地化的国家名称
+  static String getLocalizedCountryName(BuildContext context, String code) {
+    final l10n = AppLocalizations.of(context);
     final upperCode = code.toUpperCase();
     
-    // 如果找到对应的映射，返回映射信息
-    if (_locationMapping.containsKey(upperCode)) {
-      return _locationMapping[upperCode]!;
+    // 根据国家代码返回本地化的名称
+    switch (upperCode) {
+      // 亚洲
+      case 'CN': return l10n.countryChina;
+      case 'HK': return l10n.countryHongKong;
+      case 'TW': return l10n.countryTaiwan;
+      case 'SG': return l10n.countrySingapore;
+      case 'JP': return l10n.countryJapan;
+      case 'KR': return l10n.countrySouthKorea;
+      case 'TH': return l10n.countryThailand;
+      case 'MY': return l10n.countryMalaysia;
+      case 'PH': return l10n.countryPhilippines;
+      case 'ID': return l10n.countryIndonesia;
+      case 'IN': return l10n.countryIndia;
+      case 'AE': return l10n.countryUAE;
+      case 'VN': return l10n.countryVietnam;
+      case 'TR': return l10n.countryTurkey;
+      case 'IL': return l10n.countryIsrael;
+      
+      // 北美洲
+      case 'US': return l10n.countryUSA;
+      case 'CA': return l10n.countryCanada;
+      case 'MX': return l10n.countryMexico;
+      
+      // 欧洲
+      case 'GB': return l10n.countryUK;
+      case 'FR': return l10n.countryFrance;
+      case 'DE': return l10n.countryGermany;
+      case 'NL': return l10n.countryNetherlands;
+      case 'ES': return l10n.countrySpain;
+      case 'IT': return l10n.countryItaly;
+      case 'CH': return l10n.countrySwitzerland;
+      case 'AT': return l10n.countryAustria;
+      case 'SE': return l10n.countrySweden;
+      case 'DK': return l10n.countryDenmark;
+      case 'PL': return l10n.countryPoland;
+      case 'RU': return l10n.countryRussia;
+      case 'BE': return l10n.countryBelgium;
+      case 'CZ': return l10n.countryCzechia;
+      case 'FI': return l10n.countryFinland;
+      case 'IE': return l10n.countryIreland;
+      case 'NO': return l10n.countryNorway;
+      case 'PT': return l10n.countryPortugal;
+      case 'GR': return l10n.countryGreece;
+      case 'RO': return l10n.countryRomania;
+      case 'UA': return l10n.countryUkraine;
+      
+      // 大洋洲
+      case 'AU': return l10n.countryAustralia;
+      case 'NZ': return l10n.countryNewZealand;
+      
+      // 南美洲
+      case 'BR': return l10n.countryBrazil;
+      case 'AR': return l10n.countryArgentina;
+      case 'CL': return l10n.countryChile;
+      case 'PE': return l10n.countryPeru;
+      case 'CO': return l10n.countryColombia;
+      case 'VE': return l10n.countryVenezuela;
+      case 'UY': return l10n.countryUruguay;
+      
+      // 非洲
+      case 'ZA': return l10n.countrySouthAfrica;
+      case 'EG': return l10n.countryEgypt;
+      case 'NG': return l10n.countryNigeria;
+      case 'KE': return l10n.countryKenya;
+      case 'MA': return l10n.countryMorocco;
+      case 'TN': return l10n.countryTunisia;
+      case 'ET': return l10n.countryEthiopia;
+      
+      default: return code; // 如果没有找到，返回原始代码
     }
+  }
+  
+  // 获取本地化的大洲名称
+  static String getLocalizedContinentName(BuildContext context, String continent) {
+    final l10n = AppLocalizations.of(context);
     
-    // 如果没有找到，返回默认值
+    switch (continent) {
+      case 'Asia': return l10n.continentAsia;
+      case 'NorthAmerica': return l10n.continentNorthAmerica;
+      case 'Europe': return l10n.continentEurope;
+      case 'Oceania': return l10n.continentOceania;
+      case 'SouthAmerica': return l10n.continentSouthAmerica;
+      case 'Africa': return l10n.continentAfrica;
+      default: return l10n.continentUnknown;
+    }
+  }
+  
+  // 获取位置信息（保持向后兼容的版本，不需要context）
+  static Map<String, String> getLocationInfo(String code) {
+    final upperCode = code.toUpperCase();
+    
+    // 获取默认的英文国家名称
+    final countryName = _defaultCountryNames[upperCode] ?? code;
+    
+    // 获取emoji标志
+    final flag = _countryFlags[upperCode] ?? '🌐';
+    
+    // 获取大洲
+    final continentCode = _countryToContinent[upperCode] ?? 'Unknown';
+    final continentName = _defaultContinentNames[continentCode] ?? 'Unknown';
+    
     return {
-      'country': code,
-      'flag': '🌐',
-      'continent': '未知',
+      'country': countryName,
+      'flag': flag,
+      'continent': continentName,
+    };
+  }
+  
+  // 获取位置信息（使用国际化的新版本）
+  static Map<String, String> getLocalizedLocationInfo(String code, BuildContext context) {
+    final upperCode = code.toUpperCase();
+    
+    // 获取本地化的国家名称
+    final countryName = getLocalizedCountryName(context, upperCode);
+    
+    // 获取emoji标志
+    final flag = _countryFlags[upperCode] ?? '🌐';
+    
+    // 获取大洲
+    final continentCode = _countryToContinent[upperCode] ?? 'Unknown';
+    final continentName = getLocalizedContinentName(context, continentCode);
+    
+    return {
+      'country': countryName,
+      'flag': flag,
+      'continent': continentName,
     };
   }
   
   // 获取所有支持的国家代码
   static List<String> getAllLocationCodes() {
-    return _locationMapping.keys.toList()..sort();
+    return _countryFlags.keys.toList()..sort();
   }
   
-  // 根据国家获取国家代码列表
+  // 根据国家获取国家代码列表（向后兼容版本）
   static List<String> getCodesByCountry(String country) {
     final codes = <String>[];
-    _locationMapping.forEach((code, info) {
-      if (info['country'] == country) {
+    _defaultCountryNames.forEach((code, name) {
+      if (name == country) {
         codes.add(code);
       }
     });
@@ -395,23 +664,28 @@ class UIUtils {
   // 根据大洲获取国家代码列表
   static List<String> getCodesByContinent(String continent) {
     final codes = <String>[];
-    _locationMapping.forEach((code, info) {
-      if (info['continent'] == continent) {
+    _countryToContinent.forEach((code, cont) {
+      if (cont == continent) {
         codes.add(code);
       }
     });
     return codes;
   }
   
-  // 获取国家名称（用于显示）
+  // 获取国家名称（向后兼容版本，不需要context）
   static String getCountryName(String code) {
-    final info = getLocationInfo(code);
-    return info['country'] ?? code;
+    final upperCode = code.toUpperCase();
+    return _defaultCountryNames[upperCode] ?? code;
+  }
+  
+  // 获取国家名称（新版本，需要context）
+  static String getLocalizedCountryName2(String code, BuildContext context) {
+    return getLocalizedCountryName(context, code);
   }
   
   // 获取国家旗帜emoji
   static String getCountryFlag(String code) {
-    final info = getLocationInfo(code);
-    return info['flag'] ?? '🌐';
+    final upperCode = code.toUpperCase();
+    return _countryFlags[upperCode] ?? '🌐';
   }
 }

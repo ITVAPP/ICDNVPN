@@ -454,14 +454,17 @@ class V2RayService {
           }
           
           // 启动V2Ray
+          // 注意：这里的通知文本是发送给原生Android/iOS代码的，
+          // 需要在原生代码中实现国际化，或者传递语言代码让原生代码处理
+          // 为了兼容性，使用英文作为通用默认值
           await _methodChannel.invokeMethod('startV2Ray', {
-            "remark": "代理服务器",
+            "remark": "Proxy Server", // 使用英文作为通用标识
             "config": jsonEncode(configMap),
             "blocked_apps": null,
             "bypass_subnets": null,
             "proxy_only": false,
-            "notificationDisconnectButtonName": "断开",
-            "notificationTitle": "V2Ray运行中",
+            "notificationDisconnectButtonName": "Disconnect", // 使用英文
+            "notificationTitle": "V2Ray Running", // 使用英文
           });
         } catch (e) {
           await _log.error('启动V2Ray失败: $e', tag: _logTag);

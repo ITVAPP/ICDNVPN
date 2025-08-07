@@ -1205,13 +1205,15 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
     
     // 显示成功消息
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${l10n.serverAdded} ${servers.length} 个')),
+      SnackBar(content: Text(l10n.nodesAddedFormat(servers.length))),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);  // 添加 theme 获取
+    final isDark = theme.brightness == Brightness.dark;  // 添加深色主题判断
     
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1227,16 +1229,24 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
               CircularProgressIndicator(
                 value: _currentProgress?.progress,
                 strokeWidth: 4,
+                backgroundColor: isDark  // 添加背景圆环
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.1),
                 valueColor: AlwaysStoppedAnimation<Color>(
                   _currentProgress?.hasError == true
                       ? Colors.red
-                      : Theme.of(context).primaryColor,
+                      : isDark  // 深色主题使用白色
+                          ? Colors.white
+                          : theme.primaryColor,
                 ),
               ),
               if (_currentProgress != null)
                 Text(
                   '${_currentProgress!.percentage}%',
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white : null,  // 深色主题文字使用白色
+                  ),
                 ),
             ],
           ),
@@ -1262,7 +1272,7 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
               fontSize: 14,
               color: _currentProgress?.hasError == true
                   ? Colors.red
-                  : Theme.of(context).textTheme.bodySmall?.color,
+                  : theme.textTheme.bodySmall?.color,
             ),
             textAlign: TextAlign.center,
           ),
@@ -1275,6 +1285,12 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
               child: LinearProgressIndicator(
                 value: _currentProgress!.subProgress,
                 minHeight: 2,
+                backgroundColor: isDark  // 添加背景
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  isDark ? Colors.white : theme.primaryColor,  // 深色主题使用白色
+                ),
               ),
             ),
           ),

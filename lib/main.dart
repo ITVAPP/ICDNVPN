@@ -20,6 +20,7 @@ import 'services/v2ray_service.dart';
 import 'services/proxy_service.dart';
 import 'services/ad_service.dart';
 import 'services/version_service.dart';  // 新增：引入版本服务
+import 'utils/log_service.dart';  // 新增：引入日志服务
 import 'l10n/app_localizations.dart';
 import 'app_config.dart';
 
@@ -269,6 +270,9 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, WindowListener {
+  static const String _logTag = 'MainScreen';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   int _currentIndex = 0;
   late AnimationController _fabAnimController;
   late Animation<double> _fabAnimation;
@@ -379,7 +383,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         await ProxyService.disableSystemProxy();
         
       } catch (e) {
-        print('清理资源时出错: $e');
+        await _log.error('清理资源时出错', tag: _logTag, error: e);
       } finally {
         // 销毁窗口并退出应用
         await windowManager.destroy();
@@ -407,11 +411,11 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         }
       }
     } catch (e) {
-      print('版本检查失败: $e');
+      await _log.error('版本检查失败', tag: _logTag, error: e);
     }
   }
   
-  // 修改：优化更新对话框，支持多平台 - 使用AppConfig
+  // 修改：优化更新对话框，支持多平台 - 使用AppConfig和国际化
   void _showUpdateDialog(VersionInfo versionInfo, bool isForceUpdate) {
     final l10n = AppLocalizations.of(context);
     
@@ -425,7 +429,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
             children: [
               const Icon(Icons.system_update, color: Colors.blue),
               const SizedBox(width: 8),
-              Text(isForceUpdate ? '重要更新' : '发现新版本'),
+              Text(isForceUpdate ? l10n.importantUpdate : l10n.newVersionFound),
             ],
           ),
           content: Column(
@@ -433,7 +437,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '版本 ${versionInfo.version}',
+                l10n.versionFormat(versionInfo.version),
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -448,21 +452,21 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.orange),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.warning, color: Colors.orange, size: 20),
-                      SizedBox(width: 8),
+                      const Icon(Icons.warning, color: Colors.orange, size: 20),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '此版本包含重要更新，需要立即升级',
-                          style: TextStyle(color: Colors.orange),
+                          l10n.forceUpdateNotice,
+                          style: const TextStyle(color: Colors.orange),
                         ),
                       ),
                     ],
                   ),
                 ),
               const SizedBox(height: 12),
-              const Text('更新内容：', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(l10n.updateContent, style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(versionInfo.updateContent),
             ],
@@ -475,7 +479,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                   // 记录提示时间
                   await VersionService().recordUpdatePrompt();
                 },
-                child: const Text('稍后提醒'),
+                child: Text(l10n.remindLater),
               ),
             // 根据平台显示不同的更新按钮
             _buildUpdateButton(versionInfo, isForceUpdate),
@@ -485,8 +489,10 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
   }
   
-  // 新增：构建平台特定的更新按钮 - 使用AppConfig
+  // 新增：构建平台特定的更新按钮 - 使用AppConfig和国际化
   Widget _buildUpdateButton(VersionInfo versionInfo, bool isForceUpdate) {
+    final l10n = AppLocalizations.of(context);
+    
     // Android平台 - 下载APK
     if (Platform.isAndroid) {
       return Consumer<DownloadProvider>(
@@ -535,7 +541,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                     await launchUrl(intentUri);
                     launched = true;
                   } catch (e) {
-                    print('Intent方式启动失败: $e');
+                    await _log.error('Intent方式启动失败', tag: _logTag, error: e);
                   }
                 }
                 
@@ -545,7 +551,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                     launched = true;
                   } catch (e) {
-                    print('File协议启动失败: $e');
+                    await _log.error('File协议启动失败', tag: _logTag, error: e);
                   }
                 }
                 
@@ -553,16 +559,16 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                 if (!launched && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('请手动安装APK文件：\n$filePath'),
+                      content: Text(l10n.manualInstallFormat(filePath)),
                       duration: const Duration(seconds: 10),
                       action: SnackBarAction(
-                        label: '复制路径',
+                        label: l10n.copyPath,
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: filePath));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('路径已复制到剪贴板'),
-                              duration: Duration(seconds: 2),
+                            SnackBar(
+                              content: Text(l10n.pathCopied),
+                              duration: const Duration(seconds: 2),
                             ),
                           );
                         },
@@ -576,16 +582,16 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                   final shouldOpenBrowser = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
-                      title: const Text('下载失败'),
-                      content: Text('下载失败: ${provider.error ?? "未知错误"}\n\n是否打开浏览器下载？'),
+                      title: Text(l10n.downloadFailed),
+                      content: Text(l10n.downloadFailedFormat(provider.error ?? l10n.unknownError)),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
-                          child: const Text('取消'),
+                          child: Text(l10n.cancel),
                         ),
                         ElevatedButton(
                           onPressed: () => Navigator.pop(context, true),
-                          child: const Text('打开浏览器'),
+                          child: Text(l10n.openBrowser),
                         ),
                       ],
                     ),
@@ -600,7 +606,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                 }
               }
             },
-            child: const Text('立即更新'),
+            child: Text(l10n.updateNow),
           );
         },
       );
@@ -631,15 +637,15 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
             if (context.mounted) {
               await Clipboard.setData(ClipboardData(text: downloadUrl));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('下载链接已复制到剪贴板'),
-                  duration: Duration(seconds: 3),
+                SnackBar(
+                  content: Text(l10n.linkCopied),
+                  duration: const Duration(seconds: 3),
                 ),
               );
             }
           }
         },
-        child: const Text('前往App Store'),
+        child: Text(l10n.goToAppStore),
       );
     }
     
@@ -670,15 +676,15 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
             if (context.mounted) {
               await Clipboard.setData(ClipboardData(text: downloadUrl));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('下载链接已复制到剪贴板'),
-                  duration: Duration(seconds: 3),
+                SnackBar(
+                  content: Text(l10n.linkCopied),
+                  duration: const Duration(seconds: 3),
                 ),
               );
             }
           }
         },
-        child: macAppStoreUrl != null ? const Text('前往App Store') : const Text('前往下载'),
+        child: Text(macAppStoreUrl != null ? l10n.goToAppStore : l10n.goToDownload),
       );
     }
     
@@ -695,15 +701,15 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
           if (context.mounted) {
             await Clipboard.setData(ClipboardData(text: downloadUrl));
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('下载链接已复制到剪贴板'),
-                duration: Duration(seconds: 3),
+              SnackBar(
+                content: Text(l10n.linkCopied),
+                duration: const Duration(seconds: 3),
               ),
             );
           }
         }
       },
-      child: const Text('前往下载'),
+      child: Text(l10n.goToDownload),
     );
   }
 
@@ -724,8 +730,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
-
-  // 自定义应用栏（包含窗口控制按钮）- 使用AppConfig
+  
   PreferredSizeWidget? _buildCustomAppBar(BuildContext context, bool isDark) {
     // 移动平台不显示自定义应用栏
     if (kIsWeb || (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS)) {
@@ -911,9 +916,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     );
   }
 
-  // 只包含需要修改的部分
-
-  // 在 _showAddServerDialog 方法中，修改 CloudflareTestDialog 的使用
   Widget _buildQuickAddOptions() {
     final l10n = AppLocalizations.of(context);
     

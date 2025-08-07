@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/app_provider.dart';
 import '../services/autostart_service.dart';
 import '../services/version_service.dart';  // 新增：引入版本服务
+import '../services/ad_service.dart';  // 新增：引入广告服务
+import '../utils/log_service.dart';  // 新增：引入日志服务
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app_config.dart';
@@ -87,7 +89,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('检查更新失败: $e'),
+            content: Text(l10n.checkUpdateFailedError(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -114,7 +116,7 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             const Icon(Icons.system_update, color: Colors.blue),
             const SizedBox(width: 8),
-            Text(isForceUpdate ? '重要更新' : '发现新版本'),
+            Text(isForceUpdate ? l10n.importantUpdate : l10n.newVersionFound),
           ],
         ),
         content: Column(
@@ -122,7 +124,7 @@ class _SettingsPageState extends State<SettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '版本 ${versionInfo.version}',
+              l10n.versionFormat(versionInfo.version),
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -137,21 +139,21 @@ class _SettingsPageState extends State<SettingsPage> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.orange),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.warning, color: Colors.orange, size: 20),
-                    SizedBox(width: 8),
+                    const Icon(Icons.warning, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '此版本包含重要更新，需要立即升级',
-                        style: TextStyle(color: Colors.orange),
+                        l10n.forceUpdateNotice,
+                        style: const TextStyle(color: Colors.orange),
                       ),
                     ),
                   ],
                 ),
               ),
             const SizedBox(height: 12),
-            const Text('更新内容：', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(l10n.updateContent, style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text(versionInfo.updateContent),
           ],
@@ -163,7 +165,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 Navigator.pop(context);
                 await VersionService().recordUpdatePrompt();
               },
-              child: const Text('稍后提醒'),
+              child: Text(l10n.remindLater),
             ),
           ElevatedButton(
             onPressed: () async {
@@ -172,7 +174,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               }
             },
-            child: const Text('前往更新'),
+            child: Text(l10n.goToDownload),
           ),
         ],
       ),
@@ -310,11 +312,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     context: context,
                     builder: (context) => AlertDialog(
                       title: Text(l10n.clearCache),
-                      content: const Text('将清除所有缓存数据，包括服务器列表、设置等。确定要继续吗？'),
+                      content: Text(l10n.clearCacheConfirm),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
-                          child: Text(l10n.disconnect), // 取消
+                          child: Text(l10n.cancel),
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(context, true),
@@ -329,35 +331,133 @@ class _SettingsPageState extends State<SettingsPage> {
                   
                   // 执行清除操作
                   try {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.clear(); // 清除所有存储的数据
-                    
-                    // 重置各个Provider的状态
-                    if (mounted) {
-                      // 重新获取服务器列表
-                      context.read<ServerProvider>().refreshFromCloudflare();
-                      // 重置连接状态
-                      context.read<ConnectionProvider>().setCurrentServer(null);
-                      // 重置主题
-                      context.read<ThemeProvider>().setThemeMode(ThemeMode.system);
-                      // 重置语言
-                      context.read<LocaleProvider>().clearLocale();
+                    // 检查是否正在连接中
+                    final connectionProvider = context.read<ConnectionProvider>();
+                    if (connectionProvider.isConnected) {
+                      // 提示用户将断开连接
+                      final proceedWithDisconnect = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: Text(l10n.tip),
+                          content: Text(l10n.clearCacheDisconnectWarning),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: Text(l10n.cancel),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                              child: Text(l10n.continue_),
+                            ),
+                          ],
+                        ),
+                      ) ?? false;
+                      
+                      if (!proceedWithDisconnect) return;
+                      
+                      // 先断开连接
+                      await connectionProvider.disconnect();
                     }
                     
+                    // 显示进度对话框
+                    if (!mounted) return;
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => AlertDialog(
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(l10n.clearingCache),
+                          ],
+                        ),
+                      ),
+                    );
+                    
+                    // 添加延迟，让进度对话框有时间显示
+                    await Future.delayed(const Duration(milliseconds: 100));
+                    
+                    // 1. 清除所有日志文件
+                    await LogService.instance.clearAllLogs();
+                    
+                    // 2. 清除SharedPreferences
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.clear();
+                    
+                    // 3. 清除广告缓存（如果有）
+                    if (mounted) {
+                      final adService = context.read<AdService>();
+                      // 重新初始化广告服务以清除缓存
+                      await adService.initialize();
+                    }
+                    
+                    // 4. 重置各个Provider的状态
+                    if (mounted) {
+                      // 重置服务器列表（不自动刷新，避免立即网络请求）
+                      final serverProvider = context.read<ServerProvider>();
+                      await serverProvider.clearAllServers();
+                      
+                      // 重置连接状态
+                      context.read<ConnectionProvider>().setCurrentServer(null);
+                      
+                      // 重置主题
+                      context.read<ThemeProvider>().setThemeMode(ThemeMode.system);
+                      
+                      // 重置语言
+                      context.read<LocaleProvider>().clearLocale();
+                      
+                      // 清除版本检查缓存
+                      final versionPrefs = await SharedPreferences.getInstance();
+                      await versionPrefs.remove('last_version_check');
+                      await versionPrefs.remove('last_update_prompt');
+                    }
+                    
+                    // 关闭进度对话框
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                    
+                    // 显示成功提示，包含更详细的信息
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(l10n.cacheCleared),
-                          duration: const Duration(seconds: 2),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(l10n.cacheCleared),
+                              Text(
+                                l10n.cacheDetails,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                          duration: const Duration(seconds: 3),
+                          action: SnackBarAction(
+                            label: l10n.reGetNodes,
+                            onPressed: () {
+                              context.read<ServerProvider>().refreshFromCloudflare();
+                            },
+                          ),
                         ),
                       );
                     }
                   } catch (e) {
+                    // 关闭进度对话框（如果还在显示）
+                    if (mounted) {
+                      // 使用rootNavigator确保关闭正确的对话框
+                      Navigator.of(context, rootNavigator: true).pop();
+                    }
+                    
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('${l10n.operationFailed}: $e'),
                           backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
                         ),
                       );
                     }
@@ -406,7 +506,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const Icon(Icons.new_releases, size: 16, color: Colors.orange),
               const SizedBox(width: 4),
               Text(
-                '新版 ${_latestVersion!.version}',
+                l10n.newVersionFormat(_latestVersion!.version),
                 style: const TextStyle(
                   fontSize: 12,
                   color: Colors.orange,

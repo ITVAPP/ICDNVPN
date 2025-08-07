@@ -6,6 +6,8 @@ import '../models/server_model.dart';
 import '../providers/app_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
+import '../utils/log_service.dart';  // 新增：导入日志服务
+import 'package:url_launcher/url_launcher.dart';  // 新增：导入 url_launcher
 
 class ServersPage extends StatefulWidget {
   const ServersPage({super.key});
@@ -15,6 +17,9 @@ class ServersPage extends StatefulWidget {
 }
 
 class _ServersPageState extends State<ServersPage> {
+  static const String _logTag = 'ServersPage';  // 新增：日志标签
+  static final LogService _log = LogService.instance;  // 新增：日志服务实例
+  
   bool _isAscending = true;
   bool _isTesting = false;
   bool _isSwitching = false; // 添加切换状态标志
@@ -29,22 +34,42 @@ class _ServersPageState extends State<ServersPage> {
     });
   }
 
-  // 新增：检查并显示图片广告
+  // 修改：先预加载图片，成功后再显示广告遮罩
   void _checkAndShowImageAd() async {
     final adService = context.read<AdService>();
     final imageAd = await adService.getImageAdForPageAsync('servers');
     
     if (imageAd != null) {
-      // 延迟显示，等页面完全加载
-      Future.delayed(const Duration(milliseconds: 500), () {
+      final imageUrl = imageAd.content.imageUrl;
+      
+      // 如果没有图片URL，不显示广告
+      if (imageUrl == null || imageUrl.isEmpty) {
+        return;
+      }
+      
+      try {
+        // 先预加载图片
+        if (imageUrl.startsWith('assets/')) {
+          await precacheImage(AssetImage(imageUrl), context);
+        } else {
+          await precacheImage(NetworkImage(imageUrl), context);
+        }
+        
+        // 图片加载成功后，延迟显示（等页面完全加载）
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // 确认组件仍然挂载后再显示广告
         if (mounted) {
           _showImageAdOverlay(imageAd);
         }
-      });
+      } catch (e) {
+        // 图片加载失败，不显示广告（静默处理）
+        debugPrint('广告图片预加载失败: $e');
+      }
     }
   }
 
-  // 新增：显示图片广告遮罩
+  // 显示图片广告遮罩（图片已预加载完成）
   void _showImageAdOverlay(dynamic ad) {
     showDialog(
       context: context,
@@ -103,7 +128,7 @@ class _ServersPageState extends State<ServersPage> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
-            Text('${l10n.testing} ${serverProvider.servers.length} ${l10n.servers.toLowerCase()}...'),
+            Text(l10n.testingServersCount(serverProvider.servers.length)),
             const SizedBox(height: 8),
             const Text(
               'HTTPing 80',
@@ -145,7 +170,7 @@ class _ServersPageState extends State<ServersPage> {
       Navigator.of(context).pop();
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${l10n.testCompleted}，${l10n.refresh} $updatedCount ${l10n.servers.toLowerCase()}')),
+        SnackBar(content: Text(l10n.testCompletedCount(updatedCount))),
       );
     } catch (e) {
       if (!mounted) return;
@@ -413,7 +438,7 @@ class _ServersPageState extends State<ServersPage> {
                 final isConnected = connectionProvider.isConnected && isSelected;
                 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),  // 修改：从 4 改为 8
+                  padding: const EdgeInsets.symmetric(vertical: 6),  // 修改：从 8 改为 6
                   child: ServerListItem(
                     server: server,
                     isSelected: isSelected,
@@ -434,16 +459,16 @@ class _ServersPageState extends State<ServersPage> {
                         final confirmed = await showDialog<bool>(
                           context: context,
                           builder: (context) => AlertDialog(
-                            title: const Text('切换节点'),
-                            content: Text('是否切换到 ${server.name}？\n当前连接将会断开并重新连接。'),
+                            title: Text(l10n.switchNode),
+                            content: Text(l10n.switchToNodeConfirm(server.name) + '\n' + l10n.switchNodeDesc),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(context, false),
-                                child: const Text('取消'),
+                                child: Text(l10n.cancel),
                               ),
                               TextButton(
                                 onPressed: () => Navigator.pop(context, true),
-                                child: const Text('切换'),
+                                child: Text(l10n.switching),
                               ),
                             ],
                           ),
@@ -461,13 +486,13 @@ class _ServersPageState extends State<ServersPage> {
                         showDialog(
                           context: context,
                           barrierDismissible: false,
-                          builder: (context) => const AlertDialog(
+                          builder: (context) => AlertDialog(
                             content: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                CircularProgressIndicator(),
-                                SizedBox(height: 16),
-                                Text('正在切换节点...'),
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 16),
+                                Text(l10n.switchingNode),
                               ],
                             ),
                           ),
@@ -490,7 +515,7 @@ class _ServersPageState extends State<ServersPage> {
                           
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('已切换到 ${server.name}'),
+                              content: Text(l10n.switchedTo(server.name)),
                               backgroundColor: Colors.green,
                             ),
                           );
@@ -502,7 +527,7 @@ class _ServersPageState extends State<ServersPage> {
                           
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('切换失败: ${e.toString()}'),
+                              content: Text(l10n.switchFailedError(e.toString())),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -537,7 +562,7 @@ class _ServersPageState extends State<ServersPage> {
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: Text(l10n.disconnect),
+                              child: Text(l10n.cancel),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(context, true),
@@ -566,7 +591,7 @@ class _ServersPageState extends State<ServersPage> {
               } else {
                 // 显示广告卡片
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),  // 修改：从 4 改为 8
+                  padding: const EdgeInsets.symmetric(vertical: 6),  // 修改：从 8 改为 6
                   child: TextAdCard(ad: item),
                 );
               }
@@ -651,7 +676,9 @@ class _ServerListItemState extends State<ServerListItem>
                 ? (theme.brightness == Brightness.dark 
                     ? theme.colorScheme.primary.withOpacity(0.1)  // 深色主题使用更浅的透明度
                     : theme.primaryColor.withOpacity(0.15))       // 浅色主题保持原样
-                : theme.cardColor,
+                : (theme.brightness == Brightness.dark 
+                    ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+                    : theme.cardColor),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: widget.isSelected
@@ -1029,6 +1056,154 @@ class _ServerListItemState extends State<ServerListItem>
             );
           }
         }),
+      ),
+    );
+  }
+}
+
+// ==================== 文字广告卡片组件 ====================
+
+/// 文字广告卡片组件 - 用于服务器列表页面
+class TextAdCard extends StatelessWidget {
+  static const String _logTag = 'TextAdCard';  // 新增：日志标签
+  static final LogService _log = LogService.instance;  // 新增：日志服务实例
+  
+  final AdModel ad;
+
+  const TextAdCard({
+    Key? key,
+    required this.ad,
+  }) : super(key: key);
+
+  Future<void> _openUrl(String? url) async {
+    if (url == null || url.isEmpty) return;
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      await _log.error('打开广告链接失败', tag: _logTag, error: e);  // 修改：使用日志服务
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return MouseRegion(
+      cursor: ad.content.url != null 
+          ? SystemMouseCursors.click 
+          : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: ad.content.url != null 
+            ? () => _openUrl(ad.content.url) 
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 8),  // 修改：从 4 改为 8
+          decoration: BoxDecoration(
+            // 修改：深色主题使用纯色背景
+            color: isDark ? const Color(0xFF1E1E1E) : null,
+            gradient: isDark ? null : LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                theme.primaryColor.withOpacity(0.15),
+                theme.primaryColor.withOpacity(0.08),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
+            border: Border.all(
+              color: theme.primaryColor.withOpacity(0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: theme.brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
+            child: Row(
+              children: [
+                // 广告图标容器 - 与节点卡片的国旗样式一致
+                Container(
+                  width: 56, // 与服务器列表页的国旗大小一致
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: theme.primaryColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.8),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                      BoxShadow(
+                        color: theme.primaryColor.withOpacity(0.4),
+                        blurRadius: 8,
+                        spreadRadius: -2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      'AD',
+                      style: TextStyle(
+                        fontSize: 56 * 0.35, // 与国旗组件的字号比例一致
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.5),
+                            offset: const Offset(1, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 广告内容
+                Expanded(
+                  child: Text(
+                    ad.content.text ?? '',
+                    style: TextStyle(
+                      fontSize: 14, // 与节点名称字号一致
+                      color: theme.textTheme.bodyLarge?.color,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // 链接指示器
+                if (ad.content.url != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.open_in_new,
+                    size: 18,
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.white.withOpacity(0.7)  // 深色主题使用白色
+                        : theme.primaryColor.withOpacity(0.6),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

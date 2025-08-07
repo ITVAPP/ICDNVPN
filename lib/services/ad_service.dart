@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/log_service.dart';
 import '../app_config.dart';
+import '../l10n/app_localizations.dart';
 
 // ==================== 广告数据模型 ====================
 
@@ -96,6 +98,9 @@ class AdConfig {
 
 /// 广告服务 - 管理广告的获取、缓存和显示逻辑
 class AdService extends ChangeNotifier {
+  static const String _logTag = 'AdService';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   List<AdModel> _ads = [];
   DateTime? _lastLoadTime;
   final Map<String, List<DateTime>> _imageAdShowHistory = {};
@@ -125,7 +130,7 @@ class AdService extends ChangeNotifier {
         try {
           jsonString = await rootBundle.loadString(AppConfig.adConfigUrl);
         } catch (e) {
-          debugPrint('加载本地广告配置失败: $e');
+          await _log.error('加载本地广告配置失败', tag: _logTag, error: e);
           return;
         }
       } else {
@@ -137,13 +142,13 @@ class AdService extends ChangeNotifier {
           ).timeout(const Duration(seconds: 5));
 
           if (response.statusCode != 200) {
-            debugPrint('广告配置请求失败: ${response.statusCode}');
+            await _log.warn('广告配置请求失败: ${response.statusCode}', tag: _logTag);
             return;
           }
 
           jsonString = response.body;
         } catch (e) {
-          debugPrint('加载网络广告配置失败: $e');
+          await _log.error('加载网络广告配置失败', tag: _logTag, error: e);
           return;
         }
       }
@@ -162,11 +167,11 @@ class AdService extends ChangeNotifier {
           notifyListeners();
         }
       } catch (e) {
-        debugPrint('解析广告配置失败: $e');
+        await _log.error('解析广告配置失败', tag: _logTag, error: e);
         _ads = [];
       }
     } catch (e) {
-      debugPrint('加载广告时发生未知错误: $e');
+      await _log.error('加载广告时发生未知错误', tag: _logTag, error: e);
       _ads = [];
     }
   }
@@ -224,7 +229,7 @@ class AdService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('ad_close_time_$adId', DateTime.now().toIso8601String());
     } catch (e) {
-      debugPrint('记录广告关闭时间失败: $e');
+      await _log.error('记录广告关闭时间失败', tag: _logTag, error: e);
     }
   }
 
@@ -239,7 +244,7 @@ class AdService extends ChangeNotifier {
         return timeSinceClose >= AppConfig.imageAdCooldown;
       }
     } catch (e) {
-      debugPrint('检查冷却时间失败: $e');
+      await _log.error('检查冷却时间失败', tag: _logTag, error: e);
     }
     return true; // 如果出错，允许显示
   }
@@ -283,6 +288,9 @@ class TextAdCarousel extends StatefulWidget {
 
 class _TextAdCarouselState extends State<TextAdCarousel>
     with SingleTickerProviderStateMixin {
+  static const String _logTag = 'TextAdCarousel';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   int _currentIndex = 0;
   Timer? _timer;
   late AnimationController _animationController;
@@ -337,7 +345,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      debugPrint('打开广告链接失败: $e');
+      await _log.error('打开广告链接失败', tag: _logTag, error: e);
     }
   }
 
@@ -348,6 +356,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
     final currentAd = widget.ads[_currentIndex];
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     return GestureDetector(
       onTap: () => _openUrl(currentAd.content.url),
@@ -397,7 +406,7 @@ class _TextAdCarouselState extends State<TextAdCarousel>
               ),
               child: Center(
                 child: Text(
-                  'AD',
+                  l10n.adLabel,
                   style: TextStyle(
                     fontSize: 50 * 0.35, // 与国旗组件的字号比例一致
                     fontWeight: FontWeight.bold,
@@ -450,6 +459,9 @@ class _TextAdCarouselState extends State<TextAdCarousel>
 
 /// 文字广告卡片组件 - 用于服务器列表页面
 class TextAdCard extends StatelessWidget {
+  static const String _logTag = 'TextAdCard';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   final AdModel ad;
 
   const TextAdCard({
@@ -466,7 +478,7 @@ class TextAdCard extends StatelessWidget {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      debugPrint('打开广告链接失败: $e');
+      await _log.error('打开广告链接失败', tag: _logTag, error: e);
     }
   }
 
@@ -474,6 +486,7 @@ class TextAdCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     return MouseRegion(
       cursor: ad.content.url != null 
@@ -485,14 +498,16 @@ class TextAdCard extends StatelessWidget {
             : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 8),  // 修改：从 4 改为 8
           decoration: BoxDecoration(
-            gradient: LinearGradient(
+            // 修改：深色主题使用纯色背景
+            color: isDark ? const Color(0xFF1E1E1E) : null,
+            gradient: isDark ? null : LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                theme.primaryColor.withOpacity(isDark ? 0.2 : 0.15),
-                theme.primaryColor.withOpacity(isDark ? 0.1 : 0.08),
+                theme.primaryColor.withOpacity(0.15),
+                theme.primaryColor.withOpacity(0.08),
               ],
             ),
             borderRadius: BorderRadius.circular(16), // 与节点卡片相同的圆角
@@ -540,7 +555,7 @@ class TextAdCard extends StatelessWidget {
                   ),
                   child: Center(
                     child: Text(
-                      'AD',
+                      l10n.adLabel,
                       style: TextStyle(
                         fontSize: 56 * 0.35, // 与国旗组件的字号比例一致
                         fontWeight: FontWeight.bold,
@@ -575,7 +590,9 @@ class TextAdCard extends StatelessWidget {
                   Icon(
                     Icons.open_in_new,
                     size: 18,
-                    color: theme.primaryColor.withOpacity(0.6),
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.white.withOpacity(0.7)  // 深色主题使用白色
+                        : theme.primaryColor.withOpacity(0.6),
                   ),
                 ],
               ],
@@ -608,6 +625,9 @@ class ImageAdOverlay extends StatefulWidget {
 
 class _ImageAdOverlayState extends State<ImageAdOverlay>
     with SingleTickerProviderStateMixin {
+  static const String _logTag = 'ImageAdOverlay';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   Timer? _countdownTimer;
@@ -729,7 +749,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
         _closeAd(); // 打开链接后关闭广告
       }
     } catch (e) {
-      debugPrint('打开广告链接失败: $e');
+      await _log.error('打开广告链接失败', tag: _logTag, error: e);
     }
   }
 
@@ -742,6 +762,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
 
     final theme = Theme.of(context);
     final screenSize = MediaQuery.of(context).size;
+    final l10n = AppLocalizations.of(context);
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -811,7 +832,7 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '$_remainingSeconds秒后自动关闭',
+                                l10n.secondsToCloseFormat(_remainingSeconds),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -859,18 +880,18 @@ class _ImageAdOverlayState extends State<ImageAdOverlay>
                           color: theme.primaryColor.withOpacity(0.9),
                           borderRadius: BorderRadius.circular(25),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.touch_app,
                               color: Colors.white,
                               size: 18,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Text(
-                              '点击了解详情',
-                              style: TextStyle(
+                              l10n.tapToLearnMore,
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,

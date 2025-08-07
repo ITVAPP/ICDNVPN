@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/log_service.dart';
 import '../app_config.dart';
 
 /// 版本信息实体类
@@ -148,6 +149,9 @@ class SemanticVersion {
 
 /// 版本更新服务 - 统一管理版本检查和更新逻辑
 class VersionService {
+  static const String _logTag = 'VersionService';  // 日志标签
+  static final LogService _log = LogService.instance;  // 日志服务实例
+  
   static final VersionService _instance = VersionService._internal();
   factory VersionService() => _instance;
   VersionService._internal();
@@ -272,7 +276,7 @@ class VersionService {
         versionInfo: needUpdate ? versionInfo : null,
       );
     } catch (e) {
-      print('版本检查失败: $e');
+      await _log.error('版本检查失败', tag: _logTag, error: e);
       return VersionCheckResult(
         hasUpdate: false,
         isForceUpdate: false,
@@ -340,7 +344,7 @@ class VersionService {
       final json = jsonDecode(jsonStr);
       return VersionInfo.fromJson(json);
     } catch (e) {
-      print('获取版本信息失败: $e');
+      await _log.error('获取版本信息失败', tag: _logTag, error: e);
       return null;
     }
   }

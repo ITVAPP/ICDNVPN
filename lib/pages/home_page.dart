@@ -168,6 +168,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final serverProvider = Provider.of<ServerProvider>(context, listen: false);
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
     final currentServerCount = serverProvider.servers.length;
+    final l10n = AppLocalizations.of(context);
     
     // 检测服务器列表从空变为非空（获取成功）
     if (_previousServerCount == 0 && currentServerCount > 0) {
@@ -179,7 +180,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         // 显示提示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已自动选择最优节点: ${bestServer.name} (${bestServer.ping}ms)'),
+            content: Text(l10n.autoSelectedBestNode(bestServer.name, bestServer.ping)),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -191,10 +192,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // 显示失败提示
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('获取节点失败，请检查网络连接后重试'),
+          content: Text(l10n.getNodeFailedWithRetry),
           backgroundColor: Colors.red,
           action: SnackBarAction(
-            label: '重试',
+            label: l10n.retry,
             textColor: Colors.white,
             onPressed: () {
               serverProvider.refreshFromCloudflare();
@@ -242,22 +243,42 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  // 新增：检查并显示图片广告
+  // 修改：先预加载图片，成功后再显示广告遮罩
   void _checkAndShowImageAd() async {
     final adService = context.read<AdService>();
     final imageAd = await adService.getImageAdForPageAsync('home');
     
     if (imageAd != null) {
-      // 延迟显示，等页面完全加载
-      Future.delayed(const Duration(milliseconds: 500), () {
+      final imageUrl = imageAd.content.imageUrl;
+      
+      // 如果没有图片URL，不显示广告
+      if (imageUrl == null || imageUrl.isEmpty) {
+        return;
+      }
+      
+      try {
+        // 先预加载图片
+        if (imageUrl.startsWith('assets/')) {
+          await precacheImage(AssetImage(imageUrl), context);
+        } else {
+          await precacheImage(NetworkImage(imageUrl), context);
+        }
+        
+        // 图片加载成功后，延迟显示（等页面完全加载）
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // 确认组件仍然挂载后再显示广告
         if (mounted) {
           _showImageAdOverlay(imageAd);
         }
-      });
+      } catch (e) {
+        // 图片加载失败，不显示广告（静默处理）
+        debugPrint('广告图片预加载失败: $e');
+      }
     }
   }
 
-  // 新增：显示图片广告遮罩
+  // 显示图片广告遮罩（图片已预加载完成）
   void _showImageAdOverlay(dynamic ad) {
     showDialog(
       context: context,
@@ -556,7 +577,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: theme.brightness == Brightness.dark 
+            ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+            : theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -742,7 +765,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: theme.brightness == Brightness.dark 
+            ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+            : theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: borderColor ?? theme.dividerColor,
@@ -824,17 +849,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       margin: const EdgeInsets.symmetric(horizontal: 8), // 添加与节点卡片相同的margin
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: theme.brightness == Brightness.dark
-            ? [
-                theme.primaryColor.withOpacity(0.2),
-                theme.primaryColor.withOpacity(0.1),
-              ]
-            : [
-                theme.primaryColor.withOpacity(0.1),
-                theme.primaryColor.withOpacity(0.05),
-              ],
-        ),
+        // 修改：深色主题使用纯色背景
+        color: theme.brightness == Brightness.dark 
+            ? const Color(0xFF1E1E1E)
+            : null,
+        gradient: theme.brightness == Brightness.dark
+            ? null
+            : LinearGradient(
+                colors: [
+                  theme.primaryColor.withOpacity(0.1),
+                  theme.primaryColor.withOpacity(0.05),
+                ],
+              ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1046,7 +1072,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          color: theme.brightness == Brightness.dark 
+              ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+              : theme.cardColor,
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
             BoxShadow(
@@ -1254,7 +1282,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(l10n.close ?? '关闭'),
+            child: Text(l10n.close),
           ),
         ],
       ],
