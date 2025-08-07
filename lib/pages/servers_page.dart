@@ -774,7 +774,7 @@ class _ServerListItemState extends State<ServerListItem>
                           Row(
                             children: [
                               Expanded(
-                                child: widget.isSelected || widget.isConnected
+                                child: (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
                                   ? Stack(
                                       children: [
                                         // 淡白色描边
@@ -800,9 +800,7 @@ class _ServerListItemState extends State<ServerListItem>
                                               ? FontWeight.bold
                                               : FontWeight.w600,
                                             color: widget.isSelected
-                                              ? (theme.brightness == Brightness.dark 
-                                                  ? theme.colorScheme.primary
-                                                  : theme.primaryColor)
+                                              ? theme.primaryColor
                                               : theme.textTheme.bodyLarge?.color,
                                           ),
                                         ),
@@ -812,8 +810,14 @@ class _ServerListItemState extends State<ServerListItem>
                                       widget.server.name,
                                       style: TextStyle(
                                         fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: theme.textTheme.bodyLarge?.color,
+                                        fontWeight: widget.isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.w600,
+                                        color: widget.isSelected
+                                          ? (theme.brightness == Brightness.dark 
+                                              ? theme.colorScheme.primary
+                                              : theme.primaryColor)
+                                          : theme.textTheme.bodyLarge?.color,
                                       ),
                                     ),
                               ),
@@ -831,22 +835,33 @@ class _ServerListItemState extends State<ServerListItem>
                                       width: 1,
                                     ),
                                   ),
-                                  child: Stack(
-                                    children: [
-                                      // 白色描边效果 - 使用多个阴影实现
-                                      Text(
-                                        l10n.connected,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          foreground: Paint()
-                                            ..style = PaintingStyle.stroke
-                                            ..strokeWidth = 1
-                                            ..color = Colors.white,
-                                        ),
-                                      ),
-                                      // 深绿色文字
-                                      Text(
+                                  child: theme.brightness == Brightness.light
+                                    ? Stack(
+                                        children: [
+                                          // 白色描边效果 - 使用多个阴影实现
+                                          Text(
+                                            l10n.connected,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              foreground: Paint()
+                                                ..style = PaintingStyle.stroke
+                                                ..strokeWidth = 1
+                                                ..color = Colors.white,
+                                            ),
+                                          ),
+                                          // 深绿色文字
+                                          Text(
+                                            l10n.connected,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.green[800], // 深绿色
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : Text(
                                         l10n.connected,
                                         style: TextStyle(
                                           fontSize: 12,
@@ -854,8 +869,6 @@ class _ServerListItemState extends State<ServerListItem>
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                    ],
-                                  ),
                                 ),
                             ],
                           ),
@@ -863,7 +876,7 @@ class _ServerListItemState extends State<ServerListItem>
                           Row(
                             children: [
                               // 位置图标
-                              widget.isSelected || widget.isConnected
+                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
                                 ? Stack(
                                     children: [
                                       // 淡白色描边
@@ -877,9 +890,7 @@ class _ServerListItemState extends State<ServerListItem>
                                         Icons.location_on,
                                         size: 14,
                                         color: widget.isSelected
-                                          ? (theme.brightness == Brightness.dark 
-                                              ? theme.colorScheme.primary
-                                              : theme.primaryColor)
+                                          ? theme.primaryColor
                                           : Colors.grey[600],
                                       ),
                                     ],
@@ -887,11 +898,15 @@ class _ServerListItemState extends State<ServerListItem>
                                 : Icon(
                                     Icons.location_on,
                                     size: 14,
-                                    color: Colors.grey[600],
+                                    color: widget.isSelected
+                                      ? (theme.brightness == Brightness.dark 
+                                          ? theme.colorScheme.primary
+                                          : theme.primaryColor)
+                                      : Colors.grey[600],
                                   ),
                               const SizedBox(width: 4),
                               // 位置文字
-                              widget.isSelected || widget.isConnected
+                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
                                 ? Stack(
                                     children: [
                                       // 淡白色描边
@@ -911,9 +926,7 @@ class _ServerListItemState extends State<ServerListItem>
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: widget.isSelected
-                                            ? (theme.brightness == Brightness.dark 
-                                                ? theme.colorScheme.primary.withOpacity(0.8)
-                                                : theme.primaryColor.withOpacity(0.8))
+                                            ? theme.primaryColor.withOpacity(0.8)
                                             : Colors.grey[600],
                                         ),
                                       ),
@@ -923,12 +936,16 @@ class _ServerListItemState extends State<ServerListItem>
                                     locationInfo['country'] ?? widget.server.location,
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: Colors.grey[600],
+                                      color: widget.isSelected
+                                        ? (theme.brightness == Brightness.dark 
+                                            ? theme.colorScheme.primary.withOpacity(0.8)
+                                            : theme.primaryColor.withOpacity(0.8))
+                                        : Colors.grey[600],
                                     ),
                                   ),
                               const SizedBox(width: 16),
                               // 延迟图标
-                              widget.isSelected || widget.isConnected
+                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
                                 ? Stack(
                                     children: [
                                       // 淡白色描边
@@ -952,7 +969,7 @@ class _ServerListItemState extends State<ServerListItem>
                                   ),
                               const SizedBox(width: 4),
                               // 延迟文字
-                              widget.isSelected || widget.isConnected
+                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
                                 ? Stack(
                                     children: [
                                       // 淡白色描边
@@ -1005,6 +1022,7 @@ class _ServerListItemState extends State<ServerListItem>
   }
 
   Widget _buildSignalIndicator(int ping) {
+    final theme = Theme.of(context);
     final strength = ping < 50 ? 5 : 
                     ping < 100 ? 4 : 
                     ping < 150 ? 3 : 
@@ -1018,8 +1036,8 @@ class _ServerListItemState extends State<ServerListItem>
           final isActive = index < strength;
           final color = isActive ? UIUtils.getPingColor(ping) : Colors.grey.withOpacity(0.2);
           
-          // 如果是选中或已连接状态，添加描边效果
-          if ((widget.isSelected || widget.isConnected) && isActive) {
+          // 如果是选中或已连接状态且是浅色主题，添加描边效果
+          if ((widget.isSelected || widget.isConnected) && isActive && theme.brightness == Brightness.light) {
             return Stack(
               children: [
                 // 淡白色描边 - 稍微放大一点

@@ -265,6 +265,7 @@ class _SettingsPageState extends State<SettingsPage> {
             _SectionHeader(title: l10n.about),
             // 修改：版本信息行（使用AppConfig）
             ListTile(
+              dense: true,
               title: Text(l10n.currentVersion),
               subtitle: Text('v${AppConfig.currentVersion}'),  // 使用AppConfig
               trailing: _buildVersionTrailing(l10n),
@@ -729,6 +730,7 @@ class _SettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      dense: true,
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,
       trailing: trailing,
@@ -775,6 +777,7 @@ class _SettingSwitchState extends State<_SettingSwitch> {
   @override
   Widget build(BuildContext context) {
     return SwitchListTile(
+      dense: true,
       title: Text(widget.title),
       subtitle: Text(widget.subtitle),
       value: _value,
@@ -805,6 +808,7 @@ class _LanguageOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      dense: true,
       title: Text(title),
       trailing: isSelected
           ? Icon(Icons.check, color: Theme.of(context).primaryColor)
@@ -831,6 +835,7 @@ class _ThemeOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      dense: true,
       leading: Icon(icon),
       title: Text(title),
       trailing: isSelected

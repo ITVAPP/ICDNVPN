@@ -359,7 +359,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ],
                       
                       // 快速操作按钮
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 16),
                       _buildQuickActions(serverProvider, connectionProvider, l10n),
                       
                       // 新增：文字广告轮播
@@ -884,13 +884,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值（添加白色描边）
+  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值（只在浅色主题显示白色描边）
   Widget _buildTrafficItem({
     required IconData icon,
     required String label,
     required String value,
     required Color color,
   }) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -900,32 +903,76 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 图标添加淡白色描边
-              Stack(
-                children: [
-                  // 淡白色描边效果
-                  Icon(
-                    icon,
-                    color: Colors.white.withOpacity(0.7),
-                    size: 29,
-                  ),
-                  Icon(
+              // 图标 - 只在浅色主题添加淡白色描边
+              isLight
+                ? Stack(
+                    children: [
+                      // 淡白色描边效果
+                      Icon(
+                        icon,
+                        color: Colors.white.withOpacity(0.7),
+                        size: 29,
+                      ),
+                      Icon(
+                        icon,
+                        color: color,
+                        size: 28,
+                      ),
+                    ],
+                  )
+                : Icon(
                     icon,
                     color: color,
                     size: 28,
                   ),
-                ],
-              ),
               const SizedBox(height: 6),
-              // 标签文字添加淡白色描边
-              Stack(
+              // 标签文字 - 只在浅色主题添加淡白色描边
+              isLight
+                ? Stack(
+                    children: [
+                      // 淡白色描边
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          foreground: Paint()
+                            ..style = PaintingStyle.stroke
+                            ..strokeWidth = 1
+                            ..color = Colors.white.withOpacity(0.7),
+                        ),
+                      ),
+                      // 实际文字
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: theme.hintColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: theme.hintColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+            ],
+          ),
+          // 右侧：流量数值 - 只在浅色主题添加淡白色描边
+          isLight
+            ? Stack(
                 children: [
                   // 淡白色描边
                   Text(
-                    label,
+                    value,
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                       foreground: Paint()
                         ..style = PaintingStyle.stroke
                         ..strokeWidth = 1
@@ -934,34 +981,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                   // 实际文字
                   Text(
-                    label,
+                    value,
                     style: TextStyle(
-                      color: Theme.of(context).hintColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      color: color,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
-              ),
-            ],
-          ),
-          // 右侧：流量数值 - 添加淡白色描边
-          Stack(
-            children: [
-              // 淡白色描边
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  foreground: Paint()
-                    ..style = PaintingStyle.stroke
-                    ..strokeWidth = 1
-                    ..color = Colors.white.withOpacity(0.7),
-                ),
-              ),
-              // 实际文字
-              Text(
+              )
+            : Text(
                 value,
                 style: TextStyle(
                   color: color,
@@ -969,8 +998,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
-          ),
         ],
       ),
     );

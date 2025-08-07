@@ -862,27 +862,24 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
+      isScrollControlled: true,  // 允许高度超过半屏
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) => SingleChildScrollView(
-            controller: scrollController,
+        // 自适应高度方案：保留滚动能力 + SafeArea + mainAxisSize.min
+        child: SafeArea(
+          child: SingleChildScrollView(  // 保留滚动能力，防止小屏幕或横屏时内容溢出
             child: Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.of(context).viewInsets.bottom,  // 处理键盘弹出
               ),
               child: Container(
                 padding: const EdgeInsets.all(20),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,  // 关键：根据内容自适应高度
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Center(
@@ -906,6 +903,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                     const SizedBox(height: 20),
                     // 快速添加选项
                     _buildQuickAddOptions(),
+                    const SizedBox(height: 8),  // 添加底部间距，保持视觉平衡
                   ],
                 ),
               ),
