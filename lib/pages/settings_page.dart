@@ -9,6 +9,7 @@ import '../utils/log_service.dart';  // 新增：引入日志服务
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app_config.dart';
+import '../pages/privacy_policy_page.dart';  // 新增：引入隐私政策页面
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -297,7 +298,13 @@ class _SettingsPageState extends State<SettingsPage> {
               title: l10n.privacyPolicy,
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                // TODO: 打开隐私政策
+                // 修改：导航到隐私政策页面
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PrivacyPolicyPage(),
+                  ),
+                );
               },
             ),
             

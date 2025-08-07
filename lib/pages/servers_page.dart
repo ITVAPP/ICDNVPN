@@ -438,7 +438,7 @@ class _ServersPageState extends State<ServersPage> {
                 final isConnected = connectionProvider.isConnected && isSelected;
                 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),  // 修改：从 8 改为 6
+                  padding: const EdgeInsets.symmetric(vertical: 5),
                   child: ServerListItem(
                     server: server,
                     isSelected: isSelected,
@@ -591,7 +591,7 @@ class _ServersPageState extends State<ServersPage> {
               } else {
                 // 显示广告卡片
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),  // 修改：从 8 改为 6
+                  padding: const EdgeInsets.symmetric(vertical: 5), 
                   child: TextAdCard(ad: item),
                 );
               }
@@ -655,7 +655,8 @@ class _ServerListItemState extends State<ServerListItem>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final locationInfo = UIUtils.getLocationInfo(widget.server.location);
+    // 修改：使用国际化版本的方法
+    final locationInfo = UIUtils.getLocalizedLocationInfo(widget.server.location, context);
     
     return MouseRegion(
       cursor: SystemMouseCursors.click,

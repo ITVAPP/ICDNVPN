@@ -364,12 +364,14 @@ class _TextAdCarouselState extends State<TextAdCarousel>
         margin: const EdgeInsets.symmetric(horizontal: 8), // 添加与节点卡片相同的margin
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          // 修改：深色主题使用纯色背景，与其他卡片保持一致
+          color: isDark ? const Color(0xFF1E1E1E) : null,
+          gradient: isDark ? null : LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              theme.primaryColor.withOpacity(isDark ? 0.2 : 0.1),
-              theme.primaryColor.withOpacity(isDark ? 0.1 : 0.05),
+              theme.primaryColor.withOpacity(0.1),
+              theme.primaryColor.withOpacity(0.05),
             ],
           ),
           borderRadius: BorderRadius.circular(20), // 与节点卡片相同的圆角

@@ -570,7 +570,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildServerInfoCard(ServerModel server, bool isConnected, AppLocalizations l10n) {
     final theme = Theme.of(context);
-    final locationInfo = UIUtils.getLocationInfo(server.location);
+    // 修改：使用国际化版本的方法
+    final locationInfo = UIUtils.getLocalizedLocationInfo(server.location, context);
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -710,50 +711,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       );
     } else {
-      // 其他情况（正常显示暂无节点）
+      // 其他情况（正常显示暂无节点）- 与正在获取节点时保持一致的布局
       content = InkWell(
         onTap: serverProvider.isInitializing ? null : () async {
           await serverProvider.refreshFromCloudflare();
         },
         borderRadius: BorderRadius.circular(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.cloud_off,
-              size: 48,
-              color: theme.hintColor.withOpacity(0.5),
+              Icons.cloud_download,
+              size: 24,  // 与加载动画一样大
+              color: theme.primaryColor,
             ),
-            const SizedBox(height: 12),
-            // 文字本身作为可点击链接
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    l10n.noNodesHint,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: serverProvider.isInitializing 
-                          ? theme.hintColor 
-                          : theme.primaryColor, // 非初始化时使用主题色表示可点击
-                      fontWeight: FontWeight.w500,
-                      decoration: serverProvider.isInitializing 
-                          ? null 
-                          : TextDecoration.underline, // 添加下划线表示链接
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                if (!serverProvider.isInitializing) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.cloud_download,
-                    size: 18,
-                    color: theme.primaryColor,
-                  ),
-                ],
-              ],
+            const SizedBox(width: 12),
+            Text(
+              l10n.noNodesHint,
+              style: TextStyle(
+                fontSize: 16,
+                color: theme.primaryColor,  // 蓝色文字
+                fontWeight: FontWeight.w500,
+                // 不带下划线
+              ),
             ),
           ],
         ),
@@ -1228,7 +1208,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       ),
                     ),
                     Text(
-                      UIUtils.getLocationInfo(_testResults!['serverLocation'] ?? '')['country'] ?? 
+                      UIUtils.getLocalizedLocationInfo(_testResults!['serverLocation'] ?? '', context)['country'] ?? 
                       _testResults!['serverLocation'] ?? '',
                       style: TextStyle(
                         fontSize: 14,

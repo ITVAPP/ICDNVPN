@@ -971,21 +971,10 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         ),
         const SizedBox(height: 12),
         _buildAddOption(
-          icon: Icons.qr_code,
-          title: l10n.scanQrCode,
-          subtitle: l10n.importFromQrCode,
-          color: Colors.orange,
-          onTap: () {
-            Navigator.pop(context);
-            // TODO: 打开二维码扫描
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildAddOption(
           icon: Icons.file_copy,
           title: l10n.importFromClipboard,
           subtitle: l10n.pasteServerConfig,
-          color: Colors.purple,
+          color: Colors.orange, // 修改：从紫色改为橙色
           onTap: () {
             Navigator.pop(context);
             // TODO: 从剪贴板导入

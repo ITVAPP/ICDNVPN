@@ -1,0 +1,87 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-01",
+  "policies": {
+    "zh_CN": {
+      "title": "隐私政策",
+      "sections": [
+        {
+          "title": "服务说明",
+          "content": "CFVPN 是一款网络代理工具，仅提供技术服务。用户使用本软件访问互联网的所有行为均由用户自行负责，与本软件无关。"
+        },
+        {
+          "title": "数据收集",
+          "content": "我们承诺：\n• 不收集用户的个人身份信息\n• 不记录用户的浏览历史\n• 不存储用户的网络活动日志\n• 仅收集必要的崩溃报告用于改进软件稳定性"
+        },
+        {
+          "title": "服务器节点",
+          "content": "本软件提供的服务器节点来自公开的网络资源。我们不对节点的稳定性、安全性、可用性做任何保证。用户应自行评估使用风险。"
+        },
+        {
+          "title": "用户责任",
+          "content": "用户必须：\n• 遵守所在地区的法律法规\n• 不使用本软件进行任何违法活动\n• 不传播违法、有害信息\n• 自行承担使用本软件的所有风险和后果"
+        },
+        {
+          "title": "免责声明",
+          "content": "在任何情况下，本软件开发者均不对以下情况承担责任：\n• 因使用或无法使用本软件造成的任何直接或间接损失\n• 因网络连接问题造成的数据丢失或泄露\n• 因第三方服务器造成的任何安全问题\n• 因用户违法使用造成的任何法律后果"
+        },
+        {
+          "title": "隐私保护",
+          "content": "• 本软件不会主动收集、存储或分享您的个人信息\n• 所有网络流量均经过加密处理\n• 我们不会将任何数据出售给第三方\n• 您可以随时删除本地所有数据"
+        },
+        {
+          "title": "第三方服务",
+          "content": "本软件可能包含第三方服务（如Cloudflare节点测试）。这些服务有其自己的隐私政策，我们不对第三方服务的隐私实践负责。"
+        },
+        {
+          "title": "儿童隐私",
+          "content": "本软件不适用于13岁以下的儿童。我们不会有意收集儿童的个人信息。"
+        },
+        {
+          "title": "政策更新",
+          "content": "我们保留随时更新本隐私政策的权利。重大变更时会在软件内通知用户。继续使用本软件即表示您接受更新后的政策。"
+        },
+        {
+          "title": "联系我们",
+          "content": "如有任何问题或建议，请通过以下方式联系：\n邮箱：abc@abc.com"
+        }
+      ]
+    },
+    "en_US": {
+      "title": "Privacy Policy",
+      "sections": [
+        {
+          "title": "Service Description",
+          "content": "CFVPN is a network proxy tool that provides technical services only. Users are solely responsible for all their internet activities through this software."
+        }
+      ]
+    },
+    "zh_TW": {
+      "title": "隱私政策",
+      "sections": [
+        {
+          "title": "服務說明",
+          "content": "CFVPN 是一款網路代理工具，僅提供技術服務。用戶使用本軟體訪問網際網路的所有行為均由用戶自行負責。"
+        }
+      ]
+    },
+    "ja_JP": {
+      "title": "プライバシーポリシー",
+      "sections": [
+        {
+          "title": "サービス説明",
+          "content": "CFVPNはネットワークプロキシツールです。"
+        }
+      ]
+    },
+    "ko_KR": {
+      "title": "개인정보 처리방침",
+      "sections": [
+        {
+          "title": "서비스 설명",
+          "content": "CFVPN은 네트워크 프록시 도구입니다."
+        }
+      ]
+    }
+  }
+}

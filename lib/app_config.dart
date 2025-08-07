@@ -180,4 +180,9 @@ class AppConfig {
   
   // 统计间隔
   static const Duration analyticsInterval = Duration(hours: 24);
+  
+  // ===== 隐私政策配置 =====
+  // 隐私政策JSON文件地址（本地测试用assets，生产用https）
+  static const String privacyPolicyUrl = 'assets/js/privacy_policy.json';
+  // static const String privacyPolicyUrl = 'https://your-api.com/privacy_policy.json';
 }

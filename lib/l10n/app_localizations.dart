@@ -69,8 +69,6 @@ class AppLocalizations {
   String get autoGetBestNodes => _get('autoGetBestNodes');
   String get manualAdd => _get('manualAdd');
   String get inputServerInfo => _get('inputServerInfo');
-  String get scanQrCode => _get('scanQrCode');
-  String get importFromQrCode => _get('importFromQrCode');
   String get importFromClipboard => _get('importFromClipboard');
   String get pasteServerConfig => _get('pasteServerConfig');
   String get diagnosticTool => _get('diagnosticTool');
@@ -451,8 +449,6 @@ const Map<String, String> _zhCnTranslations = {
   'autoGetBestNodes': '自动获取最优节点',
   'manualAdd': '手动添加',
   'inputServerInfo': '输入服务器信息',
-  'scanQrCode': '扫描二维码',
-  'importFromQrCode': '从二维码导入配置',
   'importFromClipboard': '从剪贴板导入',
   'pasteServerConfig': '粘贴服务器配置',
   'diagnosticTool': '诊断工具',
