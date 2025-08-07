@@ -11,6 +11,16 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_config.dart';
 import '../pages/privacy_policy_page.dart';  // 新增：引入隐私政策页面
 
+// 字号常量定义
+class FontSizes {
+  static const double sectionTitle = 18.0;     // 分组标题
+  static const double settingTitle = 16.0;     // 设置项标题
+  static const double settingSubtitle = 16.0;  // 设置项副标题（描述）
+  static const double dialogTitle = 16.0;      // 对话框标题
+  static const double dialogOption = 14.0;     // 对话框选项
+  static const double description = 14.0;      // 一般描述文字
+}
+
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -117,7 +127,10 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             const Icon(Icons.system_update, color: Colors.blue),
             const SizedBox(width: 8),
-            Text(isForceUpdate ? l10n.importantUpdate : l10n.newVersionFound),
+            Text(
+              isForceUpdate ? l10n.importantUpdate : l10n.newVersionFound,
+              style: const TextStyle(fontSize: FontSizes.dialogTitle),
+            ),
           ],
         ),
         content: Column(
@@ -127,7 +140,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(
               l10n.versionFormat(versionInfo.version),
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: FontSizes.settingTitle,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -147,16 +160,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     Expanded(
                       child: Text(
                         l10n.forceUpdateNotice,
-                        style: const TextStyle(color: Colors.orange),
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: FontSizes.description,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
             const SizedBox(height: 12),
-            Text(l10n.updateContent, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              l10n.updateContent, 
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: FontSizes.description,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(versionInfo.updateContent),
+            Text(
+              versionInfo.updateContent,
+              style: const TextStyle(fontSize: FontSizes.description),
+            ),
           ],
         ),
         actions: [
@@ -166,7 +191,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 Navigator.pop(context);
                 await VersionService().recordUpdatePrompt();
               },
-              child: Text(l10n.remindLater),
+              child: Text(
+                l10n.remindLater,
+                style: const TextStyle(fontSize: FontSizes.description),
+              ),
             ),
           ElevatedButton(
             onPressed: () async {
@@ -175,7 +203,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               }
             },
-            child: Text(l10n.goToDownload),
+            child: Text(
+              l10n.goToDownload,
+              style: const TextStyle(fontSize: FontSizes.description),
+            ),
           ),
         ],
       ),
@@ -266,8 +297,14 @@ class _SettingsPageState extends State<SettingsPage> {
             // 修改：版本信息行（使用AppConfig）
             ListTile(
               dense: true,
-              title: Text(l10n.currentVersion),
-              subtitle: Text('v${AppConfig.currentVersion}'),  // 使用AppConfig
+              title: Text(
+                l10n.currentVersion,
+                style: const TextStyle(fontSize: FontSizes.settingTitle),
+              ),
+              subtitle: Text(
+                'v${AppConfig.currentVersion}',  // 使用AppConfig
+                style: const TextStyle(fontSize: FontSizes.settingSubtitle),
+              ),
               trailing: _buildVersionTrailing(l10n),
             ),
             _SettingTile(
@@ -319,17 +356,29 @@ class _SettingsPageState extends State<SettingsPage> {
                   final confirmed = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
-                      title: Text(l10n.clearCache),
-                      content: Text(l10n.clearCacheConfirm),
+                      title: Text(
+                        l10n.clearCache,
+                        style: const TextStyle(fontSize: FontSizes.dialogTitle),
+                      ),
+                      content: Text(
+                        l10n.clearCacheConfirm,
+                        style: const TextStyle(fontSize: FontSizes.description),
+                      ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
-                          child: Text(l10n.cancel),
+                          child: Text(
+                            l10n.cancel,
+                            style: const TextStyle(fontSize: FontSizes.description),
+                          ),
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(context, true),
                           style: TextButton.styleFrom(foregroundColor: Colors.red),
-                          child: Text(l10n.clearCache),
+                          child: Text(
+                            l10n.clearCache,
+                            style: const TextStyle(fontSize: FontSizes.description),
+                          ),
                         ),
                       ],
                     ),
@@ -346,17 +395,29 @@ class _SettingsPageState extends State<SettingsPage> {
                       final proceedWithDisconnect = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: Text(l10n.tip),
-                          content: Text(l10n.clearCacheDisconnectWarning),
+                          title: Text(
+                            l10n.tip,
+                            style: const TextStyle(fontSize: FontSizes.dialogTitle),
+                          ),
+                          content: Text(
+                            l10n.clearCacheDisconnectWarning,
+                            style: const TextStyle(fontSize: FontSizes.description),
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: Text(l10n.cancel),
+                              child: Text(
+                                l10n.cancel,
+                                style: const TextStyle(fontSize: FontSizes.description),
+                              ),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(context, true),
                               style: TextButton.styleFrom(foregroundColor: Colors.orange),
-                              child: Text(l10n.continue_),
+                              child: Text(
+                                l10n.continue_,
+                                style: const TextStyle(fontSize: FontSizes.description),
+                              ),
                             ),
                           ],
                         ),
@@ -379,7 +440,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             const CircularProgressIndicator(),
                             const SizedBox(height: 16),
-                            Text(l10n.clearingCache),
+                            Text(
+                              l10n.clearingCache,
+                              style: const TextStyle(fontSize: FontSizes.description),
+                            ),
                           ],
                         ),
                       ),
@@ -436,7 +500,10 @@ class _SettingsPageState extends State<SettingsPage> {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(l10n.cacheCleared),
+                              Text(
+                                l10n.cacheCleared,
+                                style: const TextStyle(fontSize: FontSizes.description),
+                              ),
                               Text(
                                 l10n.cacheDetails,
                                 style: const TextStyle(fontSize: 12),
@@ -472,7 +539,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   }
                 },
                 icon: const Icon(Icons.delete_outline),
-                label: Text(l10n.clearCache),
+                label: Text(
+                  l10n.clearCache,
+                  style: const TextStyle(fontSize: FontSizes.description),
+                ),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 48),
                 ),
@@ -516,7 +586,7 @@ class _SettingsPageState extends State<SettingsPage> {
               Text(
                 l10n.newVersionFormat(_latestVersion!.version),
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: FontSizes.description,
                   color: Colors.orange,
                   fontWeight: FontWeight.bold,
                 ),
@@ -530,7 +600,10 @@ class _SettingsPageState extends State<SettingsPage> {
     // 默认显示检查更新按钮
     return TextButton(
       onPressed: _manualCheckUpdate,
-      child: Text(l10n.checkUpdate),
+      child: Text(
+        l10n.checkUpdate,
+        style: const TextStyle(fontSize: FontSizes.description),
+      ),
     );
   }
 
@@ -572,7 +645,10 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context).language),
+        title: Text(
+          AppLocalizations.of(context).language,
+          style: const TextStyle(fontSize: FontSizes.dialogTitle),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -635,7 +711,10 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(l10n.theme),
+        title: Text(
+          l10n.theme,
+          style: const TextStyle(fontSize: FontSizes.dialogTitle),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -690,7 +769,7 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: FontSizes.sectionTitle,
           fontWeight: FontWeight.bold,
           // 修复：使用主题的文字颜色，而不是固定的主题色
           color: theme.textTheme.titleMedium?.color ?? theme.colorScheme.onSurface,
@@ -731,8 +810,14 @@ class _SettingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
-      title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle!) : null,
+      title: Text(
+        title, 
+        style: const TextStyle(fontSize: FontSizes.settingTitle),
+      ),
+      subtitle: subtitle != null ? Text(
+        subtitle!, 
+        style: const TextStyle(fontSize: FontSizes.settingSubtitle),
+      ) : null,
       trailing: trailing,
       onTap: onTap,
     );
@@ -778,8 +863,14 @@ class _SettingSwitchState extends State<_SettingSwitch> {
   Widget build(BuildContext context) {
     return SwitchListTile(
       dense: true,
-      title: Text(widget.title),
-      subtitle: Text(widget.subtitle),
+      title: Text(
+        widget.title,
+        style: const TextStyle(fontSize: FontSizes.settingTitle),
+      ),
+      subtitle: Text(
+        widget.subtitle,
+        style: const TextStyle(fontSize: FontSizes.settingSubtitle),
+      ),
       value: _value,
       onChanged: (value) {
         setState(() {
@@ -809,7 +900,10 @@ class _LanguageOption extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
-      title: Text(title),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: FontSizes.dialogOption),
+      ),
       trailing: isSelected
           ? Icon(Icons.check, color: Theme.of(context).primaryColor)
           : null,
@@ -837,7 +931,10 @@ class _ThemeOption extends StatelessWidget {
     return ListTile(
       dense: true,
       leading: Icon(icon),
-      title: Text(title),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: FontSizes.dialogOption),
+      ),
       trailing: isSelected
           ? Icon(Icons.check, color: Theme.of(context).primaryColor)
           : null,

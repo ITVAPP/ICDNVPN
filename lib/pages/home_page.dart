@@ -328,21 +328,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.only(
                     left: 20.0,
                     right: 20.0,
-                    top: 60.0, // 增加顶部内边距，为自定义标题栏留出空间
+                    top: 30.0, // 距离屏幕顶部
                     bottom: 20.0,
                   ),
                   child: Column(
                     children: [
                       // 顶部状态栏
                       _buildStatusBar(isConnected, l10n),
-                      const SizedBox(height: 28), // 减少间距
+                      const SizedBox(height: 25), // 修改：从28改为25，距离下方连接按钮20像素
                       
                       // 主连接按钮
                       SlideTransition(
                         position: _slideAnimation,
                         child: _buildConnectionButton(isConnected, connectionProvider, l10n),
                       ),
-                      const SizedBox(height: 28), // 减少间距
+                      const SizedBox(height: 25), // 减少间距
                       
                       // 服务器信息卡片 - 修改：传递serverProvider以获取状态
                       SlideTransition(

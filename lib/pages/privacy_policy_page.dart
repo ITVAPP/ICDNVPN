@@ -293,7 +293,10 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
                 width: 4,
                 height: 20,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
+                  // 修改：根据深色/浅色模式使用不同的颜色
+                  color: isDark 
+                      ? Colors.white  // 深色模式下使用白色，与文字颜色一致
+                      : Theme.of(context).primaryColor,  // 浅色模式使用主题色
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
