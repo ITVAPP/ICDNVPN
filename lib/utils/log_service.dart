@@ -2,12 +2,49 @@ import 'dart:io';
 import 'dart:async';
 import 'package:path/path.dart' as path;
 
+/// 日志上下文（包含文件、流和日期信息）
+class _LogContext {
+  final File file;
+  final IOSink sink;
+  final String dateStr;
+  final String tag;
+  DateTime lastWriteTime;
+  bool isClosed = false;
+  
+  _LogContext({
+    required this.file,
+    required this.sink,
+    required this.dateStr,
+    required this.tag,
+  }) : lastWriteTime = DateTime.now();
+  
+  bool get isExpired {
+    final now = DateTime.now();
+    final currentDateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    return currentDateStr != dateStr;
+  }
+  
+  void updateWriteTime() {
+    lastWriteTime = DateTime.now();
+  }
+  
+  Future<void> close() async {
+    if (!isClosed) {
+      isClosed = true;
+      try {
+        await sink.flush();
+        await sink.close();
+      } catch (e) {
+        // 静默处理
+      }
+    }
+  }
+}
+
 /// 日志服务 - 基于tag自动创建不同的日志文件
 class LogService {
   static LogService? _instance;
   static LogService get instance => _instance ??= LogService._();
-  
-  LogService._();
   
   // 日志开关
   bool enabled = true;
@@ -31,45 +68,6 @@ class LogService {
   // 定期检查计时器
   Timer? _dateCheckTimer;
   Timer? _autoFlushTimer;
-  
-  /// 日志上下文（包含文件、流和日期信息）
-  class _LogContext {
-    final File file;
-    final IOSink sink;
-    final String dateStr;
-    final String tag;
-    DateTime lastWriteTime;
-    bool isClosed = false;
-    
-    _LogContext({
-      required this.file,
-      required this.sink,
-      required this.dateStr,
-      required this.tag,
-    }) : lastWriteTime = DateTime.now();
-    
-    bool get isExpired {
-      final now = DateTime.now();
-      final currentDateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-      return currentDateStr != dateStr;
-    }
-    
-    void updateWriteTime() {
-      lastWriteTime = DateTime.now();
-    }
-    
-    Future<void> close() async {
-      if (!isClosed) {
-        isClosed = true;
-        try {
-          await sink.flush();
-          await sink.close();
-        } catch (e) {
-          // 静默处理
-        }
-      }
-    }
-  }
   
   LogService._() {
     // 启动定期检查日期变更的计时器（每分钟检查一次）

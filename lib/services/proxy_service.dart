@@ -101,7 +101,7 @@ class ProxyService {
       await Process.run('ipconfig', ['/flushdns'], runInShell: true);
       
     } catch (e) {
-      await _log.warn('刷新系统代理设置时出现警告', tag: _logTag, error: e);
+      await _log.warn('刷新系统代理设置时出现警告: $e', tag: _logTag);
       // 不抛出错误，因为主要设置可能已经成功
     }
   }
