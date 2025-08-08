@@ -15,7 +15,7 @@ import '../pages/privacy_policy_page.dart';  // 新增：引入隐私政策页�
 class FontSizes {
   static const double sectionTitle = 18.0;     // 分组标题
   static const double settingTitle = 16.0;     // 设置项标题
-  static const double settingSubtitle = 16.0;  // 设置项副标题（描述）
+  static const double settingSubtitle = 14.0;  // 设置项副标题（描述）
   static const double dialogTitle = 16.0;      // 对话框标题
   static const double dialogOption = 14.0;     // 对话框选项
   static const double description = 14.0;      // 一般描述文字
@@ -269,26 +269,6 @@ class _SettingsPageState extends State<SettingsPage> {
               title: l10n.theme,
               subtitle: _getThemeName(context),
               onTap: () => _showThemeDialog(context),
-            ),
-            
-            // 网络设置
-            const _SectionDivider(),
-            _SectionHeader(title: l10n.networkSettings),
-            _SettingTile(
-              title: l10n.proxyMode,
-              subtitle: l10n.globalProxy,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                // TODO: 打开代理模式选择
-              },
-            ),
-            _SettingTile(
-              title: l10n.routeSettings,
-              subtitle: l10n.configureRules,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                // TODO: 打开路由设置
-              },
             ),
             
             // 关于
@@ -898,6 +878,13 @@ class _LanguageOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // 浅色主题使用主色（蓝色），深色主题使用文字颜色
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final iconColor = isDarkMode 
+        ? (theme.textTheme.bodyLarge?.color ?? theme.colorScheme.onSurface)
+        : theme.primaryColor;
+    
     return ListTile(
       dense: true,
       title: Text(
@@ -905,7 +892,7 @@ class _LanguageOption extends StatelessWidget {
         style: const TextStyle(fontSize: FontSizes.dialogOption),
       ),
       trailing: isSelected
-          ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+          ? Icon(Icons.check, color: iconColor)
           : null,
       onTap: onTap,
     );
@@ -928,6 +915,13 @@ class _ThemeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // 浅色主题使用主色（蓝色），深色主题使用文字颜色
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final iconColor = isDarkMode 
+        ? (theme.textTheme.bodyLarge?.color ?? theme.colorScheme.onSurface)
+        : theme.primaryColor;
+    
     return ListTile(
       dense: true,
       leading: Icon(icon),
@@ -936,7 +930,7 @@ class _ThemeOption extends StatelessWidget {
         style: const TextStyle(fontSize: FontSizes.dialogOption),
       ),
       trailing: isSelected
-          ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+          ? Icon(Icons.check, color: iconColor)
           : null,
       onTap: onTap,
     );

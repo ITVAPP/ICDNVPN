@@ -75,16 +75,11 @@ class AppLocalizations {
   
   // 设置页面
   String get generalSettings => _get('generalSettings');
-  String get networkSettings => _get('networkSettings');
   String get about => _get('about');
   String get autoStart => _get('autoStart');
   String get autoStartDesc => _get('autoStartDesc');
   String get autoConnect => _get('autoConnect');
   String get autoConnectDesc => _get('autoConnectDesc');
-  String get proxyMode => _get('proxyMode');
-  String get globalProxy => _get('globalProxy');
-  String get routeSettings => _get('routeSettings');
-  String get configureRules => _get('configureRules');
   String get currentVersion => _get('currentVersion');
   String get checkUpdate => _get('checkUpdate');
   String get officialWebsite => _get('officialWebsite');
@@ -455,16 +450,11 @@ const Map<String, String> _zhCnTranslations = {
   
   // 设置页面
   'generalSettings': '通用设置',
-  'networkSettings': '网络设置',
   'about': '关于',
   'autoStart': '开机自启',
   'autoStartDesc': '系统启动时自动运行',
   'autoConnect': '自动连接',
   'autoConnectDesc': '启动应用时自动连接',
-  'proxyMode': '代理模式',
-  'globalProxy': '全局代理',
-  'routeSettings': '路由设置',
-  'configureRules': '配置分流规则',
   'currentVersion': '当前版本',
   'checkUpdate': '检查更新',
   'officialWebsite': '官方网站',

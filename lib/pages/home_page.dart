@@ -328,7 +328,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.only(
                     left: 20.0,
                     right: 20.0,
-                    top: 30.0, // 距离屏幕顶部
+                    top: 50.0, // 距离屏幕顶部
                     bottom: 20.0,
                   ),
                   child: Column(
