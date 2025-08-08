@@ -287,7 +287,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
   void initState() {
     super.initState();
     
-    // 添加窗口监听器
+    // 添加窗口监听器（仅桌面平台）
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       windowManager.addListener(this);
     }
@@ -311,6 +311,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
 
   @override
   void dispose() {
+    // 移除窗口监听器（仅桌面平台）
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       windowManager.removeListener(this);
     }
@@ -320,6 +321,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
 
   @override
   void onWindowClose() async {
+    // 仅在桌面平台处理窗口关闭事件
+    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
+    
     // 显示选择对话框
     final shouldExit = await showDialog<bool>(
       context: context,
@@ -379,7 +383,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
         // 确保V2Ray进程被终止
         await V2RayService.stop();
         
-        // 清理系统代理设置
+        // 清理系统代理设置（仅Windows）
         await ProxyService.disableSystemProxy();
         
       } catch (e) {
@@ -732,8 +736,8 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
   }
   
   PreferredSizeWidget? _buildCustomAppBar(BuildContext context, bool isDark) {
-    // 移动平台不显示自定义应用栏
-    if (kIsWeb || (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS)) {
+    // 移动平台和Web平台不显示自定义应用栏
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
       return null;
     }
 
@@ -941,14 +945,15 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
                         Text(l10n.addFromCloudflare),
                       ],
                     ),
-                    // 诊断按钮
-                    IconButton(
-                      icon: const Icon(Icons.bug_report, size: 20),
-                      tooltip: l10n.diagnosticTool,
-                      onPressed: () {
-                        CloudflareDiagnosticTool.showDiagnosticDialog(context);
-                      },
-                    ),
+                    // 诊断按钮 - Android平台不显示
+                    if (!Platform.isAndroid && !Platform.isIOS)
+                      IconButton(
+                        icon: const Icon(Icons.bug_report, size: 20),
+                        tooltip: l10n.diagnosticTool,
+                        onPressed: () {
+                          CloudflareDiagnosticTool.showDiagnosticDialog(context);
+                        },
+                      ),
                   ],
                 ),
                 content: const CloudflareTestDialog(),
@@ -1048,7 +1053,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
   }
 }
 
-// 窗口控制按钮组件
+// 窗口控制按钮组件（仅桌面平台需要）
 class _WindowControlButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onPressed;

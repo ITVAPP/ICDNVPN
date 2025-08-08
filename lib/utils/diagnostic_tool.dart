@@ -9,6 +9,20 @@ class CloudflareDiagnosticTool {
   static Future<Map<String, dynamic>> runDiagnostics() async {
     final results = <String, dynamic>{};
     
+    // Android/iOS平台简化诊断
+    if (Platform.isAndroid || Platform.isIOS) {
+      results['platform'] = Platform.operatingSystem;
+      results['platformVersion'] = Platform.operatingSystemVersion;
+      results['dartVersion'] = Platform.version;
+      results['message'] = 'Mobile platform diagnostic is limited';
+      
+      // 只进行基本的网络测试
+      results['networkTest'] = await _testNetworkConnection();
+      
+      return results;
+    }
+    
+    // 桌面平台完整诊断
     try {
       // 1. 检查 V2Ray 是否存在
       final v2rayPath = await V2RayService.getExecutablePath(path.join('v2ray', 'v2ray.exe'));
@@ -166,6 +180,44 @@ class CloudflareDiagnosticTool {
   
   // 显示诊断对话框
   static void showDiagnosticDialog(BuildContext context) {
+    // Android/iOS平台显示简化对话框
+    if (Platform.isAndroid || Platform.isIOS) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(AppLocalizations.of(context).diagnosticTool),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.phone_android,
+                size: 48,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                AppLocalizations.of(context).diagnosticNotSupported,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Platform: ${Platform.operatingSystem}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(AppLocalizations.of(context).close),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    
+    // 桌面平台显示完整诊断对话框
     showDialog(
       context: context,
       barrierDismissible: false,

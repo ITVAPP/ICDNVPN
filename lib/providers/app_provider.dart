@@ -714,12 +714,13 @@ class DownloadProvider extends ChangeNotifier {
   double _progress = 0.0;
   bool _isDownloading = false;
   String? _error;
+  String? _downloadedFilePath;  // 新增：保存下载文件路径
   
   double get progress => _progress;
   bool get isDownloading => _isDownloading;
   String? get error => _error;
   
-  // 使用http包下载APK
+  // 使用http包下载APK - 优化Android平台处理
   Future<String?> downloadApk(String url) async {
     if (_isDownloading) return null;
     
@@ -740,9 +741,38 @@ class DownloadProvider extends ChangeNotifier {
       // 获取文件大小
       final contentLength = response.contentLength ?? 0;
       
-      // 获取保存路径
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/update.apk');
+      // 获取保存路径 - Android优化
+      Directory saveDir;
+      String fileName = 'update.apk';
+      
+      if (Platform.isAndroid) {
+        // Android: 优先使用外部存储下载目录
+        try {
+          // 先尝试获取外部存储目录
+          final externalDir = await getExternalStorageDirectory();
+          if (externalDir != null) {
+            // 创建下载子目录
+            saveDir = Directory('${externalDir.path}/Download');
+            if (!await saveDir.exists()) {
+              await saveDir.create(recursive: true);
+            }
+          } else {
+            // 如果外部存储不可用，使用应用文档目录
+            saveDir = await getApplicationDocumentsDirectory();
+          }
+        } catch (e) {
+          // 出错时使用临时目录
+          saveDir = await getTemporaryDirectory();
+        }
+        
+        // 生成唯一文件名避免冲突
+        fileName = 'cfvpn_update_${DateTime.now().millisecondsSinceEpoch}.apk';
+      } else {
+        // 其他平台使用文档目录
+        saveDir = await getApplicationDocumentsDirectory();
+      }
+      
+      final file = File('${saveDir.path}/$fileName');
       
       // 创建文件写入流
       final sink = file.openWrite();
@@ -762,9 +792,22 @@ class DownloadProvider extends ChangeNotifier {
       await sink.close();
       client.close();
       
+      // 保存文件路径
+      _downloadedFilePath = file.path;
+      
       _isDownloading = false;
       _progress = 1.0;
       notifyListeners();
+      
+      // Android: 确保文件可读
+      if (Platform.isAndroid) {
+        try {
+          // 设置文件权限为可读
+          await Process.run('chmod', ['644', file.path]);
+        } catch (e) {
+          // 忽略权限设置失败
+        }
+      }
       
       return file.path;
     } catch (e) {
@@ -773,6 +816,21 @@ class DownloadProvider extends ChangeNotifier {
       _progress = 0.0;
       notifyListeners();
       return null;
+    }
+  }
+  
+  // 清理下载的文件
+  Future<void> cleanupDownloadedFile() async {
+    if (_downloadedFilePath != null) {
+      try {
+        final file = File(_downloadedFilePath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        // 忽略删除失败
+      }
+      _downloadedFilePath = null;
     }
   }
 }

@@ -109,6 +109,11 @@ class V2RayService {
   }
   
   static Future<String> getExecutablePath(String executableName) async {
+    // 移动平台使用原生集成，不需要可执行文件路径
+    if (Platform.isAndroid || Platform.isIOS) {
+      throw UnsupportedError('Mobile platforms use native V2Ray integration');
+    }
+    
     if (Platform.isWindows) {
       final exePath = Platform.resolvedExecutable;
       final directory = path.dirname(exePath);
@@ -123,7 +128,7 @@ class V2RayService {
       final directory = path.dirname(exePath);
       return path.join(directory, executableName);
     } else {
-      throw UnsupportedError('Mobile platforms use native integration');
+      throw UnsupportedError('Platform not supported');
     }
   }
   
@@ -156,21 +161,24 @@ class V2RayService {
   }
   
   // 请求Android VPN权限
-  static Future<bool> requestPermission() async {
-    if (Platform.isAndroid) {
-      try {
-        await _log.info('请求Android VPN权限', tag: _logTag);
-        final result = await _methodChannel.invokeMethod('requestPermission');
-        final hasPermission = result ?? false;
-        await _log.info('VPN权限请求结果: $hasPermission', tag: _logTag);
-        return hasPermission;
-      } catch (e) {
-        await _log.error('请求VPN权限失败: $e', tag: _logTag);
-        return false;
-      }
+static Future<bool> requestPermission({bool proxyOnly = false}) async {
+  if (Platform.isAndroid) {
+    try {
+      await _log.info('请求Android权限', tag: _logTag);
+      // 传递 proxy_only 参数（可选，新版本已不需要）
+      final result = await _methodChannel.invokeMethod('requestPermission', {
+        'proxy_only': proxyOnly,
+      });
+      final hasPermission = result ?? false;
+      await _log.info('权限请求结果: $hasPermission', tag: _logTag);
+      return hasPermission;
+    } catch (e) {
+      await _log.error('请求权限失败: $e', tag: _logTag);
+      return false;
     }
-    return true; // 非Android平台默认返回true
   }
+  return true;
+}
   
   // 更新状态并通知监听者
   static void _updateStatus(V2RayStatus status) {
@@ -684,7 +692,7 @@ class V2RayService {
         }
       }
 
-      // 清理残留进程
+      // 清理残留进程（仅桌面平台）
       if (Platform.isWindows) {
         try {
           final result = await Process.run('taskkill', ['/F', '/IM', _v2rayExecutableName], 
@@ -705,6 +713,7 @@ class V2RayService {
           // 忽略错误
         }
       }
+      // Android不需要手动清理进程，系统会管理
       
       await _log.info('V2Ray服务已停止', tag: _logTag);
     } finally {

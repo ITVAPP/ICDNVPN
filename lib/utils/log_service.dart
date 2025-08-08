@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';  // 新增：用于获取应用目录
 
 /// 日志上下文（包含文件、流和日期信息）
 class _LogContext {
@@ -174,9 +175,26 @@ class LogService {
     try {
       // 确保日志目录存在
       if (_logDir == null) {
-        final exePath = Platform.resolvedExecutable;
-        final exeDir = File(exePath).parent.path;
-        final logDir = Directory(path.join(exeDir, 'logs'));
+        Directory logDir;
+        
+        // 区分平台获取日志目录
+        if (Platform.isAndroid || Platform.isIOS) {
+          // 移动平台使用应用文档目录
+          final appDir = await getApplicationDocumentsDirectory();
+          logDir = Directory(path.join(appDir.path, 'logs'));
+        } else {
+          // 桌面平台使用应用支持目录（有写权限）
+          try {
+            final appDir = await getApplicationSupportDirectory();
+            logDir = Directory(path.join(appDir.path, 'logs'));
+          } catch (e) {
+            // 如果获取失败，fallback到exe目录
+            final exePath = Platform.resolvedExecutable;
+            final exeDir = File(exePath).parent.path;
+            logDir = Directory(path.join(exeDir, 'logs'));
+          }
+        }
+        
         _logDir = logDir.path;
         
         if (!logDir.existsSync()) {
@@ -204,6 +222,7 @@ class LogService {
         logSink.writeln('=== 日志会话开始 ===');
         logSink.writeln('时间: ${date.toIso8601String()}');
         logSink.writeln('日志标签: $tag');
+        logSink.writeln('平台: ${Platform.operatingSystem}');
         logSink.writeln('=' * 50);
         logSink.writeln('');
         

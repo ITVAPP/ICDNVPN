@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:win32_registry/win32_registry.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
 
@@ -12,31 +11,41 @@ class ProxyService {
   static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
 
   static Future<void> enableSystemProxy() async {
-    if (!Platform.isWindows) return;
+    if (!Platform.isWindows) {
+      await _log.info('非Windows平台，跳过系统代理设置', tag: _logTag);
+      return;
+    }
 
     try {
       await _log.info('正在启用系统代理...', tag: _logTag);
       
-      final key = Registry.openPath(
-        RegistryHive.currentUser, 
-        path: _registryPath,
-        desiredAccessRights: AccessRights.allAccess
-      );
+      // 使用reg命令设置代理 - 避免win32_registry依赖
+      await Process.run('reg', [
+        'add',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyEnable',
+        '/t', 'REG_DWORD',
+        '/d', '1',
+        '/f'
+      ]);
       
-      // 启用代理
-      key.createValue(RegistryValue('ProxyEnable', RegistryValueType.int32, 1));
+      await Process.run('reg', [
+        'add',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyServer',
+        '/t', 'REG_SZ',
+        '/d', _proxyServer,
+        '/f'
+      ]);
       
-      // 设置代理服务器地址
-      key.createValue(RegistryValue('ProxyServer', RegistryValueType.string, _proxyServer));
-      
-      // 设置不走代理的地址（本地地址）
-      key.createValue(RegistryValue(
-        'ProxyOverride', 
-        RegistryValueType.string, 
-        'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>'
-      ));
-      
-      key.close();
+      await Process.run('reg', [
+        'add',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyOverride',
+        '/t', 'REG_SZ',
+        '/d', 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>',
+        '/f'
+      ]);
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -52,28 +61,31 @@ class ProxyService {
   }
 
   static Future<void> disableSystemProxy() async {
-    if (!Platform.isWindows) return;
+    if (!Platform.isWindows) {
+      await _log.info('非Windows平台，跳过系统代理禁用', tag: _logTag);
+      return;
+    }
 
     try {
       await _log.info('正在禁用系统代理...', tag: _logTag);
       
-      final key = Registry.openPath(
-        RegistryHive.currentUser, 
-        path: _registryPath,
-        desiredAccessRights: AccessRights.allAccess
-      );
+      // 使用reg命令禁用代理
+      await Process.run('reg', [
+        'add',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyEnable',
+        '/t', 'REG_DWORD',
+        '/d', '0',
+        '/f'
+      ]);
       
-      // 禁用代理
-      key.createValue(RegistryValue('ProxyEnable', RegistryValueType.int32, 0));
-      
-      // 清除代理服务器设置
-      try {
-        key.deleteValue('ProxyServer');
-      } catch (e) {
-        // 忽略删除错误
-      }
-      
-      key.close();
+      // 删除代理服务器设置
+      await Process.run('reg', [
+        'delete',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyServer',
+        '/f'
+      ], runInShell: true);
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -86,6 +98,8 @@ class ProxyService {
   }
 
   static Future<void> _refreshSystemProxy() async {
+    if (!Platform.isWindows) return;
+    
     try {
       // 方法1: 使用 WinINet API 刷新
       await Process.run('powershell', [
@@ -108,22 +122,15 @@ class ProxyService {
 
   // 验证代理设置
   static Future<bool> _verifyProxySettings() async {
+    if (!Platform.isWindows) return false;
+    
     try {
-      final key = Registry.openPath(
-        RegistryHive.currentUser,
-        path: _registryPath,
-        desiredAccessRights: AccessRights.readOnly
-      );
+      final status = await getProxyStatus();
+      final isEnabled = status['enabled'] == true && status['server'] == _proxyServer;
       
-      final proxyEnable = key.getValue('ProxyEnable')?.data as int?;
-      final proxyServer = key.getValue('ProxyServer')?.data as String?;
-      
-      key.close();
-      
-      final isEnabled = proxyEnable == 1 && proxyServer == _proxyServer;
       await _log.info('代理验证结果: ${isEnabled ? "已启用" : "未启用"}', tag: _logTag);
-      await _log.debug('ProxyEnable: $proxyEnable', tag: _logTag);
-      await _log.debug('ProxyServer: $proxyServer', tag: _logTag);
+      await _log.debug('ProxyEnable: ${status['enabled']}', tag: _logTag);
+      await _log.debug('ProxyServer: ${status['server']}', tag: _logTag);
       
       return isEnabled;
     } catch (e) {
@@ -134,23 +141,50 @@ class ProxyService {
   
   // 获取当前代理状态
   static Future<Map<String, dynamic>> getProxyStatus() async {
+    if (!Platform.isWindows) {
+      return {
+        'enabled': false,
+        'server': '',
+        'override': '',
+        'platform': Platform.operatingSystem,
+      };
+    }
+    
     try {
-      final key = Registry.openPath(
-        RegistryHive.currentUser,
-        path: _registryPath,
-        desiredAccessRights: AccessRights.readOnly
-      );
+      // 查询ProxyEnable
+      final enableResult = await Process.run('reg', [
+        'query',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyEnable'
+      ]);
       
-      final proxyEnable = key.getValue('ProxyEnable')?.data as int? ?? 0;
-      final proxyServer = key.getValue('ProxyServer')?.data as String? ?? '';
-      final proxyOverride = key.getValue('ProxyOverride')?.data as String? ?? '';
+      // 查询ProxyServer
+      final serverResult = await Process.run('reg', [
+        'query',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyServer'
+      ]);
       
-      key.close();
+      // 查询ProxyOverride
+      final overrideResult = await Process.run('reg', [
+        'query',
+        'HKCU\\$_registryPath',
+        '/v', 'ProxyOverride'
+      ]);
+      
+      // 解析结果
+      final isEnabled = enableResult.stdout.toString().contains('0x1');
+      
+      final serverMatch = RegExp(r'ProxyServer\s+REG_SZ\s+(.+)').firstMatch(serverResult.stdout.toString());
+      final server = serverMatch?.group(1)?.trim() ?? '';
+      
+      final overrideMatch = RegExp(r'ProxyOverride\s+REG_SZ\s+(.+)').firstMatch(overrideResult.stdout.toString());
+      final override = overrideMatch?.group(1)?.trim() ?? '';
       
       return {
-        'enabled': proxyEnable == 1,
-        'server': proxyServer,
-        'override': proxyOverride,
+        'enabled': isEnabled,
+        'server': server,
+        'override': override,
       };
     } catch (e) {
       return {
