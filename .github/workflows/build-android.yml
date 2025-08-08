@@ -1,0 +1,156 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      v2ray_version:
+        description: 'V2Ray Core Version (e.g., v5.38.0)'
+        required: true
+        default: 'v5.38.0'
+        type: string
+
+env:
+  V2RAY_VERSION: ${{ github.event.inputs.v2ray_version }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+        channel: 'stable'
+    
+    - name: Create Android directories
+      run: |
+        mkdir -p android/app/src/main/jniLibs/arm64-v8a
+        mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+        mkdir -p android/app/src/main/assets
+    
+    - name: Download and setup V2Ray Core for arm64-v8a
+      run: |
+        echo "Downloading V2Ray Core ${V2RAY_VERSION} for arm64-v8a"
+        wget -q https://github.com/v2fly/v2ray-core/releases/download/${V2RAY_VERSION}/v2ray-android-arm64-v8a.zip
+        unzip -q v2ray-android-arm64-v8a.zip -d v2ray-arm64
+        
+        # Copy v2ray binary as libv2ray.so
+        cp v2ray-arm64/v2ray android/app/src/main/jniLibs/arm64-v8a/libv2ray.so
+        chmod +x android/app/src/main/jniLibs/arm64-v8a/libv2ray.so
+        
+        # Copy geo data files to assets (shared between architectures)
+        cp v2ray-arm64/geoip.dat android/app/src/main/assets/
+        cp v2ray-arm64/geosite.dat android/app/src/main/assets/
+        
+        # Clean up
+        rm -rf v2ray-arm64 v2ray-android-arm64-v8a.zip
+        
+        echo "arm64-v8a setup completed"
+    
+    - name: Download and setup V2Ray Core for armeabi-v7a
+      run: |
+        echo "Downloading V2Ray Core ${V2RAY_VERSION} for armeabi-v7a"
+        wget -q https://github.com/v2fly/v2ray-core/releases/download/${V2RAY_VERSION}/v2ray-android-arm32-v7a.zip
+        unzip -q v2ray-android-arm32-v7a.zip -d v2ray-arm32
+        
+        # Copy v2ray binary as libv2ray.so
+        cp v2ray-arm32/v2ray android/app/src/main/jniLibs/armeabi-v7a/libv2ray.so
+        chmod +x android/app/src/main/jniLibs/armeabi-v7a/libv2ray.so
+        
+        # Clean up
+        rm -rf v2ray-arm32 v2ray-android-arm32-v7a.zip
+        
+        echo "armeabi-v7a setup completed"
+    
+    - name: Verify V2Ray files
+      run: |
+        echo "Checking V2Ray binary files:"
+        ls -la android/app/src/main/jniLibs/arm64-v8a/
+        ls -la android/app/src/main/jniLibs/armeabi-v7a/
+        echo ""
+        echo "Checking asset files:"
+        ls -la android/app/src/main/assets/
+        echo ""
+        echo "File sizes:"
+        du -h android/app/src/main/jniLibs/arm64-v8a/libv2ray.so
+        du -h android/app/src/main/jniLibs/armeabi-v7a/libv2ray.so
+        du -h android/app/src/main/assets/geoip.dat
+        du -h android/app/src/main/assets/geosite.dat
+    
+    - name: Get dependencies
+      run: flutter pub get
+    
+    - name: Build APK for arm64-v8a
+      run: |
+        flutter build apk --release --target-platform android-arm64 --no-shrink
+        mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/cfvpn-arm64-v8a.apk
+    
+    - name: Build APK for armeabi-v7a
+      run: |
+        flutter build apk --release --target-platform android-arm --no-shrink
+        mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/cfvpn-armeabi-v7a.apk
+    
+    - name: Build Universal APK (both architectures)
+      run: |
+        flutter build apk --release --no-shrink
+        mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/cfvpn-universal.apk
+    
+    - name: List built APKs
+      run: |
+        echo "Built APKs:"
+        ls -lh build/app/outputs/flutter-apk/*.apk
+        echo ""
+        echo "APK Details:"
+        for apk in build/app/outputs/flutter-apk/*.apk; do
+          echo "File: $(basename $apk)"
+          echo "Size: $(du -h $apk | cut -f1)"
+          echo "---"
+        done
+    
+    - name: Upload arm64-v8a APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: cfvpn-arm64-v8a-${{ env.V2RAY_VERSION }}
+        path: build/app/outputs/flutter-apk/cfvpn-arm64-v8a.apk
+        retention-days: 30
+    
+    - name: Upload armeabi-v7a APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: cfvpn-armeabi-v7a-${{ env.V2RAY_VERSION }}
+        path: build/app/outputs/flutter-apk/cfvpn-armeabi-v7a.apk
+        retention-days: 30
+    
+    - name: Upload Universal APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: cfvpn-universal-${{ env.V2RAY_VERSION }}
+        path: build/app/outputs/flutter-apk/cfvpn-universal.apk
+        retention-days: 30
+    
+    - name: Generate Summary
+      run: |
+        echo "# Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## V2Ray Core Version: ${V2RAY_VERSION}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Built APKs" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| APK | Size | Architecture |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|------|--------------|" >> $GITHUB_STEP_SUMMARY
+        echo "| cfvpn-arm64-v8a.apk | $(du -h build/app/outputs/flutter-apk/cfvpn-arm64-v8a.apk | cut -f1) | 64-bit ARM |" >> $GITHUB_STEP_SUMMARY
+        echo "| cfvpn-armeabi-v7a.apk | $(du -h build/app/outputs/flutter-apk/cfvpn-armeabi-v7a.apk | cut -f1) | 32-bit ARM |" >> $GITHUB_STEP_SUMMARY
+        echo "| cfvpn-universal.apk | $(du -h build/app/outputs/flutter-apk/cfvpn-universal.apk | cut -f1) | Both |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Download" >> $GITHUB_STEP_SUMMARY
+        echo "APKs can be downloaded from the Artifacts section above." >> $GITHUB_STEP_SUMMARY
