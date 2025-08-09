@@ -1,14 +1,16 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // 注意：这里使用 dev.flutter.flutter-gradle-plugin
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
         localProperties.load(reader)
     }
-}
-
-def flutterRoot = localProperties.getProperty('flutter.sdk')
-if (flutterRoot == null) {
-    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
 }
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
@@ -21,14 +23,12 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0.1'
 }
 
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
-apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+def kotlin_version = '1.9.0'
 
 android {
     namespace "com.example.cfvpn"
     compileSdkVersion 34
-    ndkVersion flutter.ndkVersion
+    ndkVersion "25.1.8937393"  // 明确指定 NDK 版本
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -41,7 +41,6 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
-        // 添加jniLibs路径用于tun2socks（如果需要）
         main.jniLibs.srcDirs = ['src/main/jniLibs']
     }
 
@@ -53,7 +52,6 @@ android {
         versionName flutterVersionName
         multiDexEnabled true
         
-        // NDK配置（用于Go库）
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
@@ -72,7 +70,6 @@ android {
         }
     }
 
-    // APK分割配置
     splits {
         abi {
             enable true
@@ -82,9 +79,7 @@ android {
         }
     }
     
-    // 打包选项
     packagingOptions {
-        // 排除可能的重复文件
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
         pickFirst 'lib/arm64-v8a/libc++_shared.so'
         pickFirst 'lib/x86/libc++_shared.so'
@@ -102,18 +97,12 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    
-    // Gson用于JSON解析
     implementation 'com.google.code.gson:gson:2.10.1'
-    
-    // V2Ray核心库 - 关键依赖
     implementation files('libs/libv2ray.aar')
 }
 
-// 配置仓库
 repositories {
     flatDir {
         dirs 'libs'
     }
-
 }
