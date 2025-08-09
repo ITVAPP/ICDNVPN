@@ -14,8 +14,6 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
-
-// ===== 关键：添加缺失的imports =====
 import go.Seq
 import libv2ray.Libv2ray
 import libv2ray.V2RayPoint
@@ -57,7 +55,7 @@ class V2rayVPNService : VpnService() {
     }
     
     private var mInterface: ParcelFileDescriptor? = null
-    private var tun2socksProcess: Process? = null
+    private var tun2socksProcess: java.lang.Process? = null  // 明确指定java.lang.Process
     private var v2rayConfig: V2rayConfig? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var statusUpdateJob: Job? = null
@@ -424,7 +422,7 @@ class V2rayVPNService : VpnService() {
             val pb = ProcessBuilder(cmd)
             pb.redirectErrorStream(true)
             pb.directory(filesDir)
-            tun2socksProcess = pb.start()
+            tun2socksProcess = pb.start()  // 这里是java.lang.Process
             
             Log.d(TAG, "tun2socks process started")
             
@@ -434,7 +432,9 @@ class V2rayVPNService : VpnService() {
             // 监控进程
             serviceScope.launch {
                 try {
-                    val exitCode = tun2socksProcess?.waitFor()
+                    // 使用局部变量避免smart cast问题
+                    val process = tun2socksProcess
+                    val exitCode = process?.waitFor()
                     Log.w(TAG, "tun2socks exited with code: $exitCode")
                     if (isRunning) {
                         delay(1000)
@@ -546,8 +546,12 @@ class V2rayVPNService : VpnService() {
             
             stopStatusMonitoring()
             
-            // 停止tun2socks
-            tun2socksProcess?.destroyForcibly()
+            // 停止tun2socks - 使用destroy()而不是destroyForcibly()
+            try {
+                tun2socksProcess?.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error destroying tun2socks process", e)
+            }
             tun2socksProcess = null
             
             // 停止V2Ray
@@ -706,7 +710,7 @@ class V2rayVPNService : VpnService() {
         var REMARK: String = ""
     )
     
-    // 状态枚举
+    // 状态枚举 - 移到companion object外部
     object AppConfigs {
         enum class V2RAY_STATES {
             V2RAY_CONNECTED,
@@ -715,8 +719,8 @@ class V2rayVPNService : VpnService() {
         }
     }
     
-    // 使用内部的枚举别名，方便使用
-    typealias V2RAY_STATES = AppConfigs.V2RAY_STATES
+    // 使用V2RAY_STATES的简写
+    private val V2RAY_STATES = AppConfigs.V2RAY_STATES
     
     override fun onRevoke() {
         Log.d(TAG, "VPN permission revoked")
