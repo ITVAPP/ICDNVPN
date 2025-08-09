@@ -74,9 +74,8 @@ class V2RayService {
   // Windows平台进程管理
   static Process? _v2rayProcess;
   
-  // 服务状态管理 - 使用原子操作避免竞争
+  // 服务状态管理
   static bool _isRunning = false;
-  static final _runningLock = Object();
   
   // 回调函数
   static Function? _onProcessExit;
@@ -104,7 +103,6 @@ class V2RayService {
   // 并发控制
   static bool _isStarting = false;
   static bool _isStopping = false;
-  static final _operationLock = Object();
   
   // 日志服务
   static final LogService _log = LogService.instance;
@@ -114,6 +112,9 @@ class V2RayService {
   static const MethodChannel _methodChannel = MethodChannel('flutter_v2ray');
   static const EventChannel _eventChannel = EventChannel('flutter_v2ray/status');
   static StreamSubscription? _statusSubscription;
+  
+  // 记录是否已记录V2Ray目录信息
+  static bool _hasLoggedV2RayInfo = false;
   
   // 配置文件路径
   static const String _CONFIG_PATH = 'assets/js/v2ray_config.json';
@@ -178,17 +179,7 @@ class V2RayService {
   static bool get isConnected => _currentStatus.state == V2RayConnectionState.connected;
   
   // 是否正在运行
-  static bool get isRunning {
-    synchronized(_runningLock) {
-      return _isRunning;
-    }
-  }
-  
-  // 线程安全的同步方法
-  static T synchronized<T>(Object lock, T Function() action) {
-    // Dart是单线程的，这里只是概念性的保护
-    return action();
-  }
+  static bool get isRunning => _isRunning;
   
   // 安全解析整数
   static int _parseIntSafely(dynamic value) {
@@ -417,13 +408,11 @@ class V2RayService {
     String? serverName,
   }) async {
     // 并发控制
-    synchronized(_operationLock) {
-      if (_isStarting || _isStopping) {
-        _log.warn('V2Ray正在启动或停止中，忽略请求', tag: _logTag);
-        return Future.value(false);
-      }
-      _isStarting = true;
+    if (_isStarting || _isStopping) {
+      await _log.warn('V2Ray正在启动或停止中，忽略请求', tag: _logTag);
+      return false;
     }
+    _isStarting = true;
     
     try {
       // 如果已在运行，先停止
@@ -459,9 +448,7 @@ class V2RayService {
       await stop();
       return false;
     } finally {
-      synchronized(_operationLock) {
-        _isStarting = false;
-      }
+      _isStarting = false;
     }
   }
   
@@ -489,7 +476,7 @@ class V2RayService {
       _statusSubscription = null;
     }
     
-    // 3. 设置状态监听 - 修复：不在listen中使用async
+    // 3. 设置状态监听
     _statusSubscription = _eventChannel.receiveBroadcastStream().cast().listen(
       (event) {
         _handleStatusEvent(event);
@@ -545,17 +532,13 @@ class V2RayService {
     await Future.delayed(AppConfig.v2rayCheckDelay);
     
     final actualState = await queryConnectionState();
-    synchronized(_runningLock) {
-      _isRunning = actualState == V2RayConnectionState.connected;
-    }
+    _isRunning = actualState == V2RayConnectionState.connected;
     
     if (!_isRunning) {
       // 再等待一次
       await Future.delayed(const Duration(seconds: 2));
       final retryState = await queryConnectionState();
-      synchronized(_runningLock) {
-        _isRunning = retryState == V2RayConnectionState.connected;
-      }
+      _isRunning = retryState == V2RayConnectionState.connected;
     }
     
     await _log.info('移动平台：V2Ray启动完成，连接状态: ${_isRunning ? "已连接" : "未连接"}', 
@@ -587,14 +570,12 @@ class V2RayService {
       
       // 同步运行状态
       final wasRunning = _isRunning;
-      synchronized(_runningLock) {
-        if (status.state == V2RayConnectionState.connected && !_isRunning) {
-          _isRunning = true;
-          _connectionStartTime = DateTime.now();
-        } else if (status.state == V2RayConnectionState.disconnected && _isRunning) {
-          _isRunning = false;
-          _connectionStartTime = null;
-        }
+      if (status.state == V2RayConnectionState.connected && !_isRunning) {
+        _isRunning = true;
+        _connectionStartTime = DateTime.now();
+      } else if (status.state == V2RayConnectionState.disconnected && _isRunning) {
+        _isRunning = false;
+        _connectionStartTime = null;
       }
       
       // 记录状态变化
@@ -664,9 +645,7 @@ class V2RayService {
     
     _v2rayProcess!.exitCode.then((code) {
       _log.info('V2Ray进程退出，退出码: $code', tag: _logTag);
-      synchronized(_runningLock) {
-        _isRunning = false;
-      }
+      _isRunning = false;
       _stopStatsTimer();
       _stopDurationTimer();
       _updateStatus(V2RayStatus(state: V2RayConnectionState.disconnected));
@@ -679,9 +658,7 @@ class V2RayService {
     await Future.delayed(AppConfig.v2rayStartupWait);
     
     if (await isPortListening(AppConfig.v2raySocksPort)) {
-      synchronized(_runningLock) {
-        _isRunning = true;
-      }
+      _isRunning = true;
       _uploadTotal = 0;
       _downloadTotal = 0;
       _lastUpdateTime = 0;
@@ -705,13 +682,11 @@ class V2RayService {
   // 停止V2Ray服务
   static Future<void> stop() async {
     // 并发控制
-    synchronized(_operationLock) {
-      if (_isStopping) {
-        _log.warn('V2Ray正在停止中，忽略重复请求', tag: _logTag);
-        return;
-      }
-      _isStopping = true;
+    if (_isStopping) {
+      await _log.warn('V2Ray正在停止中，忽略重复请求', tag: _logTag);
+      return;
     }
+    _isStopping = true;
     
     try {
       await _log.info('开始停止V2Ray服务', tag: _logTag);
@@ -730,9 +705,8 @@ class V2RayService {
       }
       
       // 重置状态
-      synchronized(_runningLock) {
-        _isRunning = false;
-      }
+      _isRunning = false;
+      _hasLoggedV2RayInfo = false;
       
       // 移动平台停止
       if (Platform.isAndroid || Platform.isIOS) {
@@ -793,9 +767,7 @@ class V2RayService {
       await _log.info('V2Ray服务已停止', tag: _logTag);
       
     } finally {
-      synchronized(_operationLock) {
-        _isStopping = false;
-      }
+      _isStopping = false;
     }
   }
   
@@ -829,8 +801,194 @@ class V2RayService {
   static Future<void> _updateTrafficStatsFromAPI() async {
     if (!_isRunning || Platform.isAndroid || Platform.isIOS) return;
     
-    // Windows平台原有实现...
-    // 省略详细代码，保持原有逻辑
+    try {
+      final v2rayPath = await _getV2RayPath();
+      final v2rayDir = path.dirname(v2rayPath);
+      
+      final v2ctlPath = path.join(v2rayDir, _v2ctlExecutableName);
+      final hasV2ctl = await File(v2ctlPath).exists();
+      
+      // 只记录一次
+      if (!_hasLoggedV2RayInfo) {
+        await _log.debug('V2Ray目录: $v2rayDir, v2ctl存在: $hasV2ctl', tag: _logTag);
+        _hasLoggedV2RayInfo = true;
+      }
+      
+      final apiExe = hasV2ctl ? v2ctlPath : v2rayPath;
+      
+      List<String> apiCmd;
+      
+      if (hasV2ctl) {
+        apiCmd = [
+          'api',
+          '--server=127.0.0.1:${AppConfig.v2rayApiPort}',
+          'StatsService.QueryStats',
+          'pattern: "" reset: false'
+        ];
+        
+        if (Platform.isWindows) {
+          final processResult = await Process.run(
+            apiExe,
+            apiCmd,
+            runInShell: true,
+            workingDirectory: v2rayDir,
+          );
+          
+          if (processResult.exitCode == 0) {
+            String output;
+            if (processResult.stdout is String) {
+              output = processResult.stdout as String;
+            } else if (processResult.stdout is List<int>) {
+              output = utf8.decode(processResult.stdout as List<int>);
+            } else {
+              output = processResult.stdout.toString();
+            }
+            
+            _parseStatsOutput(output);
+          } else {
+            String error;
+            if (processResult.stderr is String) {
+              error = processResult.stderr as String;
+            } else if (processResult.stderr is List<int>) {
+              error = utf8.decode(processResult.stderr as List<int>);
+            } else {
+              error = processResult.stderr.toString();
+            }
+            await _log.warn('获取流量统计失败: $error', tag: _logTag);
+          }
+        } else {
+          final processResult = await Process.run(
+            apiExe,
+            apiCmd,
+            runInShell: false,
+            workingDirectory: v2rayDir,
+            stdoutEncoding: utf8,
+            stderrEncoding: utf8,
+          );
+          
+          if (processResult.exitCode == 0) {
+            _parseStatsOutput(processResult.stdout.toString());
+          } else {
+            await _log.warn('获取流量统计失败: ${processResult.stderr}', tag: _logTag);
+          }
+        }
+      } else {
+        apiCmd = ['api', 'statsquery', '--server=127.0.0.1:${AppConfig.v2rayApiPort}'];
+        
+        final processResult = await Process.run(
+          apiExe,
+          apiCmd,
+          runInShell: false,
+          workingDirectory: v2rayDir,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+        
+        if (processResult.exitCode == 0) {
+          _parseStatsOutput(processResult.stdout.toString());
+        } else {
+          await _log.warn('获取流量统计失败: ${processResult.stderr}', tag: _logTag);
+        }
+      }
+    } catch (e, stackTrace) {
+      await _log.error('更新流量统计时出错', tag: _logTag, error: e, stackTrace: stackTrace);
+    }
+  }
+  
+  // 记录上次的流量值
+  static int _lastLoggedUpload = -1;
+  static int _lastLoggedDownload = -1;
+  
+  // 解析流量统计输出
+  static void _parseStatsOutput(String output) {
+    try {
+      int proxyUplink = 0;
+      int proxyDownlink = 0;
+      
+      final statBlocks = output.split('stat:');
+      
+      for (final block in statBlocks) {
+        if (block.trim().isEmpty) continue;
+        
+        final nameMatch = RegExp(r'name:\s*"([^"]+)"').firstMatch(block);
+        final valueMatch = RegExp(r'value:\s*(\d+)').firstMatch(block);
+        
+        if (nameMatch != null) {
+          final name = nameMatch.group(1)!;
+          final value = valueMatch != null ? int.parse(valueMatch.group(1)!) : 0;
+          
+          // 只统计proxy出站流量
+          if (name == "outbound>>>proxy>>>traffic>>>uplink") {
+            proxyUplink = value;
+          } else if (name == "outbound>>>proxy>>>traffic>>>downlink") {
+            proxyDownlink = value;
+          }
+        }
+      }
+      
+      // 更新流量值
+      _uploadTotal = proxyUplink;
+      _downloadTotal = proxyDownlink;
+      
+      // 计算速度
+      final now = DateTime.now().millisecondsSinceEpoch;
+      int uploadSpeed = 0;
+      int downloadSpeed = 0;
+      
+      if (_lastUpdateTime > 0) {
+        final timeDiff = (now - _lastUpdateTime) / 1000.0; // 秒
+        if (timeDiff > 0) {
+          uploadSpeed = ((_uploadTotal - _lastUploadBytes) / timeDiff).round();
+          downloadSpeed = ((_downloadTotal - _lastDownloadBytes) / timeDiff).round();
+          
+          // 防止负数速度
+          if (uploadSpeed < 0) uploadSpeed = 0;
+          if (downloadSpeed < 0) downloadSpeed = 0;
+        }
+      }
+      
+      _lastUpdateTime = now;
+      _lastUploadBytes = _uploadTotal;
+      _lastDownloadBytes = _downloadTotal;
+      
+      // 只有流量变化或速度不为0时才记录日志
+      if (_uploadTotal != _lastLoggedUpload || _downloadTotal != _lastLoggedDownload || 
+          uploadSpeed > 0 || downloadSpeed > 0) {
+        _log.info(
+          '流量: ↑${UIUtils.formatBytes(_uploadTotal)} ↓${UIUtils.formatBytes(_downloadTotal)} ' +
+          '速度: ↑${UIUtils.formatBytes(uploadSpeed)}/s ↓${UIUtils.formatBytes(downloadSpeed)}/s',
+          tag: _logTag
+        );
+        _lastLoggedUpload = _uploadTotal;
+        _lastLoggedDownload = _downloadTotal;
+      }
+      
+      // 更新状态
+      _updateStatus(V2RayStatus(
+        state: _currentStatus.state,
+        upload: _uploadTotal,
+        download: _downloadTotal,
+        uploadSpeed: uploadSpeed,
+        downloadSpeed: downloadSpeed,
+        duration: _currentStatus.duration,
+      ));
+      
+      // 基于流量判断连接状态
+      if ((_uploadTotal > 0 || _downloadTotal > 0) && 
+          _currentStatus.state != V2RayConnectionState.connected) {
+        _updateStatus(V2RayStatus(
+          state: V2RayConnectionState.connected,
+          upload: _uploadTotal,
+          download: _downloadTotal,
+          uploadSpeed: uploadSpeed,
+          downloadSpeed: downloadSpeed,
+        ));
+        _log.info('检测到流量，更新状态为已连接', tag: _logTag);
+      }
+      
+    } catch (e, stackTrace) {
+      _log.error('解析流量统计失败', tag: _logTag, error: e, stackTrace: stackTrace);
+    }
   }
   
   // 获取流量统计
