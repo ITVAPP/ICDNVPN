@@ -318,22 +318,8 @@ class V2RayService {
   
   // 查询当前V2Ray状态（移动平台）
   static Future<V2RayConnectionState> queryConnectionState() async {
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      return _currentStatus.state;
-    }
-    
-    try {
-      if (_flutterV2ray != null && _isFlutterV2rayInitialized) {
-        // 修复：getV2rayStatus()返回String而不是V2RayStatus对象
-        final statusString = await _flutterV2ray!.getV2rayStatus();
-        if (statusString != null) {
-          return _mapPluginState(statusString);
-        }
-      }
-    } catch (e) {
-      await _log.error('查询连接状态失败: $e', tag: _logTag);
-    }
-    
+    // 直接返回当前状态，不主动查询
+    // 状态通过onStatusChanged回调自动更新
     return _currentStatus.state;
   }
   
@@ -700,43 +686,33 @@ class V2RayService {
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
       }
       
-      // 4. 启动V2Ray
+      // 4. 启动V2Ray - 移除不存在的参数
       await _flutterV2ray!.startV2Ray(
         remark: serverName ?? "Proxy Server",
         config: configJson,
         blockedApps: null,  // 可以后续添加应用分流功能
         bypassSubnets: null,  // 可以后续添加子网绕过功能
         proxyOnly: proxyOnly,  // 使用传入的参数
-        notificationDisconnectButtonName: "Disconnect",
-        notificationTitle: proxyOnly ? "CFVPN Proxy Mode" : "CFVPN Running",
       );
       
       await _log.info('V2Ray启动命令已发送', tag: _logTag);
       
-      // 5. 等待连接建立
+      // 5. 等待连接建立 - 依赖状态回调，不主动查询
       await Future.delayed(AppConfig.v2rayCheckDelay);
       
-      // 6. 查询状态验证连接
-      // 修复：getV2rayStatus()返回String而不是V2RayStatus对象
-      final statusString = await _flutterV2ray!.getV2rayStatus();
-      if (statusString != null) {
-        final mappedState = _mapPluginState(statusString);
-        _isRunning = mappedState == V2RayConnectionState.connected;
-        
-        await _log.info('查询状态: $statusString -> $mappedState', tag: _logTag);
-      }
-      
-      // 7. 如果还未连接，再等待一次
-      if (!_isRunning) {
-        await _log.info('首次检查未连接，再等待2秒', tag: _logTag);
+      // 6. 检查状态（通过回调更新的_currentStatus）
+      if (_currentStatus.state == V2RayConnectionState.connected) {
+        _isRunning = true;
+        await _log.info('V2Ray已连接', tag: _logTag);
+      } else if (_currentStatus.state == V2RayConnectionState.connecting) {
+        // 7. 如果还在连接中，再等待一次
+        await _log.info('V2Ray连接中，再等待2秒', tag: _logTag);
         await Future.delayed(const Duration(seconds: 2));
         
-        // 修复：getV2rayStatus()返回String
-        final retryStatusString = await _flutterV2ray!.getV2rayStatus();
-        if (retryStatusString != null) {
-          final mappedState = _mapPluginState(retryStatusString);
-          _isRunning = mappedState == V2RayConnectionState.connected;
-          await _log.info('重试查询状态: $retryStatusString -> $mappedState', tag: _logTag);
+        // 再次检查状态
+        if (_currentStatus.state == V2RayConnectionState.connected) {
+          _isRunning = true;
+          await _log.info('V2Ray连接成功', tag: _logTag);
         }
       }
       
