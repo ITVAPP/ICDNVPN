@@ -1,7 +1,6 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // 注意：这里使用 dev.flutter.flutter-gradle-plugin
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -28,7 +27,7 @@ def kotlin_version = '1.9.0'
 android {
     namespace "com.example.cfvpn"
     compileSdkVersion 34
-    ndkVersion "25.1.8937393"  // 明确指定 NDK 版本
+    ndkVersion "25.1.8937393"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -70,14 +69,8 @@ android {
         }
     }
 
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'armeabi-v7a', 'arm64-v8a'
-            universalApk true
-        }
-    }
+    // 修复：移除 splits 配置，改用 Flutter 的方式处理
+    // Flutter build apk --split-per-abi 会自动处理 ABI 分割
     
     packagingOptions {
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
