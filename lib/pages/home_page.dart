@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -437,6 +438,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  // 修改：优化权限请求时机
   Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -460,6 +462,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (isConnected) {
               await provider.disconnect();
             } else {
+              // 连接前先检查Android权限（仅非代理模式需要）
+              if (Platform.isAndroid && !provider.proxyOnly) {
+                final hasPermission = await V2RayService.requestPermission();
+                if (!hasPermission) {
+                  // 显示权限说明对话框
+                  if (mounted) {
+                    final shouldRetry = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text(l10n.permissionRequired),
+                        content: Text(l10n.permissionReason),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: Text(l10n.cancel),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: Text(l10n.retry),
+                          ),
+                        ],
+                      ),
+                    ) ?? false;
+                    
+                    if (!shouldRetry) {
+                      // 用户取消，重置状态
+                      setState(() {
+                        _isProcessing = false;
+                        _isDisconnecting = false;
+                      });
+                      _loadingController.stop();
+                      _loadingController.reset();
+                      return;  
+                    }
+                    
+                    // 再次请求权限
+                    final retryPermission = await V2RayService.requestPermission();
+                    if (!retryPermission) {
+                      throw Exception('VPN permission denied');
+                    }
+                  }
+                }
+              }
+              
               await provider.connect();
             }
           } catch (e) {
