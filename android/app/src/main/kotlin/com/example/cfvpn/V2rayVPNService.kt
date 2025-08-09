@@ -14,6 +14,7 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
+import java.io.Serializable
 import go.Seq
 import libv2ray.Libv2ray
 import libv2ray.V2RayPoint
@@ -55,7 +56,7 @@ class V2rayVPNService : VpnService() {
     }
     
     private var mInterface: ParcelFileDescriptor? = null
-    private var tun2socksProcess: java.lang.Process? = null  // 明确指定java.lang.Process
+    private var tun2socksProcess: java.lang.Process? = null
     private var v2rayConfig: V2rayConfig? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var statusUpdateJob: Job? = null
@@ -422,7 +423,7 @@ class V2rayVPNService : VpnService() {
             val pb = ProcessBuilder(cmd)
             pb.redirectErrorStream(true)
             pb.directory(filesDir)
-            tun2socksProcess = pb.start()  // 这里是java.lang.Process
+            tun2socksProcess = pb.start()
             
             Log.d(TAG, "tun2socks process started")
             
@@ -432,7 +433,6 @@ class V2rayVPNService : VpnService() {
             // 监控进程
             serviceScope.launch {
                 try {
-                    // 使用局部变量避免smart cast问题
                     val process = tun2socksProcess
                     val exitCode = process?.waitFor()
                     Log.w(TAG, "tun2socks exited with code: $exitCode")
@@ -546,7 +546,7 @@ class V2rayVPNService : VpnService() {
             
             stopStatusMonitoring()
             
-            // 停止tun2socks - 使用destroy()而不是destroyForcibly()
+            // 停止tun2socks
             try {
                 tun2socksProcess?.destroy()
             } catch (e: Exception) {
@@ -638,18 +638,19 @@ class V2rayVPNService : VpnService() {
                 intent.putExtra("DOWNLOAD_SPEED", downloadSpeed)
                 intent.putExtra("UPLOAD_TRAFFIC", uploadTotal)
                 intent.putExtra("DOWNLOAD_TRAFFIC", downloadTotal)
-                intent.putExtra("STATE", V2RAY_STATES.V2RAY_CONNECTED)
+                intent.putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_CONNECTED as Serializable)
             } else {
                 intent.putExtra("DURATION", "00:00:00")
                 intent.putExtra("UPLOAD_SPEED", 0L)
                 intent.putExtra("DOWNLOAD_SPEED", 0L)
                 intent.putExtra("UPLOAD_TRAFFIC", 0L)
                 intent.putExtra("DOWNLOAD_TRAFFIC", 0L)
-                intent.putExtra("STATE", when(connectionState) {
-                    "CONNECTING" -> V2RAY_STATES.V2RAY_CONNECTING
-                    "CONNECTED" -> V2RAY_STATES.V2RAY_CONNECTED
-                    else -> V2RAY_STATES.V2RAY_DISCONNECTED
-                })
+                val state = when(connectionState) {
+                    "CONNECTING" -> AppConfigs.V2RAY_STATES.V2RAY_CONNECTING
+                    "CONNECTED" -> AppConfigs.V2RAY_STATES.V2RAY_CONNECTED
+                    else -> AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED
+                }
+                intent.putExtra("STATE", state as Serializable)
             }
             
             sendBroadcast(intent)
@@ -710,7 +711,7 @@ class V2rayVPNService : VpnService() {
         var REMARK: String = ""
     )
     
-    // 状态枚举 - 移到companion object外部
+    // 状态枚举
     object AppConfigs {
         enum class V2RAY_STATES {
             V2RAY_CONNECTED,
@@ -718,9 +719,6 @@ class V2rayVPNService : VpnService() {
             V2RAY_CONNECTING
         }
     }
-    
-    // 使用V2RAY_STATES的简写
-    private val V2RAY_STATES = AppConfigs.V2RAY_STATES
     
     override fun onRevoke() {
         Log.d(TAG, "VPN permission revoked")
