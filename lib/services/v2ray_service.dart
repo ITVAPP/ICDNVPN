@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
@@ -116,8 +117,14 @@ class V2RayService {
   // 记录是否已记录V2Ray目录信息
   static bool _hasLoggedV2RayInfo = false;
   
-  // 配置文件路径
-  static const String _CONFIG_PATH = 'assets/js/v2ray_config.json';
+  // 配置文件路径 - 根据平台选择
+  static String get _CONFIG_PATH {
+    if (Platform.isAndroid || Platform.isIOS) {
+      return 'assets/js/v2ray_config_mobile.json';  // 移动端配置
+    } else {
+      return 'assets/js/v2ray_config.json';  // 桌面端配置
+    }
+  }
   
   // 平台相关的可执行文件名
   static String get _v2rayExecutableName {
@@ -354,18 +361,76 @@ class V2RayService {
     }
   }
   
-  // 加载配置模板
+  // 加载配置模板 - 优化版，根据平台选择配置
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
-      final String jsonString = await rootBundle.loadString(_CONFIG_PATH);
-      return jsonDecode(jsonString);
+      final String configPath = _CONFIG_PATH;
+      await _log.info('加载配置文件: $configPath', tag: _logTag);
+      
+      final String jsonString = await rootBundle.loadString(configPath);
+      final config = jsonDecode(jsonString);
+      
+      // 移动端特殊处理：确保配置简洁
+      if (Platform.isAndroid || Platform.isIOS) {
+        // 移除可能存在的不兼容配置
+        _cleanMobileConfig(config);
+      }
+      
+      return config;
     } catch (e) {
       await _log.error('加载配置模板失败: $e', tag: _logTag);
       throw '无法加载V2Ray配置模板';
     }
   }
   
-  // 生成配置（统一处理）
+  // 清理移动端配置，移除不兼容的特性
+  static void _cleanMobileConfig(Map<String, dynamic> config) {
+    // 移除Stats API相关
+    config.remove('stats');
+    config.remove('api');
+    config.remove('policy');
+    
+    // 移除API入站
+    if (config['inbounds'] is List) {
+      (config['inbounds'] as List).removeWhere(
+        (inbound) => inbound['tag'] == 'api'
+      );
+    }
+    
+    // 移除fragment相关出站
+    if (config['outbounds'] is List) {
+      final outbounds = config['outbounds'] as List;
+      
+      // 移除proxy3等额外出站
+      outbounds.removeWhere(
+        (outbound) => outbound['tag'] == 'proxy3'
+      );
+      
+      // 清理proxy出站的dialerProxy
+      for (var outbound in outbounds) {
+        if (outbound['tag'] == 'proxy') {
+          // 移除sockopt中的dialerProxy
+          if (outbound['streamSettings']?['sockopt']?['dialerProxy'] != null) {
+            (outbound['streamSettings']['sockopt'] as Map).remove('dialerProxy');
+            
+            // 如果sockopt为空，则移除整个sockopt
+            if ((outbound['streamSettings']['sockopt'] as Map).isEmpty) {
+              (outbound['streamSettings'] as Map).remove('sockopt');
+            }
+          }
+        }
+      }
+    }
+    
+    // 移除API相关路由规则
+    if (config['routing']?['rules'] is List) {
+      (config['routing']['rules'] as List).removeWhere(
+        (rule) => rule['inboundTag']?.contains('api') == true
+      );
+    }
+  }
+  
+  // 生成配置（统一处理） - 优化版，支持动态参数
   static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
     required int serverPort,
@@ -373,10 +438,10 @@ class V2RayService {
     int localPort = 7898,
     int httpPort = 7899,
   }) async {
-    // 加载配置模板
+    // 加载配置模板（已根据平台自动选择）
     Map<String, dynamic> config = await _loadConfigTemplate();
     
-    // 检查服务器群组配置
+    // 检查服务器群组配置（从AppConfig读取）
     final groupServer = AppConfig.getRandomServer();
     if (groupServer != null) {
       serverIp = groupServer['address'];
@@ -391,8 +456,10 @@ class V2RayService {
         if (inbound is Map) {
           if (inbound['tag'] == 'socks') {
             inbound['port'] = localPort;
+            await _log.debug('设置SOCKS端口: $localPort', tag: _logTag);
           } else if (inbound['tag'] == 'http') {
             inbound['port'] = httpPort;
+            await _log.debug('设置HTTP端口: $httpPort', tag: _logTag);
           }
         }
       }
@@ -404,10 +471,13 @@ class V2RayService {
         if (outbound is Map && 
             outbound['tag'] == 'proxy' && 
             outbound['settings'] is Map) {
+          
+          // 更新服务器地址和端口
           var vnext = outbound['settings']['vnext'];
           if (vnext is List && vnext.isNotEmpty && vnext[0] is Map) {
             vnext[0]['address'] = serverIp;
             vnext[0]['port'] = serverPort;
+            await _log.info('配置服务器: $serverIp:$serverPort', tag: _logTag);
           }
           
           // 更新TLS和WebSocket配置
@@ -415,16 +485,52 @@ class V2RayService {
               outbound['streamSettings'] is Map) {
             var streamSettings = outbound['streamSettings'] as Map;
             
+            // 更新TLS serverName
             if (streamSettings['tlsSettings'] is Map) {
               streamSettings['tlsSettings']['serverName'] = serverName;
+              await _log.debug('设置TLS ServerName: $serverName', tag: _logTag);
             }
             
+            // 更新WebSocket Host
             if (streamSettings['wsSettings'] is Map && 
                 streamSettings['wsSettings']['headers'] is Map) {
               streamSettings['wsSettings']['headers']['Host'] = serverName;
+              await _log.debug('设置WebSocket Host: $serverName', tag: _logTag);
             }
           }
         }
+      }
+    }
+    
+    // 移动端额外验证
+    if (Platform.isAndroid || Platform.isIOS) {
+      // 再次确保移动端配置的简洁性
+      _cleanMobileConfig(config);
+      
+      // 记录最终配置概要
+      await _log.info('移动端配置概要:', tag: _logTag);
+      await _log.info('  - 入站数量: ${(config['inbounds'] as List?)?.length ?? 0}', tag: _logTag);
+      await _log.info('  - 出站数量: ${(config['outbounds'] as List?)?.length ?? 0}', tag: _logTag);
+      await _log.info('  - 路由规则数: ${(config['routing']?['rules'] as List?)?.length ?? 0}', tag: _logTag);
+      
+      // 检查是否有fragment或dialerProxy
+      bool hasFragment = false;
+      bool hasDialerProxy = false;
+      
+      if (config['outbounds'] is List) {
+        for (var outbound in config['outbounds']) {
+          if (outbound['settings']?['fragment'] != null) {
+            hasFragment = true;
+          }
+          if (outbound['streamSettings']?['sockopt']?['dialerProxy'] != null) {
+            hasDialerProxy = true;
+          }
+        }
+      }
+      
+      if (hasFragment || hasDialerProxy) {
+        await _log.warn('警告：移动端配置包含不兼容特性 - Fragment: $hasFragment, DialerProxy: $hasDialerProxy', 
+                       tag: _logTag);
       }
     }
     
@@ -547,7 +653,7 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 修改：添加proxyOnly参数
+  // 移动平台启动逻辑 - 优化版，使用移动端专用配置
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
@@ -571,7 +677,7 @@ class V2RayService {
         await _log.info('VPN权限已授予', tag: _logTag);
       }
       
-      // 3. 生成配置
+      // 3. 生成配置（会自动使用移动端配置模板）
       final configMap = await _generateConfigMap(
         serverIp: serverIp,
         serverPort: serverPort,
@@ -582,6 +688,14 @@ class V2RayService {
       
       final configJson = jsonEncode(configMap);
       await _log.info('配置已生成，长度: ${configJson.length}', tag: _logTag);
+      
+      // 在调试模式下，输出配置的关键信息
+      if (kDebugMode) {
+        await _log.debug('配置详情:', tag: _logTag);
+        await _log.debug('  - 协议: ${configMap['outbounds']?[0]?['protocol']}', tag: _logTag);
+        await _log.debug('  - 服务器: $serverIp:$serverPort', tag: _logTag);
+        await _log.debug('  - ServerName: $serverName', tag: _logTag);
+      }
       
       // 4. 启动V2Ray
       await _flutterV2ray!.startV2Ray(
@@ -629,6 +743,13 @@ class V2RayService {
       } else {
         _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
         await _log.warn('V2Ray连接失败', tag: _logTag);
+        
+        // 输出更多调试信息
+        if (kDebugMode) {
+          await _log.debug('连接失败详情:', tag: _logTag);
+          await _log.debug('  - 配置长度: ${configJson.length}', tag: _logTag);
+          await _log.debug('  - ProxyOnly: $proxyOnly', tag: _logTag);
+        }
       }
       
       await _log.info('移动平台：V2Ray启动流程完成，最终状态: ${_isRunning ? "已连接" : "未连接"}', 
@@ -733,7 +854,7 @@ class V2RayService {
     }
   }
   
-  // 停止V2Ray服务
+  // 停止V2Ray服务 - 修复版
   static Future<void> stop() async {
     // 并发控制
     if (_isStopping) {
@@ -745,14 +866,10 @@ class V2RayService {
     try {
       await _log.info('开始停止V2Ray服务', tag: _logTag);
       
-      // 更新状态
+      // 更新状态为断开
       _updateStatus(V2RayStatus(state: V2RayConnectionState.disconnected));
       
-      // 停止计时器
-      _stopStatsTimer();
-      _stopDurationTimer();
-      
-      // 重置状态
+      // 重置运行标志
       _isRunning = false;
       _hasLoggedV2RayInfo = false;
       
@@ -766,51 +883,55 @@ class V2RayService {
         } catch (e) {
           await _log.error('移动平台停止失败: $e', tag: _logTag);
         }
-        return;
-      }
-      
-      // Windows平台停止
-      if (_v2rayProcess != null) {
-        try {
-          _v2rayProcess!.kill(ProcessSignal.sigterm);
-          
-          // 等待进程退出
-          bool processExited = false;
-          for (int i = 0; i < AppConfig.v2rayTerminateRetries; i++) {
-            await Future.delayed(AppConfig.v2rayTerminateInterval);
-            try {
-              final exitCode = await _v2rayProcess!.exitCode.timeout(
-                const Duration(milliseconds: 100),
-                onTimeout: () => -1,
-              );
-              if (exitCode != -1) {
-                processExited = true;
-                await _log.info('V2Ray进程已退出', tag: _logTag);
-                break;
+        // 移动端不使用计时器，所以不需要停止
+      } else {
+        // Windows平台停止
+        // 停止计时器（仅Windows使用）
+        _stopStatsTimer();
+        _stopDurationTimer();
+        
+        if (_v2rayProcess != null) {
+          try {
+            _v2rayProcess!.kill(ProcessSignal.sigterm);
+            
+            // 等待进程退出
+            bool processExited = false;
+            for (int i = 0; i < AppConfig.v2rayTerminateRetries; i++) {
+              await Future.delayed(AppConfig.v2rayTerminateInterval);
+              try {
+                final exitCode = await _v2rayProcess!.exitCode.timeout(
+                  const Duration(milliseconds: 100),
+                  onTimeout: () => -1,
+                );
+                if (exitCode != -1) {
+                  processExited = true;
+                  await _log.info('V2Ray进程已退出', tag: _logTag);
+                  break;
+                }
+              } catch (e) {
+                // 继续等待
               }
-            } catch (e) {
-              // 继续等待
             }
+            
+            if (!processExited) {
+              await _log.warn('V2Ray进程未能优雅退出，强制终止', tag: _logTag);
+              _v2rayProcess!.kill(ProcessSignal.sigkill);
+            }
+          } catch (e) {
+            await _log.error('停止V2Ray进程时出错', tag: _logTag, error: e);
+          } finally {
+            _v2rayProcess = null;
           }
-          
-          if (!processExited) {
-            await _log.warn('V2Ray进程未能优雅退出，强制终止', tag: _logTag);
-            _v2rayProcess!.kill(ProcessSignal.sigkill);
-          }
-        } catch (e) {
-          await _log.error('停止V2Ray进程时出错', tag: _logTag, error: e);
-        } finally {
-          _v2rayProcess = null;
         }
-      }
-      
-      // 清理残留进程（Windows）
-      if (Platform.isWindows) {
-        try {
-          await Process.run('taskkill', ['/F', '/IM', _v2rayExecutableName], 
-            runInShell: true);
-        } catch (e) {
-          // 忽略
+        
+        // 清理残留进程（Windows）
+        if (Platform.isWindows) {
+          try {
+            await Process.run('taskkill', ['/F', '/IM', _v2rayExecutableName], 
+              runInShell: true);
+          } catch (e) {
+            // 忽略
+          }
         }
       }
       
@@ -823,7 +944,7 @@ class V2RayService {
   
   // Windows平台流量统计
   static void _startStatsTimer() {
-    if (Platform.isAndroid || Platform.isIOS) return;
+    if (Platform.isAndroid || Platform.isIOS) return;  // 移动端不使用
     
     _stopStatsTimer();
     
@@ -1060,13 +1181,22 @@ class V2RayService {
     };
   }
   
-  // 释放资源
+  // 释放资源 - 清理所有资源
   static void dispose() {
     _stopStatsTimer();
     _stopDurationTimer();
-    // flutter_v2ray插件没有dispose方法，只需要置空引用
+    
+    // 重置状态
+    _isRunning = false;
+    _hasLoggedV2RayInfo = false;
+    _uploadTotal = 0;
+    _downloadTotal = 0;
+    
+    // 清理flutter_v2ray引用
     _flutterV2ray = null;
     _isFlutterV2rayInitialized = false;
+    
+    // 关闭状态流
     if (!_statusController.isClosed) {
       _statusController.close();
     }
