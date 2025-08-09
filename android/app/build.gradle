@@ -50,10 +50,7 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
-        
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a'
-        }
+        // 移除 ndk.abiFilters，让 Flutter 自动处理
     }
 
     buildTypes {
