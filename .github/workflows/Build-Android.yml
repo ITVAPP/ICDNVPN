@@ -1,7 +1,9 @@
 name: Build Android APK
-
 on:
   workflow_dispatch:  # 仅手动触发
+
+env:
+  LIBV2RAY_VERSION: v5.37.0  # libv2ray 版本号常量
 
 jobs:
   build:
@@ -28,7 +30,7 @@ jobs:
         # 下载 libv2ray.aar
         mkdir -p android/app/libs
         wget -q -O android/app/libs/libv2ray.aar \
-          https://github.com/2dust/AndroidLibV2rayLite/releases/download/6.57/libv2ray.aar
+          https://github.com/2dust/AndroidLibV2rayLite/releases/download/${{ env.LIBV2RAY_VERSION }}/libv2ray.aar
         
         # 下载 geo 文件
         mkdir -p android/app/src/main/assets
@@ -36,18 +38,6 @@ jobs:
           https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
         wget -q -O android/app/src/main/assets/geosite.dat \
           https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
-        
-        # 下载 tun2socks
-        mkdir -p android/app/src/main/jniLibs/arm64-v8a
-        mkdir -p android/app/src/main/jniLibs/armeabi-v7a
-        
-        wget -q -O android/app/src/main/jniLibs/arm64-v8a/libtun2socks.so \
-          https://github.com/hiddify/hiddify-next-core/releases/download/v1.5.4/tun2socks-android-arm64
-        chmod +x android/app/src/main/jniLibs/arm64-v8a/libtun2socks.so
-        
-        wget -q -O android/app/src/main/jniLibs/armeabi-v7a/libtun2socks.so \
-          https://github.com/hiddify/hiddify-next-core/releases/download/v1.5.4/tun2socks-android-arm7
-        chmod +x android/app/src/main/jniLibs/armeabi-v7a/libtun2socks.so
     
     - name: Get dependencies
       run: flutter pub get
