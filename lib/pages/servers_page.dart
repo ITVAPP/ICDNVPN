@@ -283,7 +283,7 @@ class _ServersPageState extends State<ServersPage> {
             onPressed: () => _addCloudflareServer(context),
           ),
           // 添加右边距
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
         ],
       ),
       body: Consumer3<ServerProvider, ConnectionProvider, AdService>(
