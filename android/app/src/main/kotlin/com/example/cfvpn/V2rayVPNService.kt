@@ -10,17 +10,19 @@ import android.net.VpnService
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import go.Seq
 import kotlinx.coroutines.*
+import org.json.JSONObject
+import org.json.JSONArray
+import java.io.File
+
+// ===== 关键：添加缺失的imports =====
+import go.Seq
 import libv2ray.Libv2ray
 import libv2ray.V2RayPoint
 import libv2ray.V2RayVPNServiceSupportsSet
-import org.json.JSONObject
-import java.io.File
 
 /**
  * VPN服务实现 - 全局代理模式
- * 与开源项目的V2rayVPNService.java功能完全一致
  */
 class V2rayVPNService : VpnService() {
     companion object {
@@ -28,17 +30,11 @@ class V2rayVPNService : VpnService() {
         private const val NOTIFICATION_ID = 2
         private const val CHANNEL_ID = "v2ray_vpn_channel"
         
-        // 服务命令
         const val ACTION_START = "com.example.cfvpn.START_VPN"
         const val ACTION_STOP = "com.example.cfvpn.STOP_VPN"
         const val ACTION_QUERY_STATUS = "com.example.cfvpn.QUERY_VPN_STATUS"
         
-        // 广播Action - 与代理服务共用
         const val BROADCAST_VPN_STATUS = "V2RAY_CONNECTION_INFO"
-        
-        // V2RayPoint单例
-        @Volatile
-        private var v2rayPoint: V2RayPoint? = null
         
         @Volatile
         var isRunning = false
@@ -48,54 +44,102 @@ class V2rayVPNService : VpnService() {
         var connectionState = "DISCONNECTED"
             private set
             
-        // VPN接口
-        private var mInterface: ParcelFileDescriptor? = null
-        
-        // tun2socks进程 - 明确使用java.lang.Process
-        private var tun2socksProcess: java.lang.Process? = null
-        
-        // 配置信息
-        private var serverAddress = ""
-        private var serverPort = ""
-        private var localSocksPort = 10808
+        // V2RayPoint单例
+        @Volatile
+        private var v2rayPoint: V2RayPoint? = null
         
         // 统计数据
-        @Volatile
         private var lastUploadBytes = 0L
-        @Volatile
         private var lastDownloadBytes = 0L
-        @Volatile
-        private var lastQueryTime = 0L
-        @Volatile
-        private var connectionStartTime = 0L
-        
-        // 计时
         private var seconds = 0
         private var minutes = 0
         private var hours = 0
     }
     
+    private var mInterface: ParcelFileDescriptor? = null
+    private var tun2socksProcess: Process? = null
+    private var v2rayConfig: V2rayConfig? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var statusUpdateJob: Job? = null
-    private var v2rayConfig: V2rayConfig? = null
     
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "VPN Service onCreate")
         
-        // 初始化Go序列化上下文
-        try {
-            Seq.setContext(applicationContext)
-            Log.d(TAG, "Go Seq context initialized for VPN")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Go Seq", e)
-        }
-        
         // 初始化V2Ray环境
-        initializeV2RayEnvironment()
+        initializeV2Ray()
         
         // 创建通知渠道
         createNotificationChannel()
+    }
+    
+    private fun initializeV2Ray() {
+        try {
+            // 设置Go序列化上下文
+            Seq.setContext(applicationContext)
+            Log.d(TAG, "Go Seq context set")
+            
+            // 复制geo文件
+            copyAssetFiles()
+            
+            // 初始化V2Ray环境
+            val v2rayPath = filesDir.absolutePath
+            Libv2ray.initV2Env(v2rayPath, "")
+            Log.d(TAG, "V2Ray environment initialized at: $v2rayPath")
+            
+            // 创建V2RayPoint - 只创建一次
+            if (v2rayPoint == null) {
+                v2rayPoint = Libv2ray.newV2RayPoint(object : V2RayVPNServiceSupportsSet {
+                    override fun shutdown(): Long {
+                        Log.d(TAG, "V2RayPoint shutdown")
+                        return 0
+                    }
+                    
+                    override fun prepare(): Long {
+                        return 0  // VPN权限已在MainActivity请求
+                    }
+                    
+                    override fun protect(socket: Long): Boolean {
+                        return protect(socket.toInt())
+                    }
+                    
+                    override fun onEmitStatus(status: Long, message: String?): Long {
+                        Log.d(TAG, "V2Ray status: $status - $message")
+                        return 0
+                    }
+                    
+                    override fun setup(parameters: String?): Long {
+                        // 注意：使用runLoop(false)时，这个回调不会被调用
+                        return 0
+                    }
+                }, Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1)
+                
+                Log.d(TAG, "V2RayPoint created successfully")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize V2Ray", e)
+            e.printStackTrace()
+        }
+    }
+    
+    private fun copyAssetFiles() {
+        val files = listOf("geoip.dat", "geosite.dat")
+        for (fileName in files) {
+            val targetFile = File(filesDir, fileName)
+            if (!targetFile.exists()) {
+                try {
+                    assets.open(fileName).use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.d(TAG, "Copied $fileName (${targetFile.length()} bytes)")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to copy $fileName: ${e.message}")
+                }
+            }
+        }
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -108,8 +152,16 @@ class V2rayVPNService : VpnService() {
                 val blockedApps = intent.getStringArrayListExtra("blocked_apps")
                 val bypassSubnets = intent.getStringArrayListExtra("bypass_subnets")
                 
+                Log.d(TAG, "Starting VPN with remark: $remark")
+                
                 if (config != null) {
-                    startVPN(config, remark, blockedApps, bypassSubnets)
+                    serviceScope.launch {
+                        try {
+                            startVPN(config, remark, blockedApps, bypassSubnets)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in startVPN coroutine", e)
+                        }
+                    }
                 } else {
                     Log.e(TAG, "Config is null")
                     stopSelf()
@@ -127,77 +179,77 @@ class V2rayVPNService : VpnService() {
         return START_STICKY
     }
     
-    private fun initializeV2RayEnvironment() {
+    private suspend fun startVPN(
+        config: String,
+        remark: String,
+        blockedApps: ArrayList<String>?,
+        bypassSubnets: ArrayList<String>?
+    ) {
         try {
-            // 复制geo文件
-            copyAssetFiles()
+            Log.d(TAG, "startVPN: Begin")
             
-            // 初始化V2Ray环境
-            val v2rayPath = filesDir.absolutePath
-            Libv2ray.initV2Env(v2rayPath, "")
-            Log.d(TAG, "V2Ray environment initialized for VPN at: $v2rayPath")
+            // 停止现有连接
+            if (isRunning) {
+                Log.d(TAG, "Stopping existing connection")
+                stopV2RayCore()
+                delay(500)
+            }
             
-            // 创建V2RayPoint - VPN模式
-            if (v2rayPoint == null) {
-                v2rayPoint = Libv2ray.newV2RayPoint(object : V2RayVPNServiceSupportsSet {
-                    override fun shutdown(): Long {
-                        Log.d(TAG, "V2RayPoint shutdown callback")
-                        return 0
-                    }
-                    
-                    override fun prepare(): Long {
-                        return 0 // VPN权限已在MainActivity中请求
-                    }
-                    
-                    override fun protect(socket: Long): Boolean {
-                        // 保护socket不走VPN
-                        return protect(socket.toInt())
-                    }
-                    
-                    override fun onEmitStatus(status: Long, message: String?): Long {
-                        Log.d(TAG, "V2Ray status: $status - $message")
-                        return 0
-                    }
-                    
-                    override fun setup(parameters: String?): Long {
-                        try {
-                            // 设置VPN
-                            return if (setupVPN()) 0 else -1
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Setup VPN failed", e)
-                            return -1
-                        }
-                    }
-                }, Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1)
+            // 启动前台服务
+            Log.d(TAG, "Starting foreground service")
+            startForeground(NOTIFICATION_ID, createNotification(remark))
+            
+            // 更新状态
+            connectionState = "CONNECTING"
+            sendStatusBroadcast()
+            
+            // 解析配置
+            Log.d(TAG, "Parsing V2Ray config")
+            v2rayConfig = parseV2rayConfig(config, remark, blockedApps, bypassSubnets)
+            if (v2rayConfig == null) {
+                throw Exception("Failed to parse config")
+            }
+            
+            // 关键步骤1：先建立VPN接口
+            Log.d(TAG, "Setting up VPN interface...")
+            if (!setupVPN()) {
+                throw Exception("Failed to setup VPN interface")
+            }
+            
+            // 等待tun2socks初始化
+            delay(500)
+            
+            // 关键步骤2：启动V2Ray核心
+            Log.d(TAG, "Starting V2Ray core...")
+            if (!startV2RayCore()) {
+                throw Exception("Failed to start V2Ray core")
+            }
+            
+            // 等待V2Ray启动
+            delay(1000)
+            
+            // 验证状态
+            if (v2rayPoint?.isRunning == true) {
+                isRunning = true
+                connectionState = "CONNECTED"
+                Log.d(TAG, "VPN started successfully")
                 
-                Log.d(TAG, "V2RayPoint created for VPN mode")
+                // 启动状态监控
+                startStatusMonitoring()
+                
+                // 发送连接成功广播
+                sendStatusBroadcast()
+            } else {
+                throw Exception("V2Ray is not running after start")
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize V2Ray environment", e)
-        }
-    }
-    
-    private fun copyAssetFiles() {
-        try {
-            val files = listOf("geoip.dat", "geosite.dat")
-            for (fileName in files) {
-                val targetFile = File(filesDir, fileName)
-                if (!targetFile.exists() || targetFile.length() == 0L) {
-                    try {
-                        assets.open(fileName).use { input ->
-                            targetFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        Log.d(TAG, "Copied $fileName (${targetFile.length()} bytes)")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to copy $fileName: ${e.message}")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy asset files", e)
+            Log.e(TAG, "Failed to start VPN: ${e.message}", e)
+            e.printStackTrace()
+            connectionState = "ERROR"
+            sendStatusBroadcast()
+            stopVPN()
+            stopSelf()
         }
     }
     
@@ -219,22 +271,26 @@ class V2rayVPNService : VpnService() {
             val inbounds = configJson.getJSONArray("inbounds")
             for (i in 0 until inbounds.length()) {
                 val inbound = inbounds.getJSONObject(i)
-                val protocol = inbound.getString("protocol")
-                when (protocol) {
+                when (inbound.getString("protocol")) {
                     "socks" -> {
                         v2Config.LOCAL_SOCKS5_PORT = inbound.getInt("port")
-                        localSocksPort = v2Config.LOCAL_SOCKS5_PORT
-                        Log.d(TAG, "SOCKS5 port: $localSocksPort")
+                        Log.d(TAG, "SOCKS5 port: ${v2Config.LOCAL_SOCKS5_PORT}")
+                    }
+                    "http" -> {
+                        v2Config.LOCAL_HTTP_PORT = inbound.getInt("port")
+                        Log.d(TAG, "HTTP port: ${v2Config.LOCAL_HTTP_PORT}")
                     }
                 }
             }
             
-            // 解析outbounds
+            // 解析outbounds - 支持所有协议
             val outbounds = configJson.getJSONArray("outbounds")
             if (outbounds.length() > 0) {
-                val outbound = outbounds.getJSONObject(0)
-                val protocol = outbound.getString("protocol")
-                val settings = outbound.getJSONObject("settings")
+                val firstOutbound = outbounds.getJSONObject(0)
+                val protocol = firstOutbound.getString("protocol")
+                val settings = firstOutbound.getJSONObject("settings")
+                
+                Log.d(TAG, "Outbound protocol: $protocol")
                 
                 when (protocol) {
                     "vmess", "vless" -> {
@@ -249,12 +305,7 @@ class V2rayVPNService : VpnService() {
                     }
                 }
                 
-                serverAddress = v2Config.CONNECTED_V2RAY_SERVER_ADDRESS
-                serverPort = v2Config.CONNECTED_V2RAY_SERVER_PORT
-                
-                // 设置域名
-                v2rayPoint?.domainName = "$serverAddress:$serverPort"
-                Log.d(TAG, "Server: $serverAddress:$serverPort")
+                Log.d(TAG, "Server: ${v2Config.CONNECTED_V2RAY_SERVER_ADDRESS}:${v2Config.CONNECTED_V2RAY_SERVER_PORT}")
             }
             
             // 添加流量统计配置
@@ -263,292 +314,229 @@ class V2rayVPNService : VpnService() {
             }
             if (!configJson.has("policy")) {
                 val policy = JSONObject()
-                val levels = JSONObject()
-                levels.put("8", JSONObject()
-                    .put("connIdle", 300)
-                    .put("downlinkOnly", 1)
-                    .put("handshake", 4)
-                    .put("uplinkOnly", 1))
                 val system = JSONObject()
                     .put("statsOutboundUplink", true)
                     .put("statsOutboundDownlink", true)
-                policy.put("levels", levels)
                 policy.put("system", system)
                 configJson.put("policy", policy)
             }
             
             v2Config.V2RAY_FULL_JSON_CONFIG = configJson.toString()
-            
-            // 设置配置内容
-            v2rayPoint?.configureFileContent = v2Config.V2RAY_FULL_JSON_CONFIG
-            
             return v2Config
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse config", e)
+            e.printStackTrace()
             return null
         }
     }
     
     private fun setupVPN(): Boolean {
         try {
+            Log.d(TAG, "setupVPN: Starting")
+            
             // 关闭旧接口
             mInterface?.close()
             
-            // 创建VPN Builder
             val builder = Builder()
             builder.setSession(v2rayConfig?.REMARK ?: "CFVPN")
             builder.setMtu(1500)
-            
-            // 设置VPN IP地址
             builder.addAddress("10.10.10.2", 30)
             
-            // DNS服务器
+            // DNS
             builder.addDnsServer("8.8.8.8")
             builder.addDnsServer("8.8.4.4")
             builder.addDnsServer("1.1.1.1")
             
-            // 路由配置
-            if (v2rayConfig?.BYPASS_SUBNETS.isNullOrEmpty()) {
-                // 全局代理 - 添加0.0.0.0/0路由
-                builder.addRoute("0.0.0.0", 0)
-            } else {
-                // 添加默认路由但排除指定子网
-                builder.addRoute("0.0.0.0", 0)
-                // 注意：Android VPN API不支持直接排除路由，需要在应用层处理
-            }
+            // 路由 - 全局代理
+            builder.addRoute("0.0.0.0", 0)
             
-            // 应用过滤（黑名单模式）
-            v2rayConfig?.BLOCKED_APPS?.forEach { packageName ->
+            // 应用过滤
+            v2rayConfig?.BLOCKED_APPS?.forEach { pkg ->
                 try {
-                    builder.addDisallowedApplication(packageName)
+                    builder.addDisallowedApplication(pkg)
+                    Log.d(TAG, "Excluded app: $pkg")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to add disallowed app: $packageName")
+                    Log.w(TAG, "Failed to exclude app: $pkg")
                 }
             }
             
-            // Android 10+ 设置为不计费
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
             
             // 建立VPN接口
+            Log.d(TAG, "Establishing VPN interface...")
             mInterface = builder.establish()
             
             if (mInterface != null) {
-                Log.d(TAG, "VPN interface established")
+                Log.d(TAG, "VPN interface established successfully")
+                
                 // 启动tun2socks
-                runTun2socks()
+                val tun2socksStarted = runTun2socks()
+                if (!tun2socksStarted) {
+                    Log.w(TAG, "tun2socks not available, continuing anyway")
+                }
+                
                 return true
             } else {
-                Log.e(TAG, "Failed to establish VPN interface")
+                Log.e(TAG, "Failed to establish VPN interface - builder.establish() returned null")
                 return false
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup VPN", e)
+            e.printStackTrace()
             return false
         }
     }
     
-    private fun runTun2socks() {
+    private fun runTun2socks(): Boolean {
+        val tun2socksPath = File(applicationInfo.nativeLibraryDir, "libtun2socks.so")
+        
+        Log.d(TAG, "Looking for tun2socks at: ${tun2socksPath.absolutePath}")
+        
+        if (!tun2socksPath.exists()) {
+            Log.e(TAG, "tun2socks not found! This may cause connection issues.")
+            // 继续运行，因为某些V2Ray版本可能有内置TUN支持
+            return false
+        }
+        
         try {
-            // 检查tun2socks是否存在
-            val tun2socksPath = File(applicationInfo.nativeLibraryDir, "libtun2socks.so")
-            if (!tun2socksPath.exists()) {
-                Log.e(TAG, "tun2socks not found at: ${tun2socksPath.absolutePath}")
-                // 尝试使用V2Ray内置的TUN支持
-                setupV2RayTun()
-                return
-            }
-            
-            // 创建socket文件路径
             val sockPath = File(filesDir, "sock_path")
-            sockPath.delete() // 删除旧的socket文件
+            sockPath.delete()
             
-            // 构建tun2socks命令
-            val cmd = ArrayList<String>().apply {
-                add(tun2socksPath.absolutePath)
-                add("--netif-ipaddr")
-                add("10.10.10.2")
-                add("--netif-netmask")
-                add("255.255.255.252")
-                add("--socks-server-addr")
-                add("127.0.0.1:$localSocksPort")
-                add("--tunmtu")
-                add("1500")
-                add("--sock-path")
-                add(sockPath.absolutePath)
-                add("--enable-udprelay")
-                add("--loglevel")
-                add("error")
-            }
+            val socksPort = v2rayConfig?.LOCAL_SOCKS5_PORT ?: 10808
             
-            Log.d(TAG, "Starting tun2socks with command: ${cmd.joinToString(" ")}")
+            val cmd = arrayListOf(
+                tun2socksPath.absolutePath,
+                "--netif-ipaddr", "10.10.10.2",
+                "--netif-netmask", "255.255.255.252",
+                "--socks-server-addr", "127.0.0.1:$socksPort",
+                "--tunmtu", "1500",
+                "--sock-path", sockPath.absolutePath,
+                "--enable-udprelay",
+                "--loglevel", "warning"
+            )
             
-            val processBuilder = ProcessBuilder(cmd)
-            processBuilder.redirectErrorStream(true)
-            processBuilder.directory(filesDir)
-            processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
+            Log.d(TAG, "Starting tun2socks with SOCKS5 port: $socksPort")
             
-            tun2socksProcess = processBuilder.start()
+            val pb = ProcessBuilder(cmd)
+            pb.redirectErrorStream(true)
+            pb.directory(filesDir)
+            tun2socksProcess = pb.start()
             
-            // 监控进程输出
-            serviceScope.launch(Dispatchers.IO) {
-                try {
-                    tun2socksProcess?.inputStream?.bufferedReader()?.use { reader ->
-                        reader.forEachLine { line ->
-                            Log.d(TAG, "tun2socks: $line")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error reading tun2socks output", e)
-                }
-            }
+            Log.d(TAG, "tun2socks process started")
             
             // 发送文件描述符
             sendFileDescriptor(sockPath)
             
+            // 监控进程
+            serviceScope.launch {
+                try {
+                    val exitCode = tun2socksProcess?.waitFor()
+                    Log.w(TAG, "tun2socks exited with code: $exitCode")
+                    if (isRunning) {
+                        delay(1000)
+                        runTun2socks()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "tun2socks monitor error", e)
+                }
+            }
+            
+            return true
+            
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start tun2socks", e)
-            // 尝试使用V2Ray内置的TUN支持
-            setupV2RayTun()
+            e.printStackTrace()
+            return false
         }
     }
     
-    private fun setupV2RayTun() {
-        // 如果tun2socks不可用，尝试使用V2Ray的内置TUN支持
-        Log.w(TAG, "Falling back to V2Ray internal TUN support")
-        // V2Ray v5+ 支持内置TUN
-        // 这里需要修改V2Ray配置以启用TUN入站
-    }
-    
     private fun sendFileDescriptor(sockPath: File) {
-        val tunFd = mInterface?.fileDescriptor ?: return
+        val tunFd = mInterface?.fileDescriptor ?: run {
+            Log.e(TAG, "No file descriptor available")
+            return
+        }
         
         serviceScope.launch {
-            var retries = 0
-            val maxRetries = 10
-            
-            while (retries < maxRetries && isRunning) {
+            repeat(10) { attempt ->
                 try {
-                    delay(100L * (retries + 1)) // 递增延迟
+                    delay(100L * (attempt + 1))
                     
                     if (!sockPath.exists()) {
-                        Log.d(TAG, "Socket file not yet created, waiting...")
-                        retries++
-                        continue
+                        Log.d(TAG, "Waiting for socket file... (attempt ${attempt + 1})")
+                        return@repeat
                     }
                     
-                    val clientSocket = LocalSocket()
-                    clientSocket.connect(LocalSocketAddress(
+                    val socket = LocalSocket()
+                    socket.connect(LocalSocketAddress(
                         sockPath.absolutePath,
                         LocalSocketAddress.Namespace.FILESYSTEM
                     ))
                     
-                    if (clientSocket.isConnected) {
-                        Log.d(TAG, "Connected to tun2socks socket")
-                        
-                        val outputStream = clientSocket.outputStream
-                        clientSocket.setFileDescriptorsForSend(arrayOf(tunFd))
-                        outputStream.write(32) // Magic number
-                        outputStream.flush()
-                        clientSocket.close()
-                        
+                    if (socket.isConnected) {
+                        socket.setFileDescriptorsForSend(arrayOf(tunFd))
+                        socket.outputStream.write(32)
+                        socket.close()
                         Log.d(TAG, "File descriptor sent successfully")
-                        break
+                        return@launch
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to send FD, attempt ${retries + 1}/$maxRetries", e)
-                    retries++
+                    if (attempt == 9) {
+                        Log.e(TAG, "Failed to send FD after 10 attempts", e)
+                    }
                 }
-            }
-            
-            if (retries >= maxRetries) {
-                Log.e(TAG, "Failed to send file descriptor after $maxRetries attempts")
-                // 可能需要停止服务
             }
         }
     }
     
-    private fun startVPN(
-        config: String,
-        remark: String,
-        blockedApps: ArrayList<String>?,
-        bypassSubnets: ArrayList<String>?
-    ) {
-        serviceScope.launch {
-            try {
+    private fun startV2RayCore(): Boolean {
+        try {
+            Log.d(TAG, "startV2RayCore: Begin")
+            
+            if (v2rayPoint == null) {
+                Log.e(TAG, "V2RayPoint is null, trying to reinitialize")
+                initializeV2Ray()
                 if (v2rayPoint == null) {
-                    Log.e(TAG, "V2RayPoint is null, reinitializing...")
-                    initializeV2RayEnvironment()
-                    if (v2rayPoint == null) {
-                        Log.e(TAG, "Failed to initialize V2RayPoint")
-                        stopSelf()
-                        return@launch
-                    }
+                    Log.e(TAG, "Failed to initialize V2RayPoint")
+                    return false
                 }
-                
-                if (isRunning) {
-                    Log.d(TAG, "VPN already running, stopping first")
-                    stopV2RayCore()
-                    delay(500)
-                }
-                
-                // 启动前台服务
-                startForeground(NOTIFICATION_ID, createNotification(remark))
-                
-                // 更新状态
-                connectionState = "CONNECTING"
-                sendStatusBroadcast()
-                
-                // 解析配置
-                v2rayConfig = parseV2rayConfig(config, remark, blockedApps, bypassSubnets)
-                if (v2rayConfig == null) {
-                    Log.e(TAG, "Failed to parse config")
-                    connectionState = "ERROR"
-                    sendStatusBroadcast()
-                    stopSelf()
-                    return@launch
-                }
-                
-                // 启动V2Ray核心
-                v2rayPoint?.runLoop(true) // true = VPN模式
-                
-                delay(1000) // 等待启动
-                
-                // 检查启动状态
-                if (v2rayPoint?.isRunning == true) {
-                    isRunning = true
-                    connectionState = "CONNECTED"
-                    connectionStartTime = System.currentTimeMillis()
-                    lastQueryTime = System.currentTimeMillis()
-                    
-                    // 重置统计
-                    lastUploadBytes = 0
-                    lastDownloadBytes = 0
-                    seconds = 0
-                    minutes = 0
-                    hours = 0
-                    
-                    Log.d(TAG, "V2Ray VPN started successfully")
-                    
-                    // 启动状态监控
-                    startStatusMonitoring()
-                    
-                } else {
-                    Log.e(TAG, "V2Ray failed to start")
-                    connectionState = "ERROR"
-                    sendStatusBroadcast()
-                    stopSelf()
-                }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start VPN", e)
-                connectionState = "ERROR"
-                sendStatusBroadcast()
-                stopSelf()
             }
+            
+            // 设置配置
+            v2rayPoint?.configureFileContent = v2rayConfig?.V2RAY_FULL_JSON_CONFIG
+            Log.d(TAG, "V2Ray config set")
+            
+            // 设置域名
+            val serverAddress = v2rayConfig?.CONNECTED_V2RAY_SERVER_ADDRESS ?: ""
+            val serverPort = v2rayConfig?.CONNECTED_V2RAY_SERVER_PORT ?: ""
+            v2rayPoint?.domainName = "$serverAddress:$serverPort"
+            Log.d(TAG, "V2Ray domain set: $serverAddress:$serverPort")
+            
+            // 启动V2Ray - false表示不需要V2Ray管理VPN
+            Log.d(TAG, "Starting V2Ray runLoop...")
+            v2rayPoint?.runLoop(false)
+            
+            Log.d(TAG, "V2Ray core started successfully")
+            return true
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start V2Ray core", e)
+            e.printStackTrace()
+            return false
+        }
+    }
+    
+    private fun stopV2RayCore() {
+        try {
+            if (v2rayPoint?.isRunning == true) {
+                v2rayPoint?.stopLoop()
+                Log.d(TAG, "V2Ray core stopped")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping V2Ray core", e)
         }
     }
     
@@ -571,13 +559,8 @@ class V2rayVPNService : VpnService() {
             
             isRunning = false
             connectionState = "DISCONNECTED"
-            connectionStartTime = 0
-            lastUploadBytes = 0
-            lastDownloadBytes = 0
-            lastQueryTime = 0
             
             sendStatusBroadcast()
-            
             stopForeground(true)
             
             Log.d(TAG, "VPN stopped")
@@ -587,25 +570,14 @@ class V2rayVPNService : VpnService() {
         }
     }
     
-    private fun stopV2RayCore() {
-        try {
-            if (v2rayPoint?.isRunning == true) {
-                v2rayPoint?.stopLoop()
-                Log.d(TAG, "V2Ray core stopped")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping V2Ray core", e)
-        }
-    }
-    
     private fun startStatusMonitoring() {
         stopStatusMonitoring()
         
-        Log.d(TAG, "Starting VPN status monitoring")
+        Log.d(TAG, "Starting status monitoring")
         
         statusUpdateJob = serviceScope.launch {
             while (isActive && isRunning) {
-                updateConnectionTime()
+                updateStats()
                 sendStatusBroadcast()
                 delay(1000)
             }
@@ -617,7 +589,7 @@ class V2rayVPNService : VpnService() {
         statusUpdateJob = null
     }
     
-    private fun updateConnectionTime() {
+    private fun updateStats() {
         seconds++
         if (seconds == 60) {
             minutes++
@@ -634,60 +606,46 @@ class V2rayVPNService : VpnService() {
             val intent = Intent(BROADCAST_VPN_STATUS)
             
             if (isRunning && v2rayPoint != null) {
-                val currentTime = System.currentTimeMillis()
-                
                 // 查询流量统计
-                val blockUplink = try {
-                    v2rayPoint?.queryStats("block", "uplink") ?: 0L
+                val uploadTotal = try {
+                    (v2rayPoint?.queryStats("proxy", "uplink") ?: 0) +
+                    (v2rayPoint?.queryStats("direct", "uplink") ?: 0) +
+                    (v2rayPoint?.queryStats("block", "uplink") ?: 0)
                 } catch (e: Exception) { 0L }
                 
-                val blockDownlink = try {
-                    v2rayPoint?.queryStats("block", "downlink") ?: 0L
+                val downloadTotal = try {
+                    (v2rayPoint?.queryStats("proxy", "downlink") ?: 0) +
+                    (v2rayPoint?.queryStats("direct", "downlink") ?: 0) +
+                    (v2rayPoint?.queryStats("block", "downlink") ?: 0)
                 } catch (e: Exception) { 0L }
-                
-                val proxyUplink = try {
-                    v2rayPoint?.queryStats("proxy", "uplink") ?: 0L
-                } catch (e: Exception) { 0L }
-                
-                val proxyDownlink = try {
-                    v2rayPoint?.queryStats("proxy", "downlink") ?: 0L
-                } catch (e: Exception) { 0L }
-                
-                val totalUpload = blockUplink + proxyUplink
-                val totalDownload = blockDownlink + proxyDownlink
                 
                 // 计算速度
-                var uploadSpeed = 0L
-                var downloadSpeed = 0L
+                val uploadSpeed = uploadTotal - lastUploadBytes
+                val downloadSpeed = downloadTotal - lastDownloadBytes
                 
-                if (lastQueryTime > 0) {
-                    val timeDiff = (currentTime - lastQueryTime) / 1000.0
-                    if (timeDiff > 0) {
-                        uploadSpeed = ((totalUpload - lastUploadBytes) / timeDiff).toLong()
-                        downloadSpeed = ((totalDownload - lastDownloadBytes) / timeDiff).toLong()
-                    }
-                }
-                
-                lastUploadBytes = totalUpload
-                lastDownloadBytes = totalDownload
-                lastQueryTime = currentTime
+                lastUploadBytes = uploadTotal
+                lastDownloadBytes = downloadTotal
                 
                 val duration = String.format("%02d:%02d:%02d", hours, minutes, seconds)
                 
+                // 与MainActivity期望的格式匹配
                 intent.putExtra("DURATION", duration)
                 intent.putExtra("UPLOAD_SPEED", uploadSpeed)
                 intent.putExtra("DOWNLOAD_SPEED", downloadSpeed)
-                intent.putExtra("UPLOAD_TRAFFIC", totalUpload)
-                intent.putExtra("DOWNLOAD_TRAFFIC", totalDownload)
-                intent.putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_CONNECTED)
-                
+                intent.putExtra("UPLOAD_TRAFFIC", uploadTotal)
+                intent.putExtra("DOWNLOAD_TRAFFIC", downloadTotal)
+                intent.putExtra("STATE", V2RAY_STATES.V2RAY_CONNECTED)
             } else {
                 intent.putExtra("DURATION", "00:00:00")
                 intent.putExtra("UPLOAD_SPEED", 0L)
                 intent.putExtra("DOWNLOAD_SPEED", 0L)
                 intent.putExtra("UPLOAD_TRAFFIC", 0L)
                 intent.putExtra("DOWNLOAD_TRAFFIC", 0L)
-                intent.putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
+                intent.putExtra("STATE", when(connectionState) {
+                    "CONNECTING" -> V2RAY_STATES.V2RAY_CONNECTING
+                    "CONNECTED" -> V2RAY_STATES.V2RAY_CONNECTED
+                    else -> V2RAY_STATES.V2RAY_DISCONNECTED
+                })
             }
             
             sendBroadcast(intent)
@@ -726,22 +684,11 @@ class V2rayVPNService : VpnService() {
             }
         )
         
-        val mainIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val mainPendingIntent = PendingIntent.getActivity(
-            this, 0, mainIntent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-        )
-        
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CFVPN - VPN Mode")
             .setContentText("Connected to $remark")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
-            .setContentIntent(mainPendingIntent)
             .addAction(android.R.drawable.ic_delete, "Disconnect", stopPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -752,6 +699,7 @@ class V2rayVPNService : VpnService() {
         var CONNECTED_V2RAY_SERVER_ADDRESS: String = "",
         var CONNECTED_V2RAY_SERVER_PORT: String = "",
         var LOCAL_SOCKS5_PORT: Int = 10808,
+        var LOCAL_HTTP_PORT: Int = 10809,
         var BLOCKED_APPS: ArrayList<String>? = null,
         var BYPASS_SUBNETS: ArrayList<String>? = null,
         var V2RAY_FULL_JSON_CONFIG: String? = null,
@@ -766,6 +714,9 @@ class V2rayVPNService : VpnService() {
             V2RAY_CONNECTING
         }
     }
+    
+    // 使用内部的枚举别名，方便使用
+    typealias V2RAY_STATES = AppConfigs.V2RAY_STATES
     
     override fun onRevoke() {
         Log.d(TAG, "VPN permission revoked")
