@@ -72,6 +72,7 @@ class AppLocalizations {
   String get importFromClipboard => _get('importFromClipboard');
   String get pasteServerConfig => _get('pasteServerConfig');
   String get diagnosticTool => _get('diagnosticTool');
+  String get diagnosticNotSupported => _get('diagnosticNotSupported');  // 添加缺失的getter
   
   // 设置页面
   String get generalSettings => _get('generalSettings');
@@ -447,6 +448,7 @@ const Map<String, String> _zhCnTranslations = {
   'importFromClipboard': '从剪贴板导入',
   'pasteServerConfig': '粘贴服务器配置',
   'diagnosticTool': '诊断工具',
+  'diagnosticNotSupported': '诊断工具暂不支持移动平台',  // 添加缺失的翻译
   
   // 设置页面
   'generalSettings': '通用设置',
@@ -654,29 +656,34 @@ const Map<String, String> _zhCnTranslations = {
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
+  'diagnosticNotSupported': 'Diagnostic tool is not supported on mobile platforms',  // 添加英文翻译
   // 其他英文翻译待完善
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
+  'diagnosticNotSupported': '診斷工具暫不支持移動平台',  // 添加繁体中文翻译
   // 其他繁体中文翻译待完善
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
+  'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',  // 添加西班牙语翻译
   // 其他西班牙语翻译待完善
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
+  'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',  // 添加俄语翻译
   // 其他俄语翻译待完善
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
+  'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',  // 添加阿拉伯语翻译
   // 其他阿拉伯语翻译待完善
 };
