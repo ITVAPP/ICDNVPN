@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 import '../models/server_model.dart';
 import '../utils/log_service.dart';
+import '../utils/ui_utils.dart';
 import '../providers/app_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../app_config.dart';
@@ -636,7 +637,7 @@ class CloudflareTestService {
     }
   }
   
-  // Trace响应速度测试（替代原来的下载测速）
+  // Trace响应速度测试（使用COLO映射获取正确的服务器位置）
   static Future<Map<String, dynamic>> _testTraceSpeed(String ip, int port) async {
     HttpClient? httpClient;
     
@@ -690,26 +691,36 @@ class CloudflareTestService {
       }
       
       // 解析trace响应内容
-      String location = 'US';  // 默认值
-      String colo = '';
+      String userLocation = '';  // 用户位置（loc字段）
+      String colo = '';         // 服务器数据中心
+      String serverLocation = 'US';  // 服务器位置（默认值）
       
       final lines = responseBody.split('\n');
       for (final line in lines) {
         if (line.startsWith('loc=')) {
-          location = line.substring(4).trim();
-          await _log.debug('[Trace测试] 检测到位置: $location', tag: _logTag);
+          userLocation = line.substring(4).trim();
+          await _log.debug('[Trace测试] 用户位置: $userLocation', tag: _logTag);
         } else if (line.startsWith('colo=')) {
           colo = line.substring(5).trim();
           await _log.debug('[Trace测试] 数据中心: $colo', tag: _logTag);
         }
       }
       
-      await _log.info('[Trace测试] 完成 - IP: $ip, 耗时: ${totalTime}ms, 位置: $location, 数据中心: $colo', tag: _logTag);
+      // 重要：使用UIUtils中的COLO映射获取服务器实际位置
+      if (colo.isNotEmpty) {
+        serverLocation = UIUtils.getColoCountryCode(colo, defaultCode: 'US');
+        await _log.debug('[Trace测试] COLO $colo 映射到国家代码: $serverLocation', tag: _logTag);
+      } else {
+        await _log.warn('[Trace测试] 未获取到COLO信息，使用默认位置: $serverLocation', tag: _logTag);
+      }
+      
+      await _log.info('[Trace测试] 完成 - IP: $ip, 耗时: ${totalTime}ms, 服务器位置: $serverLocation, 数据中心: $colo, 用户位置: $userLocation', tag: _logTag);
       
       return {
         'speed': totalTime.toDouble(),  // 访问时间（毫秒）
-        'location': location,
-        'colo': colo,
+        'location': serverLocation,     // 使用服务器位置而非用户位置
+        'colo': colo,                  // 原始COLO代码
+        'userLocation': userLocation,  // 保留用户位置信息（可选）
       };
       
     } catch (e, stackTrace) {
@@ -718,6 +729,7 @@ class CloudflareTestService {
         'speed': 9999.0,  // 错误时返回很大的值
         'location': 'US',  // 默认位置
         'colo': '',
+        'userLocation': '',
       };
     } finally {
       httpClient?.close();
