@@ -301,6 +301,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return Scaffold(
       body: Container(
+        width: double.infinity,  // 修复：确保容器填满整个宽度
+        height: double.infinity, // 修复：确保容器填满整个高度，避免背景渐变断层
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
