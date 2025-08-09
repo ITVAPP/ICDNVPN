@@ -28,12 +28,14 @@ class ConnectionProvider with ChangeNotifier {
   bool _isDisposed = false;
   DateTime? _connectStartTime; // 添加连接开始时间
   String? _disconnectReason; // 添加断开原因
+  bool _proxyOnly = false;  // 新增：代理模式标志
   
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
   DateTime? get connectStartTime => _connectStartTime; // 添加getter
   String? get disconnectReason => _disconnectReason; // 添加getter
+  bool get proxyOnly => _proxyOnly;  // 新增 getter
   
   ConnectionProvider() {
     // 设置V2Ray进程退出回调
@@ -84,6 +86,7 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _autoConnect = prefs.getBool('auto_connect') ?? false;
+    _proxyOnly = prefs.getBool('proxy_only') ?? false;  // 新增：加载代理模式设置
     if (_autoConnect && !_isDisposed) {
       connect();
     }
@@ -93,6 +96,16 @@ class ConnectionProvider with ChangeNotifier {
     _autoConnect = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_connect', value);
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+  
+  // 新增：设置代理模式
+  Future<void> setProxyOnly(bool value) async {
+    _proxyOnly = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('proxy_only', value);
     if (!_isDisposed) {
       notifyListeners();
     }
@@ -196,6 +209,7 @@ class ConnectionProvider with ChangeNotifier {
         final success = await V2RayService.start(
           serverIp: serverToConnect.ip,
           serverPort: serverToConnect.port,
+          proxyOnly: _proxyOnly,  // 传递代理模式参数
         );
 
         if (success) {
