@@ -1,4 +1,4 @@
-name: Download and Commit libv2ray.aar
+name: Download libv2ray.aar
 
 on:
   workflow_dispatch:
