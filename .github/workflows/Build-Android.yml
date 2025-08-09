@@ -1,9 +1,13 @@
 name: Build Android APK
-on:
-  workflow_dispatch:  # 仅手动触发
 
-env:
-  LIBV2RAY_VERSION: v5.37.0  # libv2ray 版本号常量
+on:
+  workflow_dispatch:  # 手动触发
+  push:
+    branches: [ main ]
+    paths:
+      - 'lib/**'
+      - 'android/**'
+      - 'pubspec.yaml'
 
 jobs:
   build:
@@ -25,26 +29,9 @@ jobs:
         flutter-version: '3.32.0'
         channel: 'stable'
     
-    - name: Fix gradlew line endings
+    - name: Fix gradlew permissions
       run: |
-        # 修复 gradlew 的换行符（移除 Windows 的 \r）
-        sed -i 's/\r$//' android/gradlew
-        # 确保 gradlew 有执行权限
         chmod +x android/gradlew
-    
-    - name: Download required files
-      run: |
-        # 下载 libv2ray.aar
-        mkdir -p android/app/libs
-        wget -q -O android/app/libs/libv2ray.aar \
-          https://github.com/2dust/AndroidLibV2rayLite/releases/download/${{ env.LIBV2RAY_VERSION }}/libv2ray.aar
-        
-        # 下载 geo 文件
-        mkdir -p android/app/src/main/assets
-        wget -q -O android/app/src/main/assets/geoip.dat \
-          https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
-        wget -q -O android/app/src/main/assets/geosite.dat \
-          https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
     
     - name: Get dependencies
       run: flutter pub get
