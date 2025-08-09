@@ -72,7 +72,7 @@ class AppLocalizations {
   String get importFromClipboard => _get('importFromClipboard');
   String get pasteServerConfig => _get('pasteServerConfig');
   String get diagnosticTool => _get('diagnosticTool');
-  String get diagnosticNotSupported => _get('diagnosticNotSupported');  // 添加缺失的getter
+  String get diagnosticNotSupported => _get('diagnosticNotSupported');
   
   // 设置页面
   String get generalSettings => _get('generalSettings');
@@ -81,6 +81,8 @@ class AppLocalizations {
   String get autoStartDesc => _get('autoStartDesc');
   String get autoConnect => _get('autoConnect');
   String get autoConnectDesc => _get('autoConnectDesc');
+  String get proxyMode => _get('proxyMode');  // 新增
+  String get proxyModeDesc => _get('proxyModeDesc');  // 新增
   String get currentVersion => _get('currentVersion');
   String get checkUpdate => _get('checkUpdate');
   String get officialWebsite => _get('officialWebsite');
@@ -93,6 +95,10 @@ class AppLocalizations {
   String get systemTheme => _get('systemTheme');
   String get lightTheme => _get('lightTheme');
   String get darkTheme => _get('darkTheme');
+  
+  // 权限相关  // 新增
+  String get permissionRequired => _get('permissionRequired');
+  String get permissionReason => _get('permissionReason');
   
   // 消息
   String get operationFailed => _get('operationFailed');
@@ -204,7 +210,7 @@ class AppLocalizations {
   String get clearCacheConfirm => _get('clearCacheConfirm');
   String get tip => _get('tip');
   String get clearCacheDisconnectWarning => _get('clearCacheDisconnectWarning');
-  String get continue_ => _get('continue'); // 使用continue_避免关键字冲突
+  String get continue_ => _get('continue');
   String get clearingCache => _get('clearingCache');
   String get cacheDetails => _get('cacheDetails');
   String get reGetNodes => _get('reGetNodes');
@@ -448,7 +454,7 @@ const Map<String, String> _zhCnTranslations = {
   'importFromClipboard': '从剪贴板导入',
   'pasteServerConfig': '粘贴服务器配置',
   'diagnosticTool': '诊断工具',
-  'diagnosticNotSupported': '诊断工具暂不支持移动平台',  // 添加缺失的翻译
+  'diagnosticNotSupported': '诊断工具暂不支持移动平台',
   
   // 设置页面
   'generalSettings': '通用设置',
@@ -457,6 +463,8 @@ const Map<String, String> _zhCnTranslations = {
   'autoStartDesc': '系统启动时自动运行',
   'autoConnect': '自动连接',
   'autoConnectDesc': '启动应用时自动连接',
+  'proxyMode': '代理模式',  // 新增
+  'proxyModeDesc': '使用系统代理而非VPN模式',  // 新增
   'currentVersion': '当前版本',
   'checkUpdate': '检查更新',
   'officialWebsite': '官方网站',
@@ -469,6 +477,10 @@ const Map<String, String> _zhCnTranslations = {
   'systemTheme': '跟随系统',
   'lightTheme': '浅色',
   'darkTheme': '深色',
+  
+  // 权限相关  // 新增
+  'permissionRequired': 'VPN权限',
+  'permissionReason': '需要VPN权限才能建立安全连接。\n\n如果不想授予VPN权限，可以在设置中启用"代理模式"。',
   
   // 消息
   'operationFailed': '操作失败',
@@ -656,34 +668,285 @@ const Map<String, String> _zhCnTranslations = {
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
-  'diagnosticNotSupported': 'Diagnostic tool is not supported on mobile platforms',  // 添加英文翻译
-  // 其他英文翻译待完善
+  'servers': 'Servers',
+  'settings': 'Settings',
+  'disconnect': 'Disconnect',
+  'connected': 'Connected',
+  'disconnected': 'Disconnected',
+  'connecting': 'Connecting...',
+  'disconnecting': 'Disconnecting...',
+  'close': 'Close',
+  'cancel': 'Cancel',
+  'ok': 'OK',
+  'unknownError': 'Unknown Error',
+  
+  'clickToConnect': 'Click to Connect',
+  'clickToDisconnect': 'Click to Disconnect',
+  'currentServer': 'Current Server',
+  'selectServer': 'Select Server',
+  'upload': 'Upload',
+  'download': 'Download',
+  'autoSelectNode': 'Auto Select',
+  'speedTest': 'Speed Test',
+  'refresh': 'Refresh',
+  'noNodesHint': 'No nodes, please get first',
+  
+  'serverList': 'Server List',
+  'addServer': 'Add Server',
+  'deleteServer': 'Delete Server',
+  'testLatency': 'Test Latency',
+  'sortAscending': 'Sort by Latency (Low to High)',
+  'sortDescending': 'Sort by Latency (High to Low)',
+  'fromCloudflare': 'From Cloudflare',
+  'noServers': 'No Servers',
+  'confirmDelete': 'Confirm Delete',
+  'latency': 'Latency',
+  
+  'addFromCloudflare': 'Add from Cloudflare',
+  'autoGetBestNodes': 'Auto get best nodes',
+  'manualAdd': 'Manual Add',
+  'inputServerInfo': 'Input server info',
+  'importFromClipboard': 'Import from Clipboard',
+  'pasteServerConfig': 'Paste server config',
+  'diagnosticTool': 'Diagnostic Tool',
+  'diagnosticNotSupported': 'Diagnostic tool is not supported on mobile platforms',
+  
+  'generalSettings': 'General Settings',
+  'about': 'About',
+  'autoStart': 'Auto Start',
+  'autoStartDesc': 'Start automatically when system boots',
+  'autoConnect': 'Auto Connect',
+  'autoConnectDesc': 'Connect automatically when app starts',
+  'proxyMode': 'Proxy Mode',  // 新增
+  'proxyModeDesc': 'Use system proxy instead of VPN mode',  // 新增
+  'currentVersion': 'Current Version',
+  'checkUpdate': 'Check Update',
+  'officialWebsite': 'Official Website',
+  'contactEmail': 'Contact Email',
+  'privacyPolicy': 'Privacy Policy',
+  'clearCache': 'Clear Cache',
+  'cacheCleared': 'Cache Cleared',
+  'language': 'Language',
+  'theme': 'Theme',
+  'systemTheme': 'System',
+  'lightTheme': 'Light',
+  'darkTheme': 'Dark',
+  
+  // 权限相关  // 新增
+  'permissionRequired': 'VPN Permission',
+  'permissionReason': 'VPN permission is required to establish a secure connection.\n\nIf you prefer not to grant VPN permission, you can enable "Proxy Mode" in settings.',
+  
+  'operationFailed': 'Operation Failed',
+  'testingLatency': 'Testing Latency...',
+  'gettingNodes': 'Getting Nodes...',
+  'alreadyLatestVersion': 'Already Latest Version',
+  'serverAdded': 'Server Added',
+  'serverDeleted': 'Server Deleted',
+  
+  'startTest': 'Start Test',
+  'testing': 'Testing',
+  'testCompleted': 'Test Completed',
+  'testFailed': 'Test Failed',
+  'preparing': 'Preparing...',
+  
+  'preparingTestEnvironment': 'Preparing test environment',
+  'initializing': 'Initializing',
+  'generatingTestIPs': 'Generating test IPs',
+  'samplingFromIPRanges': 'Sampling from %s IP ranges',
+  'testingDelay': 'Testing delay',
+  'testingResponseSpeed': 'Testing response speed',
+  'startingTraceTest': 'Starting response speed test',
+  'foundQualityNodes': 'Found %s quality nodes',
+  
+  'noQualifiedNodes': 'No qualified nodes found',
+  'checkNetworkOrRequirements': 'Please check network connection or lower requirements',
+  'nodeProgress': '%s/%s',
+  'ipRanges': '%s IP ranges',
+  
+  'runDiagnostics': 'Run Diagnostics',
+  'fileCheck': 'File Check',
+  'networkTest': 'Network Test',
+  'systemInfo': 'System Info',
+  'size': 'Size',
+  'modified': 'Modified',
+  'config': 'Config',
+  'ipFile': 'IP File',
+  'missing': 'Missing',
+  'ipRangesCount': 'IP Ranges Count',
+  'sample': 'Sample',
+  'cloudflareTest': 'Cloudflare Test',
+  'os': 'OS',
+  'version': 'Version',
+  'failed': 'Failed',
+  
+  'confirmExit': 'Confirm Exit',
+  'confirmExitDesc': 'Please choose an action:',
+  'minimize': 'Minimize to Tray',
+  'exitApp': 'Exit App',
+  
+  'gettingBestNodes': 'Getting best nodes...',
+  'getNodesFailed': 'Failed to get nodes, please retry',
+  'noValidNodes': 'No valid nodes found',
+  'nodesAdded': 'Added %s servers',
+  
+  'connectionLost': 'Connection Lost',
+  'vpnDisconnected': 'VPN Disconnected',
+  
+  'importantUpdate': 'Important Update',
+  'newVersionFound': 'New Version Found',
+  'versionLabel': 'Version %s',
+  'forceUpdateNotice': 'This version contains important updates and requires immediate upgrade',
+  'updateContent': 'Update Content:',
+  'remindLater': 'Remind Later',
+  'updateNow': 'Update Now',
+  'downloadFailed': 'Download Failed',
+  'downloadFailedMessage': 'Download failed: %s\n\nOpen browser to download?',
+  'openBrowser': 'Open Browser',
+  'goToAppStore': 'Go to App Store',
+  'goToDownload': 'Go to Download',
+  'pathCopied': 'Path copied to clipboard',
+  'manualInstallNotice': 'Please manually install APK file:\n%s',
+  'copyPath': 'Copy Path',
+  'linkCopied': 'Download link copied to clipboard',
+  
+  'adLabel': 'AD',
+  'secondsToClose': 'Close in %s seconds',
+  'tapToLearnMore': 'Tap to learn more',
+  
+  'proxyServer': 'Proxy Server',
+  'v2rayRunning': 'V2Ray Running',
+  'disconnectButton': 'Disconnect',
+  
+  'autoSelectBestNode': 'Auto selected best node: %name (%ping ms)',
+  'getNodeFailedWithRetry': 'Failed to get nodes, please check network and retry',
+  'retry': 'Retry',
+  'switchNode': 'Switch Node',
+  'confirmSwitchNode': 'Switch to %s?',
+  'switchNodeDesc': 'Current connection will be disconnected and reconnected.',
+  'switching': 'Switching',
+  'switchingNode': 'Switching node...',
+  'switchedToNode': 'Switched to %s',
+  'switchFailed': 'Switch failed: %s',
+  'testingServers': 'Testing %s servers...',
+  'serversUnit': 'servers',
+  'testCompletedWithCount': 'Test completed, updated %s servers',
+  'updateFailed': 'Check update failed: %s',
+  'clearCacheConfirm': 'All cache data will be cleared, including server list and settings. Continue?',
+  'tip': 'Tip',
+  'clearCacheDisconnectWarning': 'Clearing cache will disconnect current VPN connection. Continue?',
+  'continue': 'Continue',
+  'clearingCache': 'Clearing cache...',
+  'cacheDetails': 'Cleared: Log files, server list, user settings',
+  'reGetNodes': 'Re-get Nodes',
+  'newVersion': 'New %s',
+  
+  // 国家/地区名称 (英文)
+  'countryChina': 'China',
+  'countryHongKong': 'Hong Kong',
+  'countryTaiwan': 'Taiwan',
+  'countrySingapore': 'Singapore',
+  'countryJapan': 'Japan',
+  'countrySouthKorea': 'South Korea',
+  'countryThailand': 'Thailand',
+  'countryMalaysia': 'Malaysia',
+  'countryPhilippines': 'Philippines',
+  'countryIndonesia': 'Indonesia',
+  'countryIndia': 'India',
+  'countryUAE': 'UAE',
+  'countryVietnam': 'Vietnam',
+  'countryTurkey': 'Turkey',
+  'countryIsrael': 'Israel',
+  'countryUSA': 'USA',
+  'countryCanada': 'Canada',
+  'countryMexico': 'Mexico',
+  'countryUK': 'UK',
+  'countryFrance': 'France',
+  'countryGermany': 'Germany',
+  'countryNetherlands': 'Netherlands',
+  'countrySpain': 'Spain',
+  'countryItaly': 'Italy',
+  'countrySwitzerland': 'Switzerland',
+  'countryAustria': 'Austria',
+  'countrySweden': 'Sweden',
+  'countryDenmark': 'Denmark',
+  'countryPoland': 'Poland',
+  'countryRussia': 'Russia',
+  'countryBelgium': 'Belgium',
+  'countryCzechia': 'Czechia',
+  'countryFinland': 'Finland',
+  'countryIreland': 'Ireland',
+  'countryNorway': 'Norway',
+  'countryPortugal': 'Portugal',
+  'countryGreece': 'Greece',
+  'countryRomania': 'Romania',
+  'countryUkraine': 'Ukraine',
+  'countryAustralia': 'Australia',
+  'countryNewZealand': 'New Zealand',
+  'countryBrazil': 'Brazil',
+  'countryArgentina': 'Argentina',
+  'countryChile': 'Chile',
+  'countryPeru': 'Peru',
+  'countryColombia': 'Colombia',
+  'countryVenezuela': 'Venezuela',
+  'countryUruguay': 'Uruguay',
+  'countrySouthAfrica': 'South Africa',
+  'countryEgypt': 'Egypt',
+  'countryNigeria': 'Nigeria',
+  'countryKenya': 'Kenya',
+  'countryMorocco': 'Morocco',
+  'countryTunisia': 'Tunisia',
+  'countryEthiopia': 'Ethiopia',
+  
+  // 大洲名称 (英文)
+  'continentAsia': 'Asia',
+  'continentNorthAmerica': 'North America',
+  'continentEurope': 'Europe',
+  'continentOceania': 'Oceania',
+  'continentSouthAmerica': 'South America',
+  'continentAfrica': 'Africa',
+  'continentUnknown': 'Unknown',
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
-  'diagnosticNotSupported': '診斷工具暫不支持移動平台',  // 添加繁体中文翻译
+  'diagnosticNotSupported': '診斷工具暫不支持移動平台',
+  'proxyMode': '代理模式',  // 新增
+  'proxyModeDesc': '使用系統代理而非VPN模式',  // 新增
+  'permissionRequired': 'VPN權限',  // 新增
+  'permissionReason': '需要VPN權限才能建立安全連接。\n\n如果不想授予VPN權限，可以在設置中啟用"代理模式"。',  // 新增
   // 其他繁体中文翻译待完善
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
-  'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',  // 添加西班牙语翻译
+  'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',
+  'proxyMode': 'Modo Proxy',  // 新增
+  'proxyModeDesc': 'Usar proxy del sistema en lugar del modo VPN',  // 新增
+  'permissionRequired': 'Permiso VPN',  // 新增
+  'permissionReason': 'Se requiere permiso VPN para establecer una conexión segura.\n\nSi prefiere no otorgar permiso VPN, puede habilitar el "Modo Proxy" en la configuración.',  // 新增
   // 其他西班牙语翻译待完善
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
-  'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',  // 添加俄语翻译
+  'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',
+  'proxyMode': 'Режим прокси',  // 新增
+  'proxyModeDesc': 'Использовать системный прокси вместо VPN',  // 新增
+  'permissionRequired': 'Разрешение VPN',  // 新增
+  'permissionReason': 'Для установления безопасного соединения требуется разрешение VPN.\n\nЕсли вы не хотите предоставлять разрешение VPN, вы можете включить "Режим прокси" в настройках.',  // 新增
   // 其他俄语翻译待完善
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
-  'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',  // 添加阿拉伯语翻译
+  'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',
+  'proxyMode': 'وضع الوكيل',  // 新增
+  'proxyModeDesc': 'استخدام وكيل النظام بدلاً من وضع VPN',  // 新增
+  'permissionRequired': 'إذن VPN',  // 新增
+  'permissionReason': 'مطلوب إذن VPN لإنشاء اتصال آمن.\n\nإذا كنت تفضل عدم منح إذن VPN، يمكنك تمكين "وضع الوكيل" في الإعدادات.',  // 新增
   // 其他阿拉伯语翻译待完善
 };
