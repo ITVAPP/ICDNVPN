@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
-import 'package:flutter_v2ray/flutter_v2ray.dart' as v2ray;  // 使用别名避免类名冲突
+import 'package:flutter_v2ray/flutter_v2ray.dart' as fv2ray;  // 使用别名避免类名冲突
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
@@ -110,8 +110,11 @@ class V2RayService {
   static const String _logTag = 'V2RayService';
   
   // 移动平台flutter_v2ray插件相关
-  static v2ray.FlutterV2ray? _flutterV2ray;  // 使用带别名的类型
-  static bool _isFlutterV2rayInitialized = false;  // 标记是否已初始化
+  static fv2ray.FlutterV2ray? _flutterV2ray;
+  static bool _isFlutterV2rayInitialized = false;
+  
+  // 移动平台最新状态缓存（因为插件没有getV2rayStatus方法）
+  static fv2ray.V2RayStatus? _lastPluginStatus;
   
   // 记录是否已记录V2Ray目录信息
   static bool _hasLoggedV2RayInfo = false;
@@ -199,8 +202,8 @@ class V2RayService {
     if (_flutterV2ray == null || !_isFlutterV2rayInitialized) {
       await _log.info('初始化flutter_v2ray插件', tag: _logTag);
       
-      _flutterV2ray = v2ray.FlutterV2ray(
-        onStatusChanged: (v2ray.V2RayStatus status) {  // 明确类型
+      _flutterV2ray = fv2ray.FlutterV2ray(
+        onStatusChanged: (fv2ray.V2RayStatus status) {
           _handleV2RayStatusChange(status);
         },
       );
@@ -249,27 +252,41 @@ class V2RayService {
     }
   }
   
-  // 映射flutter_v2ray的状态到我们的状态
-  static V2RayConnectionState _mapPluginState(v2ray.V2RayState pluginState) {
-    switch (pluginState) {
-      case v2ray.V2RayState.V2RAY_CONNECTED:
-        return V2RayConnectionState.connected;
-      case v2ray.V2RayState.V2RAY_CONNECTING:
-        return V2RayConnectionState.connecting;
-      case v2ray.V2RayState.V2RAY_DISCONNECTED:
-        return V2RayConnectionState.disconnected;
-      default:
-        return V2RayConnectionState.disconnected;
-    }
-  }
-  
-  // 处理flutter_v2ray状态变化
-  static void _handleV2RayStatusChange(v2ray.V2RayStatus pluginStatus) {
+  // 处理flutter_v2ray状态变化（插件的V2RayStatus类）
+  static void _handleV2RayStatusChange(fv2ray.V2RayStatus pluginStatus) {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     
     try {
-      // 映射插件状态到我们的状态
-      final mappedState = _mapPluginState(pluginStatus.state);
+      // 注意：这里的V2RayStatus是flutter_v2ray插件的类，不是我们自己的类
+      // 插件的V2RayStatus类和我们的类同名但结构不同
+      // 我们需要从插件的状态创建我们自己的状态对象
+      
+      // 缓存最新状态
+      _lastPluginStatus = pluginStatus;
+      
+      // flutter_v2ray的V2RayStatus有以下字段：
+      // - state: dynamic (通常是字符串，如 "CONNECTED", "DISCONNECTED", "CONNECTING")
+      // - duration: String
+      // - uploadSpeed: int
+      // - downloadSpeed: int
+      // - upload: int
+      // - download: int
+      
+      // 解析状态字符串
+      V2RayConnectionState mappedState = V2RayConnectionState.disconnected;
+      
+      // 将插件的状态字符串转换为我们的枚举
+      // 注意：pluginStatus.state可能是String或其他类型
+      final stateStr = pluginStatus.state.toString().toUpperCase();
+      if (stateStr.contains('CONNECTED') && !stateStr.contains('DISCONNECTED')) {
+        mappedState = V2RayConnectionState.connected;
+      } else if (stateStr.contains('CONNECTING')) {
+        mappedState = V2RayConnectionState.connecting;
+      } else if (stateStr.contains('ERROR')) {
+        mappedState = V2RayConnectionState.error;
+      } else {
+        mappedState = V2RayConnectionState.disconnected;
+      }
       
       // 更新流量统计
       _uploadTotal = pluginStatus.upload;
@@ -313,15 +330,19 @@ class V2RayService {
       return _currentStatus.state;
     }
     
-    try {
-      if (_flutterV2ray != null && _isFlutterV2rayInitialized) {
-        final pluginStatus = await _flutterV2ray!.getV2rayStatus();
-        if (pluginStatus != null) {
-          return _mapPluginState(pluginStatus.state);
-        }
+    // flutter_v2ray插件没有getV2rayStatus方法，使用缓存的状态
+    if (_lastPluginStatus != null) {
+      // 解析缓存的状态字符串
+      final stateStr = _lastPluginStatus!.state.toString().toUpperCase();
+      if (stateStr.contains('CONNECTED') && !stateStr.contains('DISCONNECTED')) {
+        return V2RayConnectionState.connected;
+      } else if (stateStr.contains('CONNECTING')) {
+        return V2RayConnectionState.connecting;
+      } else if (stateStr.contains('ERROR')) {
+        return V2RayConnectionState.error;
+      } else {
+        return V2RayConnectionState.disconnected;
       }
-    } catch (e) {
-      await _log.error('查询连接状态失败: $e', tag: _logTag);
     }
     
     return _currentStatus.state;
@@ -580,7 +601,7 @@ class V2RayService {
       final configJson = jsonEncode(configMap);
       await _log.info('配置已生成，长度: ${configJson.length}', tag: _logTag);
       
-      // 4. 启动V2Ray
+      // 4. 启动V2Ray - 修正：移除notificationTitle参数
       await _flutterV2ray!.startV2Ray(
         remark: serverName ?? "Proxy Server",
         config: configJson,
@@ -588,7 +609,7 @@ class V2RayService {
         bypassSubnets: null,  // 可以后续添加子网绕过功能
         proxyOnly: false,  // false表示VPN模式，true表示仅代理模式
         notificationDisconnectButtonName: "Disconnect",
-        notificationTitle: "CFVPN Running",
+        // 移除了notificationTitle参数，因为插件不支持
       );
       
       await _log.info('V2Ray启动命令已发送', tag: _logTag);
@@ -596,25 +617,32 @@ class V2RayService {
       // 5. 等待连接建立
       await Future.delayed(AppConfig.v2rayCheckDelay);
       
-      // 6. 查询状态验证连接
-      final pluginStatus = await _flutterV2ray!.getV2rayStatus();
-      if (pluginStatus != null) {
-        final mappedState = _mapPluginState(pluginStatus.state);
-        _isRunning = mappedState == V2RayConnectionState.connected;
-        
-        await _log.info('查询状态: ${pluginStatus.state} -> $mappedState', tag: _logTag);
-      }
+      // 6. 通过状态回调判断是否连接成功
+      // 因为没有getV2rayStatus方法，我们依赖onStatusChanged回调
+      // 这里等待一段时间让回调更新状态
+      await Future.delayed(const Duration(seconds: 2));
       
-      // 7. 如果还未连接，再等待一次
-      if (!_isRunning) {
-        await _log.info('首次检查未连接，再等待2秒', tag: _logTag);
-        await Future.delayed(const Duration(seconds: 2));
+      // 7. 检查缓存的状态
+      if (_lastPluginStatus != null) {
+        final stateStr = _lastPluginStatus!.state.toString().toUpperCase();
+        final isConnected = stateStr.contains('CONNECTED') && !stateStr.contains('DISCONNECTED');
+        _isRunning = isConnected;
         
-        final retryStatus = await _flutterV2ray!.getV2rayStatus();
-        if (retryStatus != null) {
-          final mappedState = _mapPluginState(retryStatus.state);
-          _isRunning = mappedState == V2RayConnectionState.connected;
-          await _log.info('重试查询状态: ${retryStatus.state} -> $mappedState', tag: _logTag);
+        await _log.info('根据状态回调判断连接状态: ${isConnected ? "已连接" : "未连接"}', tag: _logTag);
+      } else {
+        // 如果没有收到状态更新，再等待一次
+        await _log.info('未收到状态更新，再等待3秒', tag: _logTag);
+        await Future.delayed(const Duration(seconds: 3));
+        
+        if (_lastPluginStatus != null) {
+          final stateStr = _lastPluginStatus!.state.toString().toUpperCase();
+          final isConnected = stateStr.contains('CONNECTED') && !stateStr.contains('DISCONNECTED');
+          _isRunning = isConnected;
+          await _log.info('重试后连接状态: ${isConnected ? "已连接" : "未连接"}', tag: _logTag);
+        } else {
+          // 如果还是没有状态，假设连接成功（因为没有报错）
+          _isRunning = true;
+          await _log.warn('未收到状态回调，假设连接成功', tag: _logTag);
         }
       }
       
@@ -752,6 +780,7 @@ class V2RayService {
       // 重置状态
       _isRunning = false;
       _hasLoggedV2RayInfo = false;
+      _lastPluginStatus = null;  // 清除缓存的插件状态
       
       // 移动平台停止
       if (Platform.isAndroid || Platform.isIOS) {
@@ -1061,9 +1090,9 @@ class V2RayService {
   static void dispose() {
     _stopStatsTimer();
     _stopDurationTimer();
-    // flutter_v2ray插件没有dispose方法，只需要置空引用
     _flutterV2ray = null;
     _isFlutterV2rayInitialized = false;
+    _lastPluginStatus = null;
     if (!_statusController.isClosed) {
       _statusController.close();
     }
