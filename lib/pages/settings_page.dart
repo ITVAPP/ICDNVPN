@@ -1,3 +1,4 @@
+import 'dart:io'; 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -258,6 +259,24 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
             
+            // 新增：代理模式开关（仅移动端显示）
+            if (Platform.isAndroid || Platform.isIOS) ...[
+              Consumer<ConnectionProvider>(
+                builder: (context, connectionProvider, child) {
+                  return _SettingSwitch(
+                    title: l10n.proxyMode,
+                    subtitle: l10n.proxyModeDesc,
+                    value: connectionProvider.proxyOnly,
+                    onChanged: connectionProvider.isConnected 
+                      ? null  // 连接时禁用切换
+                      : (value) {
+                          connectionProvider.setProxyOnly(value);
+                        },
+                  );
+                },
+              ),
+            ],
+            
             // 外观设置
             const _SectionDivider(),
             _SettingTile(
@@ -472,7 +491,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       Navigator.of(context).pop();
                     }
                     
-                    // 显示成功提示，包含更详细的信息
+                    // 修改：简化成功提示，只显示两行文字，去掉操作按钮
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -482,21 +501,22 @@ class _SettingsPageState extends State<SettingsPage> {
                             children: [
                               Text(
                                 l10n.cacheCleared,
-                                style: const TextStyle(fontSize: FontSizes.description),
+                                style: const TextStyle(
+                                  fontSize: dialogTitle,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
+                              const SizedBox(height: 2),
                               Text(
                                 l10n.cacheDetails,
-                                style: const TextStyle(fontSize: 12),
+                                style: TextStyle(
+                                  fontSize: dialogOption,
+                                  color: Colors.white.withOpacity(0.8),
+                                ),
                               ),
                             ],
                           ),
-                          duration: const Duration(seconds: 3),
-                          action: SnackBarAction(
-                            label: l10n.reGetNodes,
-                            onPressed: () {
-                              context.read<ServerProvider>().refreshFromCloudflare();
-                            },
-                          ),
+                          duration: const Duration(seconds: 4),
                         ),
                       );
                     }
@@ -809,7 +829,7 @@ class _SettingSwitch extends StatefulWidget {
   final String title;
   final String subtitle;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;  // 修改：允许为null以支持禁用状态
 
   const _SettingSwitch({
     required this.title,
@@ -852,12 +872,14 @@ class _SettingSwitchState extends State<_SettingSwitch> {
         style: const TextStyle(fontSize: FontSizes.settingSubtitle),
       ),
       value: _value,
-      onChanged: (value) {
-        setState(() {
-          _value = value;
-        });
-        widget.onChanged(value);
-      },
+      onChanged: widget.onChanged != null 
+        ? (value) {
+            setState(() {
+              _value = value;
+            });
+            widget.onChanged!(value);
+          }
+        : null,  // 当onChanged为null时，开关会自动禁用
     );
   }
 }
