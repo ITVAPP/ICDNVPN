@@ -502,7 +502,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               Text(
                                 l10n.cacheCleared,
                                 style: const TextStyle(
-                                  fontSize: dialogTitle,
+                                  fontSize:  FontSizes.dialogTitle,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -510,7 +510,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               Text(
                                 l10n.cacheDetails,
                                 style: TextStyle(
-                                  fontSize: dialogOption,
+                                  fontSize: FontSizes.dialogOption,
                                   color: Colors.white.withOpacity(0.8),
                                 ),
                               ),
