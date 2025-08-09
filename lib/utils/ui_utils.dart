@@ -688,4 +688,275 @@ class UIUtils {
     final upperCode = code.toUpperCase();
     return _countryFlags[upperCode] ?? '🌐';
   }
+  
+  // ===== Cloudflare COLO 映射 =====
+  
+  // Cloudflare COLO (IATA机场代码) 到国家代码的映射
+  // 数据来源：Cloudflare 官方数据中心列表
+  // 更新日期：2024年
+  static const Map<String, String> _coloToCountryCode = {
+    // 北美洲
+    'IAD': 'US', // Ashburn, VA
+    'ATL': 'US', // Atlanta, GA
+    'BOS': 'US', // Boston, MA
+    'BUF': 'US', // Buffalo, NY
+    'YYC': 'CA', // Calgary
+    'CLT': 'US', // Charlotte, NC
+    'ORD': 'US', // Chicago, IL
+    'CMH': 'US', // Columbus, OH
+    'DFW': 'US', // Dallas, TX
+    'DEN': 'US', // Denver, CO
+    'DTW': 'US', // Detroit, MI
+    'HNL': 'US', // Honolulu, HI
+    'IAH': 'US', // Houston, TX
+    'IND': 'US', // Indianapolis, IN
+    'JAX': 'US', // Jacksonville, FL
+    'MCI': 'US', // Kansas City, MO
+    'LAS': 'US', // Las Vegas, NV
+    'LAX': 'US', // Los Angeles, CA
+    'MFE': 'US', // McAllen, TX
+    'MEM': 'US', // Memphis, TN
+    'MEX': 'MX', // Mexico City
+    'MIA': 'US', // Miami, FL
+    'MSP': 'US', // Minneapolis, MN
+    'MGM': 'US', // Montgomery, AL
+    'YUL': 'CA', // Montreal
+    'BNA': 'US', // Nashville, TN
+    'EWR': 'US', // Newark, NJ
+    'ORF': 'US', // Norfolk, VA
+    'OMA': 'US', // Omaha, NE
+    'YOW': 'CA', // Ottawa
+    'PHL': 'US', // Philadelphia, PA
+    'PHX': 'US', // Phoenix, AZ
+    'PIT': 'US', // Pittsburgh, PA
+    'PDX': 'US', // Portland, OR
+    'QRO': 'MX', // Queretaro
+    'RIC': 'US', // Richmond, VA
+    'SMF': 'US', // Sacramento, CA
+    'SLC': 'US', // Salt Lake City, UT
+    'SAT': 'US', // San Antonio, TX
+    'SAN': 'US', // San Diego, CA
+    'SJC': 'US', // San Jose, CA
+    'YXE': 'CA', // Saskatoon
+    'SEA': 'US', // Seattle, WA
+    'STL': 'US', // St. Louis, MO
+    'TPA': 'US', // Tampa, FL
+    'YYZ': 'CA', // Toronto
+    'YVR': 'CA', // Vancouver
+    'YWG': 'CA', // Winnipeg
+    'GDL': 'MX', // Guadalajara
+    
+    // 南美洲
+    'ASU': 'PY', // Asunción
+    'BOG': 'CO', // Bogotá
+    'EZE': 'AR', // Buenos Aires
+    'CWB': 'BR', // Curitiba
+    'FOR': 'BR', // Fortaleza
+    'GUA': 'GT', // Guatemala City
+    'LIM': 'PE', // Lima
+    'MDE': 'CO', // Medellín
+    'PTY': 'PA', // Panama City
+    'POA': 'BR', // Porto Alegre
+    'UIO': 'EC', // Quito
+    'GIG': 'BR', // Rio de Janeiro
+    'GRU': 'BR', // São Paulo
+    'SCL': 'CL', // Santiago
+    'CUR': 'CW', // Willemstad
+    
+    // 欧洲
+    'AMS': 'NL', // Amsterdam
+    'ATH': 'GR', // Athens
+    'BCN': 'ES', // Barcelona
+    'BEG': 'RS', // Belgrade
+    'TXL': 'DE', // Berlin
+    'BRU': 'BE', // Brussels
+    'OTP': 'RO', // Bucharest
+    'BUD': 'HU', // Budapest
+    'KIV': 'MD', // Chișinău
+    'CPH': 'DK', // Copenhagen
+    'ORK': 'IE', // Cork
+    'DUB': 'IE', // Dublin
+    'DUS': 'DE', // Düsseldorf
+    'EDI': 'GB', // Edinburgh
+    'FRA': 'DE', // Frankfurt
+    'GVA': 'CH', // Geneva
+    'GOT': 'SE', // Gothenburg
+    'HAM': 'DE', // Hamburg
+    'HEL': 'FI', // Helsinki
+    'IST': 'TR', // Istanbul
+    'KBP': 'UA', // Kyiv
+    'LIS': 'PT', // Lisbon
+    'LHR': 'GB', // London
+    'LUX': 'LU', // Luxembourg City
+    'MAD': 'ES', // Madrid
+    'MAN': 'GB', // Manchester
+    'MRS': 'FR', // Marseille
+    'MXP': 'IT', // Milan
+    'DME': 'RU', // Moscow
+    'MUC': 'DE', // Munich
+    'NIC': 'CY', // Nicosia
+    'OSL': 'NO', // Oslo
+    'CDG': 'FR', // Paris
+    'PRG': 'CZ', // Prague
+    'KEF': 'IS', // Reykjavík
+    'RIX': 'LV', // Riga
+    'FCO': 'IT', // Rome
+    'LED': 'RU', // Saint Petersburg
+    'SOF': 'BG', // Sofia
+    'ARN': 'SE', // Stockholm
+    'TLL': 'EE', // Tallinn
+    'SKG': 'GR', // Thessaloniki
+    'VIE': 'AT', // Vienna
+    'VNO': 'LT', // Vilnius
+    'WAW': 'PL', // Warsaw
+    'ZAG': 'HR', // Zagreb
+    'ZRH': 'CH', // Zürich
+    
+    // 亚洲
+    'AMD': 'IN', // Ahmedabad
+    'AMM': 'JO', // Amman
+    'BLR': 'IN', // Bangalore
+    'BKK': 'TH', // Bangkok
+    'PEK': 'CN', // Beijing
+    'CGP': 'BD', // Chittagong
+    'BNE': 'AU', // Brisbane (澳洲但地理上靠近亚洲)
+    'CEB': 'PH', // Cebu
+    'CKG': 'CN', // Chongqing (重庆)
+    'MAA': 'IN', // Chennai
+    'CMB': 'LK', // Colombo
+    'DAC': 'BD', // Dhaka
+    'DXB': 'AE', // Dubai
+    'FUO': 'CN', // Foshan (佛山)
+    'FOC': 'CN', // Fuzhou (福州)
+    'CAN': 'CN', // Guangzhou (广州)
+    'HGH': 'CN', // Hangzhou (杭州)
+    'HAN': 'VN', // Hanoi
+    'HNY': 'CN', // Hengyang (衡阳)
+    'SGN': 'VN', // Ho Chi Minh City
+    'HKG': 'HK', // Hong Kong
+    'HYD': 'IN', // Hyderabad
+    'ISB': 'PK', // Islamabad
+    'CGK': 'ID', // Jakarta
+    'JED': 'SA', // Jeddah
+    'JHB': 'MY', // Johor Bahru
+    'KHI': 'PK', // Karachi
+    'KTM': 'NP', // Kathmandu
+    'CCU': 'IN', // Kolkata
+    'KUL': 'MY', // Kuala Lumpur
+    'KWI': 'KW', // Kuwait City
+    'LHE': 'PK', // Lahore
+    'LYA': 'CN', // Luoyang (洛阳)
+    'MFM': 'MO', // Macau
+    'MLE': 'MV', // Male
+    'MNL': 'PH', // Manila
+    'BOM': 'IN', // Mumbai
+    'NAG': 'IN', // Nagpur
+    'NBO': 'KE', // Nairobi (非洲但常归入中东/亚洲区)
+    'KIX': 'JP', // Osaka
+    'DEL': 'IN', // New Delhi
+    'NOU': 'NC', // Noumea
+    'PNH': 'KH', // Phnom Penh
+    'TAO': 'CN', // Qingdao (青岛)
+    'RUH': 'SA', // Riyadh
+    'ICN': 'KR', // Seoul
+    'SHA': 'CN', // Shanghai (上海)
+    'SHE': 'CN', // Shenyang (沈阳)
+    'SJW': 'CN', // Shijiazhuang (石家庄)
+    'SIN': 'SG', // Singapore
+    'SZX': 'CN', // Shenzhen (深圳)
+    'TPE': 'TW', // Taipei
+    'TLV': 'IL', // Tel Aviv
+    'TSN': 'CN', // Tianjin (天津)
+    'NRT': 'JP', // Tokyo
+    'ULN': 'MN', // Ulaanbaatar
+    'VTE': 'LA', // Vientiane
+    'WUH': 'CN', // Wuhan (武汉)
+    'WUX': 'CN', // Wuxi (无锡)
+    'XIY': 'CN', // Xi'an (西安)
+    'EVN': 'AM', // Yerevan
+    'CGO': 'CN', // Zhengzhou (郑州)
+    
+    // 大洋洲
+    'ADL': 'AU', // Adelaide
+    'AKL': 'NZ', // Auckland
+    'CHC': 'NZ', // Christchurch
+    'GUM': 'GU', // Guam
+    'MEL': 'AU', // Melbourne
+    'PER': 'AU', // Perth
+    'SYD': 'AU', // Sydney
+    'WLG': 'NZ', // Wellington
+    
+    // 非洲
+    'ALG': 'DZ', // Algiers
+    'CPT': 'ZA', // Cape Town
+    'CAS': 'MA', // Casablanca
+    'DAR': 'TZ', // Dar es Salaam
+    'JIB': 'DJ', // Djibouti
+    'DUR': 'ZA', // Durban
+    'HRE': 'ZW', // Harare
+    'JNB': 'ZA', // Johannesburg
+    'KGL': 'RW', // Kigali
+    'LOS': 'NG', // Lagos
+    'LAD': 'AO', // Luanda
+    'MPM': 'MZ', // Maputo
+    'MBA': 'KE', // Mombasa
+    'MRU': 'MU', // Port Louis
+    'RUN': 'RE', // Réunion
+    'TUN': 'TN', // Tunis
+    
+    // 中东（部分已包含在亚洲中）
+    'BAH': 'BH', // Bahrain
+    'BGW': 'IQ', // Baghdad
+    'BEY': 'LB', // Beirut
+    'DOH': 'QA', // Doha
+    'MCT': 'OM', // Muscat
+    
+    // 加勒比海地区
+    'HAV': 'CU', // Havana
+    'KIN': 'JM', // Kingston
+    'NAS': 'BS', // Nassau
+    'SJU': 'PR', // San Juan
+    'POS': 'TT', // Port of Spain
+    'SDQ': 'DO', // Santo Domingo
+    
+    // 补充一些可能的新增或测试节点
+    'ANC': 'US', // Anchorage
+    'XMN': 'CN', // Xiamen (厦门)
+    'NNG': 'CN', // Nanning (南宁)
+    'KMG': 'CN', // Kunming (昆明)
+    'CTU': 'CN', // Chengdu (成都)
+    'HFE': 'CN', // Hefei (合肥)
+    'NKG': 'CN', // Nanjing (南京)
+    'TYN': 'CN', // Taiyuan (太原)
+    'CSX': 'CN', // Changsha (长沙)
+    'KWE': 'CN', // Guiyang (贵阳)
+    'HAK': 'CN', // Haikou (海口)
+    'HRB': 'CN', // Harbin (哈尔滨)
+    'DLC': 'CN', // Dalian (大连)
+    'URC': 'CN', // Urumqi (乌鲁木齐)
+    'LHW': 'CN', // Lanzhou (兰州)
+    'INC': 'CN', // Yinchuan (银川)
+    'HET': 'CN', // Hohhot (呼和浩特)
+    'XNN': 'CN', // Xining (西宁)
+  };
+  
+  /// 根据COLO代码获取国家代码
+  /// 如果找不到对应的映射，返回默认值
+  static String getColoCountryCode(String colo, {String defaultCode = 'US'}) {
+    if (colo.isEmpty) return defaultCode;
+    
+    // 转换为大写进行查找
+    final upperColo = colo.toUpperCase();
+    return _coloToCountryCode[upperColo] ?? defaultCode;
+  }
+  
+  /// 获取COLO的完整信息
+  static Map<String, String> getColoInfo(String colo) {
+    final countryCode = getColoCountryCode(colo);
+    return {
+      'colo': colo.toUpperCase(),
+      'countryCode': countryCode,
+      'continent': _countryToContinent[countryCode] ?? 'Unknown',
+    };
+  }
 }
