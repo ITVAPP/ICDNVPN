@@ -256,17 +256,19 @@ class V2RayService {
     }
   }
   
-  // 映射flutter_v2ray的状态到我们的状态
-  static V2RayConnectionState _mapPluginState(v2ray.V2RayState pluginState) {
-    switch (pluginState) {
-      case v2ray.V2RayState.V2RAY_CONNECTED:
-        return V2RayConnectionState.connected;
-      case v2ray.V2RayState.V2RAY_CONNECTING:
-        return V2RayConnectionState.connecting;
-      case v2ray.V2RayState.V2RAY_DISCONNECTED:
-        return V2RayConnectionState.disconnected;
-      default:
-        return V2RayConnectionState.disconnected;
+  // 映射flutter_v2ray的状态字符串到我们的状态枚举
+  // 修复：接收String参数而不是不存在的V2RayState枚举
+  static V2RayConnectionState _mapPluginState(String stateString) {
+    final upperState = stateString.toUpperCase();
+    // 处理各种可能的状态字符串格式
+    if (upperState.contains('CONNECTED') && !upperState.contains('DISCONNECTED')) {
+      return V2RayConnectionState.connected;
+    } else if (upperState.contains('CONNECTING')) {
+      return V2RayConnectionState.connecting;
+    } else if (upperState.contains('ERROR')) {
+      return V2RayConnectionState.error;
+    } else {
+      return V2RayConnectionState.disconnected;
     }
   }
   
@@ -275,7 +277,7 @@ class V2RayService {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     
     try {
-      // 映射插件状态到我们的状态
+      // 映射插件状态到我们的状态 - pluginStatus.state已经是String
       final mappedState = _mapPluginState(pluginStatus.state);
       
       // 更新流量统计
@@ -322,9 +324,10 @@ class V2RayService {
     
     try {
       if (_flutterV2ray != null && _isFlutterV2rayInitialized) {
-        final pluginStatus = await _flutterV2ray!.getV2rayStatus();
-        if (pluginStatus != null) {
-          return _mapPluginState(pluginStatus.state);
+        // 修复：getV2rayStatus()返回String而不是V2RayStatus对象
+        final statusString = await _flutterV2ray!.getV2rayStatus();
+        if (statusString != null) {
+          return _mapPluginState(statusString);
         }
       }
     } catch (e) {
@@ -714,12 +717,13 @@ class V2RayService {
       await Future.delayed(AppConfig.v2rayCheckDelay);
       
       // 6. 查询状态验证连接
-      final pluginStatus = await _flutterV2ray!.getV2rayStatus();
-      if (pluginStatus != null) {
-        final mappedState = _mapPluginState(pluginStatus.state);
+      // 修复：getV2rayStatus()返回String而不是V2RayStatus对象
+      final statusString = await _flutterV2ray!.getV2rayStatus();
+      if (statusString != null) {
+        final mappedState = _mapPluginState(statusString);
         _isRunning = mappedState == V2RayConnectionState.connected;
         
-        await _log.info('查询状态: ${pluginStatus.state} -> $mappedState', tag: _logTag);
+        await _log.info('查询状态: $statusString -> $mappedState', tag: _logTag);
       }
       
       // 7. 如果还未连接，再等待一次
@@ -727,11 +731,12 @@ class V2RayService {
         await _log.info('首次检查未连接，再等待2秒', tag: _logTag);
         await Future.delayed(const Duration(seconds: 2));
         
-        final retryStatus = await _flutterV2ray!.getV2rayStatus();
-        if (retryStatus != null) {
-          final mappedState = _mapPluginState(retryStatus.state);
+        // 修复：getV2rayStatus()返回String
+        final retryStatusString = await _flutterV2ray!.getV2rayStatus();
+        if (retryStatusString != null) {
+          final mappedState = _mapPluginState(retryStatusString);
           _isRunning = mappedState == V2RayConnectionState.connected;
-          await _log.info('重试查询状态: ${retryStatus.state} -> $mappedState', tag: _logTag);
+          await _log.info('重试查询状态: $retryStatusString -> $mappedState', tag: _logTag);
         }
       }
       
