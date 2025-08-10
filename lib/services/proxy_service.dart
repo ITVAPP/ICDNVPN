@@ -154,40 +154,41 @@ class ProxyService {
     await _log.debug('开始刷新系统代理设置', tag: _logTag);
     
     try {
-      // 修复：简化刷新方法，删除有问题的PowerShell命令
+      // 重要修复：使用与版本1完全相同的刷新方法
       
-      // 方法1: 使用rundll32通知系统代理设置已更改
-      await _log.debug('通知Windows代理设置已更改', tag: _logTag);
-      final rundllResult = await Process.run('rundll32', [
-        'wininet.dll,InternetSetOption',
-        '0',  // NULL handle
-        '39', // INTERNET_OPTION_SETTINGS_CHANGED
-        '0',  // NULL buffer
-        '0'   // buffer length
-      ], runInShell: true);
-      
-      if (rundllResult.exitCode == 0) {
-        await _log.debug('rundll32通知成功', tag: _logTag);
-      } else {
-        await _log.debug('rundll32通知失败（非致命）: ${rundllResult.stderr}', tag: _logTag);
-      }
-      
-      // 方法2: 刷新DNS缓存
+      // 1. 刷新DNS缓存
       await _log.debug('刷新DNS缓存', tag: _logTag);
-      final flushDnsResult = await Process.run('ipconfig', ['/flushdns'], runInShell: true);
+      final flushDnsResult = await Process.run('ipconfig', ['/flushdns']);
       if (flushDnsResult.exitCode == 0) {
         await _log.debug('DNS缓存已刷新', tag: _logTag);
+      } else {
+        await _log.debug('DNS缓存刷新失败: ${flushDnsResult.stderr}', tag: _logTag);
       }
       
-      // 方法3: 尝试重启WinHTTP服务（可能需要管理员权限，所以在try-catch中）
-      try {
-        await _log.debug('尝试重启WinHTTP服务', tag: _logTag);
-        await Process.run('net', ['stop', 'WinHttpAutoProxySvc'], runInShell: true);
-        await Process.run('net', ['start', 'WinHttpAutoProxySvc'], runInShell: true);
-        await _log.debug('WinHTTP服务已重启', tag: _logTag);
-      } catch (e) {
-        // 忽略错误，因为可能没有管理员权限
-        await _log.debug('无法重启WinHTTP服务（可能需要管理员权限）: $e', tag: _logTag);
+      // 2. 使用 netsh 命令导入IE代理设置到WinHTTP
+      await _log.debug('导入IE代理设置到WinHTTP', tag: _logTag);
+      final importResult = await Process.run(
+        'netsh',
+        ['winhttp', 'import', 'proxy', 'source=ie'],
+        runInShell: true
+      );
+      if (importResult.exitCode == 0) {
+        await _log.debug('WinHTTP代理导入成功', tag: _logTag);
+      } else {
+        await _log.debug('WinHTTP代理导入失败: ${importResult.stderr}', tag: _logTag);
+      }
+      
+      // 3. 重置WinHTTP代理（清除缓存，使其重新读取）
+      await _log.debug('重置WinHTTP代理', tag: _logTag);
+      final resetResult = await Process.run(
+        'netsh',
+        ['winhttp', 'reset', 'proxy'],
+        runInShell: true
+      );
+      if (resetResult.exitCode == 0) {
+        await _log.debug('WinHTTP代理重置成功', tag: _logTag);
+      } else {
+        await _log.debug('WinHTTP代理重置失败: ${resetResult.stderr}', tag: _logTag);
       }
       
       await _log.debug('系统代理设置刷新完成', tag: _logTag);
