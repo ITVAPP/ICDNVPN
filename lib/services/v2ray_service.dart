@@ -432,12 +432,38 @@ class V2RayService {
     Map<String, dynamic> config = await _loadConfigTemplate();
     
     // 检查服务器群组配置（从AppConfig读取）
+    // 修改：只使用serverGroup的serverName，不覆盖serverIp
     final groupServer = AppConfig.getRandomServer();
-    if (groupServer != null) {
-      serverIp = groupServer['address'];
-      serverPort = groupServer['port'] ?? 443;
+    if (groupServer != null && groupServer['serverName'] != null) {
+      // 只使用serverName，保持serverIp（CDN IP）不变
       serverName = groupServer['serverName'];
-      await _log.info('使用服务器群组: $serverIp:$serverPort', tag: _logTag);
+      await _log.info('使用服务器群组ServerName: $serverName (CDN IP: $serverIp)', tag: _logTag);
+    } else if (serverName == null || serverName.isEmpty) {
+      // 如果没有指定serverName，从配置模板中获取默认值
+      // 尝试从模板中获取默认的serverName
+      try {
+        final outbounds = config['outbounds'] as List?;
+        if (outbounds != null && outbounds.isNotEmpty) {
+          for (var outbound in outbounds) {
+            if (outbound['tag'] == 'proxy') {
+              serverName = outbound['streamSettings']?['tlsSettings']?['serverName'] ??
+                          outbound['streamSettings']?['wsSettings']?['headers']?['Host'];
+              if (serverName != null && serverName.isNotEmpty) {
+                await _log.info('使用配置模板中的默认ServerName: $serverName', tag: _logTag);
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        await _log.warn('无法从配置模板获取默认ServerName: $e', tag: _logTag);
+      }
+      
+      // 如果还是没有，使用硬编码的默认值
+      if (serverName == null || serverName.isEmpty) {
+        serverName = 'pages-vless-a9f.pages.dev';
+        await _log.info('使用硬编码的默认ServerName: $serverName', tag: _logTag);
+      }
     }
     
     // 更新入站端口
@@ -467,15 +493,15 @@ class V2RayService {
             outbound['tag'] == 'proxy' && 
             outbound['settings'] is Map) {
           
-          // 更新服务器地址和端口
+          // 更新服务器地址和端口 - 始终使用CDN IP
           var vnext = outbound['settings']['vnext'];
           if (vnext is List && vnext.isNotEmpty && vnext[0] is Map) {
-            vnext[0]['address'] = serverIp;
+            vnext[0]['address'] = serverIp;  // 使用CDN IP
             vnext[0]['port'] = serverPort;
-            await _log.info('配置服务器: $serverIp:$serverPort', tag: _logTag);
+            await _log.info('配置连接地址: CDN IP=$serverIp:$serverPort', tag: _logTag);
           }
           
-          // 更新TLS和WebSocket配置
+          // 更新TLS和WebSocket配置 - 使用serverName
           if (serverName != null && serverName.isNotEmpty && 
               outbound['streamSettings'] is Map) {
             var streamSettings = outbound['streamSettings'] as Map;
@@ -588,6 +614,7 @@ class V2RayService {
       await _log.info('  - 出站数量: ${(config['outbounds'] as List?)?.length ?? 0}', tag: _logTag);
       await _log.info('  - 路由规则数: ${(config['routing']?['rules'] as List?)?.length ?? 0}', tag: _logTag);
       await _log.info('  - 全局代理: $globalProxy', tag: _logTag);
+      await _log.info('  - 域前置配置: CDN=$serverIp -> ServerName=$serverName', tag: _logTag);
     }
     
     return config;
@@ -679,7 +706,7 @@ class V2RayService {
         await Future.delayed(const Duration(seconds: 1));
       }
       
-      await _log.info('开始启动V2Ray服务 - 服务器: $serverIp:$serverPort, 全局代理: $globalProxy', tag: _logTag);
+      await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy', tag: _logTag);
       
       // 更新状态为连接中
       _updateStatus(V2RayStatus(state: V2RayConnectionState.connecting));
@@ -753,7 +780,7 @@ class V2RayService {
       if (kDebugMode) {
         await _log.debug('配置详情:', tag: _logTag);
         await _log.debug('  - 协议: ${configMap['outbounds']?[0]?['protocol']}', tag: _logTag);
-        await _log.debug('  - 服务器: $serverIp:$serverPort', tag: _logTag);
+        await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
         await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
       }
