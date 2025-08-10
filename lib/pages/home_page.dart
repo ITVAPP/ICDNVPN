@@ -464,8 +464,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (isConnected) {
               await provider.disconnect();
             } else {
-              // 连接前先检查Android权限（仅非代理模式需要）
-              if (Platform.isAndroid && !provider.proxyOnly) {
+              // 连接前先检查Android权限（全局代理模式不需要VPN权限）
+              if (Platform.isAndroid && !provider.globalProxy) {  // 修改：proxyOnly改为globalProxy
                 final hasPermission = await V2RayService.requestPermission();
                 if (!hasPermission) {
                   // 显示权限说明对话框
