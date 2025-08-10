@@ -359,12 +359,6 @@ class V2RayService {
       final String jsonString = await rootBundle.loadString(configPath);
       final config = jsonDecode(jsonString);
       
-      // 移动端特殊处理：确保配置简洁
-      if (Platform.isAndroid || Platform.isIOS) {
-        // 移除可能存在的不兼容配置
-        _cleanMobileConfig(config);
-      }
-      
       return config;
     } catch (e) {
       await _log.error('加载配置模板失败: $e', tag: _logTag);
@@ -372,88 +366,41 @@ class V2RayService {
     }
   }
   
-  // 清理移动端配置，移除不兼容的特性
-  static void _cleanMobileConfig(Map<String, dynamic> config) {
-    // 移除Stats API相关
-    config.remove('stats');
-    config.remove('api');
-    config.remove('policy');
-    
-    // 移除API入站
-    if (config['inbounds'] is List) {
-      (config['inbounds'] as List).removeWhere(
-        (inbound) => inbound['tag'] == 'api'
-      );
-    }
-    
-    // 移除fragment相关出站
-    if (config['outbounds'] is List) {
-      final outbounds = config['outbounds'] as List;
-      
-      // 移除proxy3等额外出站
-      outbounds.removeWhere(
-        (outbound) => outbound['tag'] == 'proxy3'
-      );
-      
-      // 清理proxy出站的dialerProxy
-      for (var outbound in outbounds) {
-        if (outbound['tag'] == 'proxy') {
-          // 移除sockopt中的dialerProxy
-          if (outbound['streamSettings']?['sockopt']?['dialerProxy'] != null) {
-            (outbound['streamSettings']['sockopt'] as Map).remove('dialerProxy');
-            
-            // 如果sockopt为空，则移除整个sockopt
-            if ((outbound['streamSettings']['sockopt'] as Map).isEmpty) {
-              (outbound['streamSettings'] as Map).remove('sockopt');
-            }
-          }
-        }
-      }
-    }
-    
-    // 移除API相关路由规则
-    if (config['routing']?['rules'] is List) {
-      (config['routing']['rules'] as List).removeWhere(
-        (rule) => rule['inboundTag']?.contains('api') == true
-      );
-    }
-  }
-  
-  // 生成配置（统一处理） - 修改：支持全局代理模式
+  // 生成配置（统一处理） - 简化版：只更新必要的动态参数
   static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
     required int serverPort,
     String? serverName,
     int localPort = 7898,
     int httpPort = 7899,
-    bool globalProxy = false,  // 新增：全局代理参数
+    bool globalProxy = false,
   }) async {
     // 加载配置模板（已根据平台自动选择）
     Map<String, dynamic> config = await _loadConfigTemplate();
     
     // 检查服务器群组配置（从AppConfig读取）
-    // 修改：使用serverGroup的serverName和uuid，不覆盖serverIp
     String? userId;  // 存储UUID
     final groupServer = AppConfig.getRandomServer();
-    if (groupServer != null && groupServer['serverName'] != null) {
-      // 只使用serverName，保持serverIp（CDN IP）不变
-      serverName = groupServer['serverName'];
-      // 获取UUID（如果有的话）
+    if (groupServer != null) {
+      // 使用群组配置覆盖参数
+      if (groupServer['serverName'] != null) {
+        serverName = groupServer['serverName'];
+      }
       if (groupServer['uuid'] != null) {
         userId = groupServer['uuid'];
         // 安全显示UUID（防止substring越界）
-        final displayUuid = userId!.length > 8 ? '${userId!.substring(0, 8)}...' : userId!;
-        await _log.info('使用服务器群组: ServerName=$serverName, UUID=$displayUuid', tag: _logTag);
-      } else {
-        await _log.info('使用服务器群组ServerName: $serverName (使用默认UUID)', tag: _logTag);
+        final displayUuid = userId!.length > 8 ? '${userId.substring(0, 8)}...' : userId;
+        await _log.info('使用服务器群组UUID: $displayUuid', tag: _logTag);
       }
-      await _log.info('CDN IP保持: $serverIp', tag: _logTag);
-    } else if (serverName == null || serverName.isEmpty) {
-      // 如果没有指定serverName，从配置模板中获取默认值
-      // 尝试从模板中获取默认的serverName
+      await _log.info('使用服务器配置: CDN=$serverIp:$serverPort, ServerName=$serverName', tag: _logTag);
+    }
+    
+    // 确保serverName有默认值
+    if (serverName == null || serverName.isEmpty) {
+      // 尝试从配置模板中获取默认值
       try {
         final outbounds = config['outbounds'] as List?;
-        if (outbounds != null && outbounds.isNotEmpty) {
+        if (outbounds != null) {
           for (var outbound in outbounds) {
             if (outbound['tag'] == 'proxy') {
               serverName = outbound['streamSettings']?['tlsSettings']?['serverName'] ??
@@ -476,7 +423,7 @@ class V2RayService {
       }
     }
     
-    // 更新入站端口
+    // 更新入站端口（移动端配置可能没有socks/http入站，需要判断）
     if (config['inbounds'] is List) {
       for (var inbound in config['inbounds']) {
         if (inbound is Map) {
@@ -491,32 +438,22 @@ class V2RayService {
       }
     }
     
-    // 更新出站服务器信息
+    // 更新出站服务器信息 - 只更新proxy出站
     if (config['outbounds'] is List) {
-      // 删除广告拦截相关的block出站
-      (config['outbounds'] as List).removeWhere(
-        (outbound) => outbound['tag'] == 'block'
-      );
-      
       for (var outbound in config['outbounds']) {
-        if (outbound is Map && 
-            outbound['tag'] == 'proxy' && 
-            outbound['settings'] is Map) {
-          
-          // 更新服务器地址和端口 - 始终使用CDN IP
-          var vnext = outbound['settings']['vnext'];
-          if (vnext is List && vnext.isNotEmpty && vnext[0] is Map) {
-            vnext[0]['address'] = serverIp;  // 使用CDN IP
-            vnext[0]['port'] = serverPort;
-            await _log.info('配置连接地址: CDN IP=$serverIp:$serverPort', tag: _logTag);
-            
-            // 更新用户UUID（如果从serverGroup获取到了）
-            if (userId != null && userId.isNotEmpty) {
-              if (vnext[0]['users'] is List && (vnext[0]['users'] as List).isNotEmpty) {
-                vnext[0]['users'][0]['id'] = userId;
-                // 安全显示UUID
-                final displayUuid = userId.length > 8 ? '${userId.substring(0, 8)}...' : userId;
-                await _log.info('更新用户UUID: $displayUuid', tag: _logTag);
+        if (outbound is Map && outbound['tag'] == 'proxy') {
+          // 更新服务器地址和端口
+          if (outbound['settings']?['vnext'] is List) {
+            var vnext = outbound['settings']['vnext'] as List;
+            if (vnext.isNotEmpty && vnext[0] is Map) {
+              vnext[0]['address'] = serverIp;  // 使用CDN IP
+              vnext[0]['port'] = serverPort;
+              
+              // 更新用户UUID（如果提供）
+              if (userId != null && userId.isNotEmpty) {
+                if (vnext[0]['users'] is List && (vnext[0]['users'] as List).isNotEmpty) {
+                  vnext[0]['users'][0]['id'] = userId;
+                }
               }
             }
           }
@@ -539,105 +476,49 @@ class V2RayService {
               await _log.debug('设置WebSocket Host: $serverName', tag: _logTag);
             }
           }
+          
+          break;  // 只有一个proxy出站，更新后退出
         }
       }
     }
     
-    // 根据全局代理模式调整DNS和路由规则
+    // 全局代理模式：只删除直连路由规则，保留其他所有规则
     if (globalProxy) {
       await _log.info('配置全局代理模式', tag: _logTag);
       
-      // DNS配置：全局代理模式只使用国外DNS
-      if (config['dns'] is Map && config['dns']['servers'] is List) {
-        config['dns']['servers'] = [
-          "1.1.1.1",
-          "8.8.8.8",
-          "https://dns.google/dns-query",
-          "https://cloudflare-dns.com/dns-query"
-        ];
-        await _log.debug('全局代理DNS: 使用Cloudflare和Google DNS', tag: _logTag);
-      }
-      
-      // 路由规则：移除所有直连规则，只保留必要的规则
       if (config['routing'] is Map && config['routing']['rules'] is List) {
         final rules = config['routing']['rules'] as List;
         
-        // 移除所有直连规则（包括国内域名、IP等）
+        // 只删除直连规则，保留API路由和默认代理规则
         rules.removeWhere((rule) {
           if (rule is Map) {
-            // 删除广告拦截规则
-            if (rule['domain'] != null && 
-                (rule['domain'] as List).any((d) => d.toString().contains('category-ads'))) {
-              return true;
+            // 保留API路由（如果有）
+            if (rule['inboundTag'] != null && 
+                (rule['inboundTag'] is List) &&
+                (rule['inboundTag'] as List).contains('api')) {
+              return false;  // 保留API路由
             }
-            // 删除国内直连规则
-            if (rule['outboundTag'] == 'direct' && 
-                (rule['domain'] != null || rule['ip'] != null)) {
-              return true;
-            }
-            // 删除block规则
-            if (rule['outboundTag'] == 'block') {
-              return true;
+            // 删除直连规则
+            if (rule['outboundTag'] == 'direct') {
+              return true;  // 删除直连规则
             }
           }
-          return false;
+          return false;  // 保留其他规则
         });
         
-        // 确保有默认的代理规则
-        bool hasDefaultRule = rules.any((rule) => 
-          rule is Map && rule['port'] == '0-65535' && rule['outboundTag'] == 'proxy'
-        );
-        
-        if (!hasDefaultRule) {
-          rules.add({
-            "type": "field",
-            "port": "0-65535",
-            "outboundTag": "proxy"
-          });
-        }
-        
-        await _log.debug('全局代理路由: 所有流量走代理', tag: _logTag);
-      }
-    } else {
-      await _log.info('配置智能分流模式', tag: _logTag);
-      
-      // 智能模式：删除广告拦截规则，保留国内直连
-      if (config['routing'] is Map && config['routing']['rules'] is List) {
-        final rules = config['routing']['rules'] as List;
-        
-        // 只删除广告拦截规则
-        rules.removeWhere((rule) {
-          if (rule is Map) {
-            // 删除广告拦截规则
-            if (rule['domain'] != null && 
-                (rule['domain'] as List).any((d) => d.toString().contains('category-ads'))) {
-              return true;
-            }
-            // 删除block出站规则
-            if (rule['outboundTag'] == 'block') {
-              return true;
-            }
-          }
-          return false;
-        });
+        await _log.debug('全局代理路由: 已删除直连规则', tag: _logTag);
       }
     }
     
-    // 移动端额外验证
-    if (Platform.isAndroid || Platform.isIOS) {
-      // 再次确保移动端配置的简洁性
-      _cleanMobileConfig(config);
-      
-      // 记录最终配置概要
-      await _log.info('移动端配置概要:', tag: _logTag);
-      await _log.info('  - 入站数量: ${(config['inbounds'] as List?)?.length ?? 0}', tag: _logTag);
-      await _log.info('  - 出站数量: ${(config['outbounds'] as List?)?.length ?? 0}', tag: _logTag);
-      await _log.info('  - 路由规则数: ${(config['routing']?['rules'] as List?)?.length ?? 0}', tag: _logTag);
-      await _log.info('  - 全局代理: $globalProxy', tag: _logTag);
-      await _log.info('  - 域前置配置: CDN=$serverIp -> ServerName=$serverName', tag: _logTag);
+    // 记录最终配置概要
+    if (kDebugMode) {
+      await _log.debug('配置概要:', tag: _logTag);
+      await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
+      await _log.debug('  - ServerName: $serverName', tag: _logTag);
+      await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
       if (userId != null && userId.isNotEmpty) {
         final displayUuid = userId.length > 8 ? '${userId.substring(0, 8)}...' : userId;
-        await _log.info('  - 用户UUID: $displayUuid', tag: _logTag);
+        await _log.debug('  - UUID: $displayUuid', tag: _logTag);
       }
     }
     
@@ -651,7 +532,7 @@ class V2RayService {
     String? serverName,
     int localPort = 7898,
     int httpPort = 7899,
-    bool globalProxy = false,  // 新增：全局代理参数
+    bool globalProxy = false,
   }) async {
     if (Platform.isAndroid || Platform.isIOS) return;
     
@@ -665,7 +546,7 @@ class V2RayService {
         serverName: serverName,
         localPort: localPort,
         httpPort: httpPort,
-        globalProxy: globalProxy,  // 传递全局代理参数
+        globalProxy: globalProxy,
       );
       
       await File(configPath).writeAsString(jsonEncode(config));
@@ -709,12 +590,12 @@ class V2RayService {
     _connectionStartTime = null;
   }
   
-  // 启动V2Ray服务 - 修改：添加globalProxy参数
+  // 启动V2Ray服务
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
     String? serverName,
-    bool globalProxy = false,  // 修改：参数名称
+    bool globalProxy = false,
   }) async {
     // 并发控制
     if (_isStarting || _isStopping) {
@@ -741,7 +622,7 @@ class V2RayService {
           serverIp: serverIp,
           serverPort: serverPort,
           serverName: serverName,
-          globalProxy: globalProxy,  // 传递参数
+          globalProxy: globalProxy,
         );
       }
       
@@ -750,7 +631,7 @@ class V2RayService {
         serverIp: serverIp,
         serverPort: serverPort,
         serverName: serverName,
-        globalProxy: globalProxy,  // 传递参数
+        globalProxy: globalProxy,
       );
       
     } catch (e, stackTrace) {
@@ -763,12 +644,12 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 修改：修复bypassSubnets参数
+  // 移动平台启动逻辑
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
-    bool globalProxy = false,  // 修改：参数名称
+    bool globalProxy = false,
   }) async {
     await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy)', tag: _logTag);
     
@@ -794,7 +675,7 @@ class V2RayService {
         serverName: serverName,
         localPort: AppConfig.v2raySocksPort,
         httpPort: AppConfig.v2rayHttpPort,
-        globalProxy: globalProxy,  // 传递全局代理参数
+        globalProxy: globalProxy,
       );
       
       final configJson = jsonEncode(configMap);
@@ -819,12 +700,12 @@ class V2RayService {
         }
       }
       
-      // 4. 启动V2Ray - 修复：正确设置bypassSubnets参数
+      // 4. 启动V2Ray - 根据全局代理模式设置bypassSubnets参数
       await _flutterV2ray!.startV2Ray(
         remark: serverName ?? "Proxy Server",
         config: configJson,
         blockedApps: null,  // 可以后续添加应用分流功能
-        // 关键修复：根据全局代理模式设置bypassSubnets
+        // 根据全局代理模式设置bypassSubnets
         bypassSubnets: globalProxy 
           ? []  // 全局代理：不绕过任何子网
           : [   // 智能模式：绕过本地网段
@@ -888,12 +769,12 @@ class V2RayService {
     }
   }
   
-  // 桌面平台启动逻辑（Windows） - 修改：添加globalProxy参数
+  // 桌面平台启动逻辑（Windows）
   static Future<bool> _startDesktopPlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
-    bool globalProxy = false,  // 新增参数
+    bool globalProxy = false,
   }) async {
     // 检查端口
     if (!await isPortAvailable(AppConfig.v2raySocksPort) || 
@@ -910,7 +791,7 @@ class V2RayService {
       serverName: serverName,
       localPort: AppConfig.v2raySocksPort,
       httpPort: AppConfig.v2rayHttpPort,
-      globalProxy: globalProxy,  // 传递全局代理参数
+      globalProxy: globalProxy,
     );
     
     // 启动进程
@@ -981,7 +862,7 @@ class V2RayService {
     }
   }
   
-  // 停止V2Ray服务 - 修复版
+  // 停止V2Ray服务
   static Future<void> stop() async {
     // 并发控制
     if (_isStopping) {
