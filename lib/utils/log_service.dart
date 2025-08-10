@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';  // 新增：用于获取应用目录
-import 'app_config.dart';  // 导入配置文件
+import '../app_config.dart';  // 导入配置文件
 
 /// 日志上下文（包含文件、流和日期信息）
 class _LogContext {
