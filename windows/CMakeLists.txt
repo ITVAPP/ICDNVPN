@@ -138,6 +138,10 @@ install(CODE "
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
 
+# 注意：在 Release 构建后，可以手动删除 data/flutter_assets/assets 中的 geo 文件
+# 以减小包体积。这些文件对 Windows 平台是冗余的，因为 V2Ray 使用 v2ray 目录中的副本。
+# GitHub Actions 工作流会自动执行此清理操作。
+
 # Install the AOT library on non-Debug builds only.
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
