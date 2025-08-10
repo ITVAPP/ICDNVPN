@@ -42,10 +42,8 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                "alterId": 0,
-                "email": "t@t.tt",
-                "security": "auto",
-                "encryption": "none"
+                "encryption": "none",
+                "level": 0
               }
             ]
           }
@@ -74,6 +72,11 @@
     {
       "tag": "direct",
       "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole",
       "settings": {}
     }
   ],
