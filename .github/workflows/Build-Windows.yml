@@ -77,6 +77,56 @@ jobs:
         
         Write-Host "All required files copied successfully"
     
+    - name: Clean duplicate geo files from flutter_assets
+      shell: pwsh
+      run: |
+        # 删除 flutter_assets 中的重复 geo 文件以减小包体积
+        $flutterAssetsPath = "build\windows\x64\runner\Release\data\flutter_assets\assets"
+        
+        if (Test-Path $flutterAssetsPath) {
+            Write-Host "清理 flutter_assets 中的重复 geo 文件..."
+            
+            # 定义要删除的 geo 文件列表
+            $geoFiles = @("geoip.dat", "geosite.dat", "geoip-only-cn-private.dat")
+            $totalSaved = 0
+            
+            foreach ($file in $geoFiles) {
+                $filePath = Join-Path $flutterAssetsPath $file
+                if (Test-Path $filePath) {
+                    $fileSize = (Get-Item $filePath).Length
+                    Remove-Item $filePath -Force
+                    $totalSaved += $fileSize
+                    Write-Host "  ✓ 已删除: $file ($('{0:N2} MB' -f ($fileSize / 1MB)))"
+                }
+            }
+            
+            if ($totalSaved -gt 0) {
+                Write-Host "✓ 清理完成，共节省空间: $('{0:N2} MB' -f ($totalSaved / 1MB))"
+            } else {
+                Write-Host "✓ 没有找到需要清理的 geo 文件"
+            }
+        } else {
+            Write-Host "⚠ flutter_assets 目录不存在，跳过清理"
+        }
+        
+        # 验证 v2ray 目录中的 geo 文件是否存在
+        $v2rayPath = "build\windows\x64\runner\Release\v2ray"
+        if (Test-Path $v2rayPath) {
+            Write-Host "`n验证 v2ray 目录中的 geo 文件:"
+            $v2rayGeoFiles = Get-ChildItem -Path $v2rayPath -Filter "*.dat"
+            if ($v2rayGeoFiles.Count -gt 0) {
+                foreach ($file in $v2rayGeoFiles) {
+                    Write-Host "  ✓ $($file.Name) ($('{0:N2} MB' -f ($file.Length / 1MB)))"
+                }
+            } else {
+                Write-Error "错误：v2ray 目录中没有找到 geo 文件！"
+                exit 1
+            }
+        } else {
+            Write-Error "错误：v2ray 目录不存在！"
+            exit 1
+        }
+    
     - name: Package application
       shell: pwsh
       run: |
@@ -129,6 +179,10 @@ jobs:
         
         Write-Host "Package created: $outputName.zip"
         Write-Host "Archive structure: $outputName/[application files]"
+        
+        # 显示最终包大小
+        $zipSize = (Get-Item "release\$outputName.zip").Length
+        Write-Host "Package size: $('{0:N2} MB' -f ($zipSize / 1MB))"
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
