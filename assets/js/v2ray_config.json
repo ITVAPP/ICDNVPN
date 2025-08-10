@@ -113,6 +113,15 @@
       "settings": {}
     },
     {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    },
+    {
       "tag": "proxy3",
       "protocol": "freedom",
       "settings": {
@@ -153,7 +162,12 @@
         "inboundTag": ["api"],
         "outboundTag": "api"
       },
-
+      {
+        "type": "field",
+        "port": "443",
+        "network": "udp",
+        "outboundTag": "block"
+      },
       {
         "type": "field",
         "outboundTag": "direct",
