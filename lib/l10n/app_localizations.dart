@@ -81,8 +81,8 @@ class AppLocalizations {
   String get autoStartDesc => _get('autoStartDesc');
   String get autoConnect => _get('autoConnect');
   String get autoConnectDesc => _get('autoConnectDesc');
-  String get proxyMode => _get('proxyMode');  // 新增
-  String get proxyModeDesc => _get('proxyModeDesc');  // 新增
+  String get globalProxy => _get('globalProxy');  // 修改
+  String get globalProxyDesc => _get('globalProxyDesc');  // 修改
   String get currentVersion => _get('currentVersion');
   String get checkUpdate => _get('checkUpdate');
   String get officialWebsite => _get('officialWebsite');
@@ -96,7 +96,7 @@ class AppLocalizations {
   String get lightTheme => _get('lightTheme');
   String get darkTheme => _get('darkTheme');
   
-  // 权限相关  // 新增
+  // 权限相关
   String get permissionRequired => _get('permissionRequired');
   String get permissionReason => _get('permissionReason');
   
@@ -463,8 +463,8 @@ const Map<String, String> _zhCnTranslations = {
   'autoStartDesc': '系统启动时自动运行',
   'autoConnect': '自动连接',
   'autoConnectDesc': '启动应用时自动连接',
-  'proxyMode': '代理模式',  // 新增
-  'proxyModeDesc': '使用系统代理而非VPN模式',  // 新增
+  'globalProxy': '全局代理',  // 修改
+  'globalProxyDesc': '开启后所有流量都通过代理，关闭后智能分流',  // 修改
   'currentVersion': '当前版本',
   'checkUpdate': '检查更新',
   'officialWebsite': '官方网站',
@@ -478,9 +478,9 @@ const Map<String, String> _zhCnTranslations = {
   'lightTheme': '浅色',
   'darkTheme': '深色',
   
-  // 权限相关  // 新增
+  // 权限相关
   'permissionRequired': 'VPN权限',
-  'permissionReason': '需要VPN权限才能建立安全连接。\n\n如果不想授予VPN权限，可以在设置中启用"代理模式"。',
+  'permissionReason': '需要VPN权限才能建立安全连接',
   
   // 消息
   'operationFailed': '操作失败',
@@ -717,8 +717,8 @@ const Map<String, String> _enTranslations = {
   'autoStartDesc': 'Start automatically when system boots',
   'autoConnect': 'Auto Connect',
   'autoConnectDesc': 'Connect automatically when app starts',
-  'proxyMode': 'Proxy Mode',  // 新增
-  'proxyModeDesc': 'Use system proxy instead of VPN mode',  // 新增
+  'globalProxy': 'Global Proxy',  // 修改
+  'globalProxyDesc': 'When enabled, all traffic goes through proxy. When disabled, smart routing is used',  // 修改
   'currentVersion': 'Current Version',
   'checkUpdate': 'Check Update',
   'officialWebsite': 'Official Website',
@@ -732,9 +732,9 @@ const Map<String, String> _enTranslations = {
   'lightTheme': 'Light',
   'darkTheme': 'Dark',
   
-  // 权限相关  // 新增
+  // 权限相关
   'permissionRequired': 'VPN Permission',
-  'permissionReason': 'VPN permission is required to establish a secure connection.\n\nIf you prefer not to grant VPN permission, you can enable "Proxy Mode" in settings.',
+  'permissionReason': 'VPN permission is required to establish a secure connection',
   
   'operationFailed': 'Operation Failed',
   'testingLatency': 'Testing Latency...',
@@ -911,10 +911,10 @@ const Map<String, String> _enTranslations = {
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
   'diagnosticNotSupported': '診斷工具暫不支持移動平台',
-  'proxyMode': '代理模式',  // 新增
-  'proxyModeDesc': '使用系統代理而非VPN模式',  // 新增
-  'permissionRequired': 'VPN權限',  // 新增
-  'permissionReason': '需要VPN權限才能建立安全連接。\n\n如果不想授予VPN權限，可以在設置中啟用"代理模式"。',  // 新增
+  'globalProxy': '全局代理',  // 修改
+  'globalProxyDesc': '開啟後所有流量都通過代理，關閉後智能分流',  // 修改
+  'permissionRequired': 'VPN權限',
+  'permissionReason': '需要VPN權限才能建立安全連接',
   // 其他繁体中文翻译待完善
 };
 
@@ -922,10 +922,10 @@ const Map<String, String> _zhTwTranslations = {
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
   'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',
-  'proxyMode': 'Modo Proxy',  // 新增
-  'proxyModeDesc': 'Usar proxy del sistema en lugar del modo VPN',  // 新增
-  'permissionRequired': 'Permiso VPN',  // 新增
-  'permissionReason': 'Se requiere permiso VPN para establecer una conexión segura.\n\nSi prefiere no otorgar permiso VPN, puede habilitar el "Modo Proxy" en la configuración.',  // 新增
+  'globalProxy': 'Proxy Global',  // 修改
+  'globalProxyDesc': 'Cuando está habilitado, todo el tráfico pasa por el proxy. Cuando está deshabilitado, se usa el enrutamiento inteligente',  // 修改
+  'permissionRequired': 'Permiso VPN',
+  'permissionReason': 'Se requiere permiso VPN para establecer una conexión segura',
   // 其他西班牙语翻译待完善
 };
 
@@ -933,10 +933,10 @@ const Map<String, String> _esTranslations = {
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
   'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',
-  'proxyMode': 'Режим прокси',  // 新增
-  'proxyModeDesc': 'Использовать системный прокси вместо VPN',  // 新增
-  'permissionRequired': 'Разрешение VPN',  // 新增
-  'permissionReason': 'Для установления безопасного соединения требуется разрешение VPN.\n\nЕсли вы не хотите предоставлять разрешение VPN, вы можете включить "Режим прокси" в настройках.',  // 新增
+  'globalProxy': 'Глобальный прокси',  // 修改
+  'globalProxyDesc': 'При включении весь трафик проходит через прокси. При отключении используется умная маршрутизация',  // 修改
+  'permissionRequired': 'Разрешение VPN',
+  'permissionReason': 'Для установления безопасного соединения требуется разрешение VPN',
   // 其他俄语翻译待完善
 };
 
@@ -944,9 +944,9 @@ const Map<String, String> _ruTranslations = {
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
   'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',
-  'proxyMode': 'وضع الوكيل',  // 新增
-  'proxyModeDesc': 'استخدام وكيل النظام بدلاً من وضع VPN',  // 新增
-  'permissionRequired': 'إذن VPN',  // 新增
-  'permissionReason': 'مطلوب إذن VPN لإنشاء اتصال آمن.\n\nإذا كنت تفضل عدم منح إذن VPN، يمكنك تمكين "وضع الوكيل" في الإعدادات.',  // 新增
+  'globalProxy': 'وكيل عالمي',  // 修改
+  'globalProxyDesc': 'عند التمكين، تمر جميع حركة المرور عبر الوكيل. عند التعطيل، يتم استخدام التوجيه الذكي',  // 修改
+  'permissionRequired': 'إذن VPN',
+  'permissionReason': 'مطلوب إذن VPN لإنشاء اتصال آمن',
   // 其他阿拉伯语翻译待完善
 };

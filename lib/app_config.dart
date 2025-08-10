@@ -8,6 +8,14 @@ class AppConfig {
   static const String officialWebsite = 'https://www.example.com'; // 官方网站
   static const String contactEmail = 'abc@abc.com'; // 联系邮箱
   
+  // ===== 日志配置 =====
+  static const bool enableLogFile = true; // 是否启用文件日志
+  static const bool enableLogConsole = false; // 是否启用控制台日志（调试用）
+  static const bool enableLogAutoFlush = true; // 是否启用自动刷新
+  static const Duration logAutoFlushInterval = Duration(seconds: 30); // 自动刷新间隔
+  static const int logMaxOpenFiles = 10; // 最大同时打开的日志文件数
+  static const Duration logDateCheckInterval = Duration(minutes: 1); // 日期检查间隔
+  
   // ===== V2Ray端口配置 =====
   static const int v2raySocksPort = 7898; // SOCKS5代理端口
   static const int v2rayHttpPort = 7899; // HTTP代理端口

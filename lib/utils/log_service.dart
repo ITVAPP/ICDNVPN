@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';  // 新增：用于获取应用目录
+import 'app_config.dart';  // 导入配置文件
 
 /// 日志上下文（包含文件、流和日期信息）
 class _LogContext {
@@ -47,8 +48,8 @@ class LogService {
   static LogService? _instance;
   static LogService get instance => _instance ??= LogService._();
   
-  // 日志开关
-  bool enabled = true;
+  // 日志开关 - 从AppConfig读取
+  bool get enabled => AppConfig.enableLogFile;
   
   // 为每个tag维护独立的日志文件和流
   final Map<String, _LogContext> _logContexts = {};
@@ -63,18 +64,20 @@ class LogService {
   // 操作锁 - 防止清空和写入的并发冲突
   final Map<String, Completer<void>> _operationLocks = {};
   
-  // 最大同时打开的日志文件数（防止文件句柄耗尽）
-  static const int _maxOpenFiles = 10;
-  
   // 定期检查计时器
   Timer? _dateCheckTimer;
   Timer? _autoFlushTimer;
   
   LogService._() {
-    // 启动定期检查日期变更的计时器（每分钟检查一次）
-    _dateCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+    // 启动定期检查日期变更的计时器（从配置读取间隔）
+    _dateCheckTimer = Timer.periodic(AppConfig.logDateCheckInterval, (_) {
       _checkAndRotateLogs();
     });
+    
+    // 如果配置了自动刷新，启动自动刷新
+    if (AppConfig.enableLogAutoFlush) {
+      startAutoFlush(interval: AppConfig.logAutoFlushInterval);
+    }
   }
   
   /// 获取操作锁，防止并发冲突
@@ -117,12 +120,12 @@ class LogService {
       _closeContext(tag);
     }
     
-    // 如果打开的文件数过多，关闭最久未使用的
-    if (_logContexts.length > _maxOpenFiles) {
+    // 如果打开的文件数过多，关闭最久未使用的（从配置读取最大文件数）
+    if (_logContexts.length > AppConfig.logMaxOpenFiles) {
       final sortedEntries = _logContexts.entries.toList()
         ..sort((a, b) => a.value.lastWriteTime.compareTo(b.value.lastWriteTime));
       
-      final toClose = sortedEntries.take(_logContexts.length - _maxOpenFiles);
+      final toClose = sortedEntries.take(_logContexts.length - AppConfig.logMaxOpenFiles);
       for (final entry in toClose) {
         _closeContext(entry.key);
       }
@@ -178,12 +181,17 @@ class LogService {
         Directory logDir;
         
         // 区分平台获取日志目录
-        if (Platform.isAndroid || Platform.isIOS) {
+        if (Platform.isWindows) {
+          // Windows平台直接使用exe目录（保持原有逻辑）
+          final exePath = Platform.resolvedExecutable;
+          final exeDir = File(exePath).parent.path;
+          logDir = Directory(path.join(exeDir, 'logs'));
+        } else if (Platform.isAndroid || Platform.isIOS) {
           // 移动平台使用应用文档目录
           final appDir = await getApplicationDocumentsDirectory();
           logDir = Directory(path.join(appDir.path, 'logs'));
         } else {
-          // 桌面平台使用应用支持目录（有写权限）
+          // 其他桌面平台（macOS, Linux）
           try {
             final appDir = await getApplicationSupportDirectory();
             logDir = Directory(path.join(appDir.path, 'logs'));
@@ -258,7 +266,7 @@ class LogService {
     required bool enableConsole,
   }) async {
     // 这个方法保留是为了兼容性
-    enabled = enableFile;
+    // 实际配置从AppConfig读取，忽略传入的参数
   }
   
   /// 写入日志到文件

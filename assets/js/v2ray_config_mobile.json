@@ -75,15 +75,6 @@
       "tag": "direct",
       "protocol": "freedom",
       "settings": {}
-    },
-    {
-      "tag": "block",
-      "protocol": "blackhole",
-      "settings": {
-        "response": {
-          "type": "http"
-        }
-      }
     }
   ],
   "dns": {
@@ -109,17 +100,6 @@
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
-      {
-        "type": "field",
-        "port": "443",
-        "network": "udp",
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "outboundTag": "block",
-        "domain": ["geosite:category-ads-all"]
-      },
       {
         "type": "field",
         "outboundTag": "direct",

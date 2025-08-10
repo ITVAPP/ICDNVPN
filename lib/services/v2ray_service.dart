@@ -419,13 +419,14 @@ class V2RayService {
     }
   }
   
-  // 生成配置（统一处理） - 优化版，支持动态参数
+  // 生成配置（统一处理） - 修改：支持全局代理模式
   static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
     required int serverPort,
     String? serverName,
     int localPort = 7898,
     int httpPort = 7899,
+    bool globalProxy = false,  // 新增：全局代理参数
   }) async {
     // 加载配置模板（已根据平台自动选择）
     Map<String, dynamic> config = await _loadConfigTemplate();
@@ -456,6 +457,11 @@ class V2RayService {
     
     // 更新出站服务器信息
     if (config['outbounds'] is List) {
+      // 删除广告拦截相关的block出站
+      (config['outbounds'] as List).removeWhere(
+        (outbound) => outbound['tag'] == 'block'
+      );
+      
       for (var outbound in config['outbounds']) {
         if (outbound is Map && 
             outbound['tag'] == 'proxy' && 
@@ -491,6 +497,86 @@ class V2RayService {
       }
     }
     
+    // 根据全局代理模式调整DNS和路由规则
+    if (globalProxy) {
+      await _log.info('配置全局代理模式', tag: _logTag);
+      
+      // DNS配置：全局代理模式只使用国外DNS
+      if (config['dns'] is Map && config['dns']['servers'] is List) {
+        config['dns']['servers'] = [
+          "1.1.1.1",
+          "8.8.8.8",
+          "https://dns.google/dns-query",
+          "https://cloudflare-dns.com/dns-query"
+        ];
+        await _log.debug('全局代理DNS: 使用Cloudflare和Google DNS', tag: _logTag);
+      }
+      
+      // 路由规则：移除所有直连规则，只保留必要的规则
+      if (config['routing'] is Map && config['routing']['rules'] is List) {
+        final rules = config['routing']['rules'] as List;
+        
+        // 移除所有直连规则（包括国内域名、IP等）
+        rules.removeWhere((rule) {
+          if (rule is Map) {
+            // 删除广告拦截规则
+            if (rule['domain'] != null && 
+                (rule['domain'] as List).any((d) => d.toString().contains('category-ads'))) {
+              return true;
+            }
+            // 删除国内直连规则
+            if (rule['outboundTag'] == 'direct' && 
+                (rule['domain'] != null || rule['ip'] != null)) {
+              return true;
+            }
+            // 删除block规则
+            if (rule['outboundTag'] == 'block') {
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        // 确保有默认的代理规则
+        bool hasDefaultRule = rules.any((rule) => 
+          rule is Map && rule['port'] == '0-65535' && rule['outboundTag'] == 'proxy'
+        );
+        
+        if (!hasDefaultRule) {
+          rules.add({
+            "type": "field",
+            "port": "0-65535",
+            "outboundTag": "proxy"
+          });
+        }
+        
+        await _log.debug('全局代理路由: 所有流量走代理', tag: _logTag);
+      }
+    } else {
+      await _log.info('配置智能分流模式', tag: _logTag);
+      
+      // 智能模式：删除广告拦截规则，保留国内直连
+      if (config['routing'] is Map && config['routing']['rules'] is List) {
+        final rules = config['routing']['rules'] as List;
+        
+        // 只删除广告拦截规则
+        rules.removeWhere((rule) {
+          if (rule is Map) {
+            // 删除广告拦截规则
+            if (rule['domain'] != null && 
+                (rule['domain'] as List).any((d) => d.toString().contains('category-ads'))) {
+              return true;
+            }
+            // 删除block出站规则
+            if (rule['outboundTag'] == 'block') {
+              return true;
+            }
+          }
+          return false;
+        });
+      }
+    }
+    
     // 移动端额外验证
     if (Platform.isAndroid || Platform.isIOS) {
       // 再次确保移动端配置的简洁性
@@ -501,26 +587,7 @@ class V2RayService {
       await _log.info('  - 入站数量: ${(config['inbounds'] as List?)?.length ?? 0}', tag: _logTag);
       await _log.info('  - 出站数量: ${(config['outbounds'] as List?)?.length ?? 0}', tag: _logTag);
       await _log.info('  - 路由规则数: ${(config['routing']?['rules'] as List?)?.length ?? 0}', tag: _logTag);
-      
-      // 检查是否有fragment或dialerProxy
-      bool hasFragment = false;
-      bool hasDialerProxy = false;
-      
-      if (config['outbounds'] is List) {
-        for (var outbound in config['outbounds']) {
-          if (outbound['settings']?['fragment'] != null) {
-            hasFragment = true;
-          }
-          if (outbound['streamSettings']?['sockopt']?['dialerProxy'] != null) {
-            hasDialerProxy = true;
-          }
-        }
-      }
-      
-      if (hasFragment || hasDialerProxy) {
-        await _log.warn('警告：移动端配置包含不兼容特性 - Fragment: $hasFragment, DialerProxy: $hasDialerProxy', 
-                       tag: _logTag);
-      }
+      await _log.info('  - 全局代理: $globalProxy', tag: _logTag);
     }
     
     return config;
@@ -533,6 +600,7 @@ class V2RayService {
     String? serverName,
     int localPort = 7898,
     int httpPort = 7899,
+    bool globalProxy = false,  // 新增：全局代理参数
   }) async {
     if (Platform.isAndroid || Platform.isIOS) return;
     
@@ -546,6 +614,7 @@ class V2RayService {
         serverName: serverName,
         localPort: localPort,
         httpPort: httpPort,
+        globalProxy: globalProxy,  // 传递全局代理参数
       );
       
       await File(configPath).writeAsString(jsonEncode(config));
@@ -589,12 +658,12 @@ class V2RayService {
     _connectionStartTime = null;
   }
   
-  // 启动V2Ray服务 - 修改：添加proxyOnly参数
+  // 启动V2Ray服务 - 修改：添加globalProxy参数
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
     String? serverName,
-    bool proxyOnly = false,  // 新增参数
+    bool globalProxy = false,  // 修改：参数名称
   }) async {
     // 并发控制
     if (_isStarting || _isStopping) {
@@ -610,7 +679,7 @@ class V2RayService {
         await Future.delayed(const Duration(seconds: 1));
       }
       
-      await _log.info('开始启动V2Ray服务 - 服务器: $serverIp:$serverPort, 代理模式: $proxyOnly', tag: _logTag);
+      await _log.info('开始启动V2Ray服务 - 服务器: $serverIp:$serverPort, 全局代理: $globalProxy', tag: _logTag);
       
       // 更新状态为连接中
       _updateStatus(V2RayStatus(state: V2RayConnectionState.connecting));
@@ -621,7 +690,7 @@ class V2RayService {
           serverIp: serverIp,
           serverPort: serverPort,
           serverName: serverName,
-          proxyOnly: proxyOnly,  // 传递参数
+          globalProxy: globalProxy,  // 传递参数
         );
       }
       
@@ -630,6 +699,7 @@ class V2RayService {
         serverIp: serverIp,
         serverPort: serverPort,
         serverName: serverName,
+        globalProxy: globalProxy,  // 传递参数
       );
       
     } catch (e, stackTrace) {
@@ -642,21 +712,21 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 优化版，使用移动端专用配置
+  // 移动平台启动逻辑 - 修改：修复bypassSubnets参数
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
-    bool proxyOnly = false,  // 新增参数
+    bool globalProxy = false,  // 修改：参数名称
   }) async {
-    await _log.info('移动平台：启动V2Ray (代理模式: $proxyOnly)', tag: _logTag);
+    await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy)', tag: _logTag);
     
     try {
       // 1. 确保flutter_v2ray已初始化
       await _ensureFlutterV2rayInitialized();
       
-      // 2. 请求权限（Android）- 代理模式不需要VPN权限
-      if (Platform.isAndroid && !proxyOnly) {
+      // 2. 请求权限（Android）- VPN模式需要权限
+      if (Platform.isAndroid) {
         final hasPermission = await _flutterV2ray!.requestPermission();
         if (!hasPermission) {
           await _log.error('VPN权限被拒绝', tag: _logTag);
@@ -673,6 +743,7 @@ class V2RayService {
         serverName: serverName,
         localPort: AppConfig.v2raySocksPort,
         httpPort: AppConfig.v2rayHttpPort,
+        globalProxy: globalProxy,  // 传递全局代理参数
       );
       
       final configJson = jsonEncode(configMap);
@@ -684,15 +755,26 @@ class V2RayService {
         await _log.debug('  - 协议: ${configMap['outbounds']?[0]?['protocol']}', tag: _logTag);
         await _log.debug('  - 服务器: $serverIp:$serverPort', tag: _logTag);
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
+        await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
       }
       
-      // 4. 启动V2Ray - 移除不存在的参数
+      // 4. 启动V2Ray - 修复：正确设置bypassSubnets参数
       await _flutterV2ray!.startV2Ray(
         remark: serverName ?? "Proxy Server",
         config: configJson,
         blockedApps: null,  // 可以后续添加应用分流功能
-        bypassSubnets: null,  // 可以后续添加子网绕过功能
-        proxyOnly: proxyOnly,  // 使用传入的参数
+        // 关键修复：根据全局代理模式设置bypassSubnets
+        bypassSubnets: globalProxy 
+          ? []  // 全局代理：不绕过任何子网
+          : [   // 智能模式：绕过本地网段
+              "10.0.0.0/8",
+              "172.16.0.0/12",
+              "192.168.0.0/16",
+              "127.0.0.0/8",
+              "224.0.0.0/4",  // 组播地址
+              "240.0.0.0/4",  // 保留地址
+            ],
+        proxyOnly: false,  // 使用VPN模式
       );
       
       await _log.info('V2Ray启动命令已发送', tag: _logTag);
@@ -729,7 +811,8 @@ class V2RayService {
         if (kDebugMode) {
           await _log.debug('连接失败详情:', tag: _logTag);
           await _log.debug('  - 配置长度: ${configJson.length}', tag: _logTag);
-          await _log.debug('  - ProxyOnly: $proxyOnly', tag: _logTag);
+          await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
+          await _log.debug('  - BypassSubnets: ${globalProxy ? "[]" : "[本地网段]"}', tag: _logTag);
         }
       }
       
@@ -744,11 +827,12 @@ class V2RayService {
     }
   }
   
-  // 桌面平台启动逻辑（Windows）
+  // 桌面平台启动逻辑（Windows） - 修改：添加globalProxy参数
   static Future<bool> _startDesktopPlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
+    bool globalProxy = false,  // 新增参数
   }) async {
     // 检查端口
     if (!await isPortAvailable(AppConfig.v2raySocksPort) || 
@@ -765,6 +849,7 @@ class V2RayService {
       serverName: serverName,
       localPort: AppConfig.v2raySocksPort,
       httpPort: AppConfig.v2rayHttpPort,
+      globalProxy: globalProxy,  // 传递全局代理参数
     );
     
     // 启动进程

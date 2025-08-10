@@ -259,23 +259,21 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
             
-            // 新增：代理模式开关（仅移动端显示）
-            if (Platform.isAndroid || Platform.isIOS) ...[
-              Consumer<ConnectionProvider>(
-                builder: (context, connectionProvider, child) {
-                  return _SettingSwitch(
-                    title: l10n.proxyMode,
-                    subtitle: l10n.proxyModeDesc,
-                    value: connectionProvider.proxyOnly,
-                    onChanged: connectionProvider.isConnected 
-                      ? null  // 连接时禁用切换
-                      : (value) {
-                          connectionProvider.setProxyOnly(value);
-                        },
-                  );
-                },
-              ),
-            ],
+            // 修改：移除平台判断，所有平台都显示全局代理开关
+            Consumer<ConnectionProvider>(
+              builder: (context, connectionProvider, child) {
+                return _SettingSwitch(
+                  title: l10n.globalProxy,  // 修改：使用globalProxy
+                  subtitle: l10n.globalProxyDesc,  // 修改：使用globalProxyDesc
+                  value: connectionProvider.globalProxy,  // 修改：使用globalProxy
+                  onChanged: connectionProvider.isConnected 
+                    ? null  // 连接时禁用切换
+                    : (value) {
+                        connectionProvider.setGlobalProxy(value);  // 修改：调用setGlobalProxy
+                      },
+                );
+              },
+            ),
             
             // 外观设置
             const _SectionDivider(),
