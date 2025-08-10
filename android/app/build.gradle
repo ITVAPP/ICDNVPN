@@ -40,7 +40,8 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
-        // 删除了 main.jniLibs.srcDirs 配置
+        // 关键修改：添加 Flutter assets 目录，让 flutter_v2ray 能读取 geo 文件
+        main.assets.srcDirs += ['../../assets']
     }
 
     defaultConfig {
