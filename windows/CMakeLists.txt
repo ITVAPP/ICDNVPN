@@ -93,10 +93,41 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
    COMPONENT Runtime)
 
-# Copy v2ray directory and required files
+# Copy v2ray directory (executable only, no geo files)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runner/v2ray"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
-  COMPONENT Runtime)
+  COMPONENT Runtime
+  # 只复制 v2ray.exe，排除 .dat 文件
+  FILES_MATCHING 
+  PATTERN "*.exe"
+  PATTERN "*.dat" EXCLUDE
+)
+
+# Copy geo files from assets directory to v2ray directory
+# 确保 v2ray 目录存在
+install(CODE "
+  file(MAKE_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/v2ray\")
+  " COMPONENT Runtime)
+
+# 从 assets 目录复制 geo 文件到 v2ray 目录
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip.dat")
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip.dat"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/v2ray"
+    COMPONENT Runtime)
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geosite.dat")
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geosite.dat"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/v2ray"
+    COMPONENT Runtime)
+endif()
+
+# 如果有额外的 geoip-only-cn-private.dat 文件
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip-only-cn-private.dat")
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip-only-cn-private.dat"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/v2ray"
+    COMPONENT Runtime)
+endif()
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
