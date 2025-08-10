@@ -59,6 +59,9 @@ flutter:
   assets:
     - assets/images/
     - assets/js/
+    - assets/geoip.dat
+    - assets/geoip-only-cn-private.dat
+    - assets/geosite.dat
   
   # 字体配置（如果需要）
   # fonts:
