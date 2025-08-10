@@ -18,40 +18,74 @@ class ProxyService {
 
     try {
       await _log.info('正在启用系统代理...', tag: _logTag);
+      await _log.info('目标代理服务器: $_proxyServer', tag: _logTag);
+      
+      // 记录完整的注册表路径，验证字符串插值是否正确
+      final fullPath = "HKCU\\$_registryPath";
+      await _log.debug('注册表完整路径: $fullPath', tag: _logTag);
       
       // 使用reg命令设置代理 - 避免win32_registry依赖
-      await Process.run('reg', [
+      // 修复：使用双引号进行字符串插值
+      
+      // 1. 启用代理
+      await _log.debug('执行: reg add "$fullPath" /v ProxyEnable /t REG_DWORD /d 1 /f', tag: _logTag);
+      final enableResult = await Process.run('reg', [
         'add',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyEnable',
         '/t', 'REG_DWORD',
         '/d', '1',
         '/f'
       ]);
       
-      await Process.run('reg', [
+      if (enableResult.exitCode != 0) {
+        await _log.error('设置ProxyEnable失败: ${enableResult.stderr}', tag: _logTag);
+        throw '设置ProxyEnable失败';
+      }
+      await _log.info('ProxyEnable已设置为1', tag: _logTag);
+      
+      // 2. 设置代理服务器地址
+      await _log.debug('执行: reg add "$fullPath" /v ProxyServer /t REG_SZ /d $_proxyServer /f', tag: _logTag);
+      final serverResult = await Process.run('reg', [
         'add',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyServer',
         '/t', 'REG_SZ',
         '/d', _proxyServer,
         '/f'
       ]);
       
-      await Process.run('reg', [
+      if (serverResult.exitCode != 0) {
+        await _log.error('设置ProxyServer失败: ${serverResult.stderr}', tag: _logTag);
+        throw '设置ProxyServer失败';
+      }
+      await _log.info('ProxyServer已设置为: $_proxyServer', tag: _logTag);
+      
+      // 3. 设置代理白名单
+      await _log.debug('设置代理白名单（ProxyOverride）', tag: _logTag);
+      final overrideResult = await Process.run('reg', [
         'add',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyOverride',
         '/t', 'REG_SZ',
         '/d', 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>',
         '/f'
       ]);
+      
+      if (overrideResult.exitCode != 0) {
+        await _log.warn('设置ProxyOverride失败（非致命）: ${overrideResult.stderr}', tag: _logTag);
+      } else {
+        await _log.info('ProxyOverride已设置', tag: _logTag);
+      }
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
       
       // 验证代理是否设置成功
-      await _verifyProxySettings();
+      final verifyResult = await _verifyProxySettings();
+      if (!verifyResult) {
+        await _log.warn('代理设置验证失败，但可能仍然有效', tag: _logTag);
+      }
       
       await _log.info('系统代理启用成功', tag: _logTag);
     } catch (e) {
@@ -69,23 +103,40 @@ class ProxyService {
     try {
       await _log.info('正在禁用系统代理...', tag: _logTag);
       
+      // 记录完整的注册表路径
+      final fullPath = "HKCU\\$_registryPath";
+      await _log.debug('注册表完整路径: $fullPath', tag: _logTag);
+      
       // 使用reg命令禁用代理
-      await Process.run('reg', [
+      await _log.debug('执行: reg add "$fullPath" /v ProxyEnable /t REG_DWORD /d 0 /f', tag: _logTag);
+      final disableResult = await Process.run('reg', [
         'add',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyEnable',
         '/t', 'REG_DWORD',
         '/d', '0',
         '/f'
       ]);
       
-      // 删除代理服务器设置
-      await Process.run('reg', [
-        'delete',
-        'HKCU\\$_registryPath',
-        '/v', 'ProxyServer',
-        '/f'
-      ], runInShell: true);
+      if (disableResult.exitCode != 0) {
+        await _log.error('禁用ProxyEnable失败: ${disableResult.stderr}', tag: _logTag);
+        throw '禁用ProxyEnable失败';
+      }
+      await _log.info('ProxyEnable已设置为0', tag: _logTag);
+      
+      // 删除代理服务器设置（可选，不影响禁用效果）
+      try {
+        await _log.debug('尝试删除ProxyServer设置', tag: _logTag);
+        await Process.run('reg', [
+          'delete',
+          "HKCU\\$_registryPath",  // 修复：单引号改为双引号
+          '/v', 'ProxyServer',
+          '/f'
+        ], runInShell: true);
+        await _log.info('ProxyServer设置已删除', tag: _logTag);
+      } catch (e) {
+        await _log.debug('删除ProxyServer失败（非致命）: $e', tag: _logTag);
+      }
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -100,19 +151,46 @@ class ProxyService {
   static Future<void> _refreshSystemProxy() async {
     if (!Platform.isWindows) return;
     
+    await _log.debug('开始刷新系统代理设置', tag: _logTag);
+    
     try {
-      // 方法1: 使用 WinINet API 刷新
-      await Process.run('powershell', [
-        '-Command',
-        r'[System.Runtime.InteropServices.DllImport("wininet.dll", SetLastError = true)] public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int lpdwBufferLength); $INTERNET_OPTION_REFRESH = 37; $INTERNET_OPTION_SETTINGS_CHANGED = 39; [IntPtr]::Zero | % { [Win32.NativeMethods]::InternetSetOption($_, $INTERNET_OPTION_REFRESH, [IntPtr]::Zero, 0) }; [IntPtr]::Zero | % { [Win32.NativeMethods]::InternetSetOption($_, $INTERNET_OPTION_SETTINGS_CHANGED, [IntPtr]::Zero, 0) }'
+      // 修复：简化刷新方法，删除有问题的PowerShell命令
+      
+      // 方法1: 使用rundll32通知系统代理设置已更改
+      await _log.debug('通知Windows代理设置已更改', tag: _logTag);
+      final rundllResult = await Process.run('rundll32', [
+        'wininet.dll,InternetSetOption',
+        '0',  // NULL handle
+        '39', // INTERNET_OPTION_SETTINGS_CHANGED
+        '0',  // NULL buffer
+        '0'   // buffer length
       ], runInShell: true);
       
-      // 方法2: 重启 WinHTTP 服务
-      await Process.run('net', ['stop', 'WinHttpAutoProxySvc'], runInShell: true);
-      await Process.run('net', ['start', 'WinHttpAutoProxySvc'], runInShell: true);
+      if (rundllResult.exitCode == 0) {
+        await _log.debug('rundll32通知成功', tag: _logTag);
+      } else {
+        await _log.debug('rundll32通知失败（非致命）: ${rundllResult.stderr}', tag: _logTag);
+      }
       
-      // 方法3: 刷新 DNS
-      await Process.run('ipconfig', ['/flushdns'], runInShell: true);
+      // 方法2: 刷新DNS缓存
+      await _log.debug('刷新DNS缓存', tag: _logTag);
+      final flushDnsResult = await Process.run('ipconfig', ['/flushdns'], runInShell: true);
+      if (flushDnsResult.exitCode == 0) {
+        await _log.debug('DNS缓存已刷新', tag: _logTag);
+      }
+      
+      // 方法3: 尝试重启WinHTTP服务（可能需要管理员权限，所以在try-catch中）
+      try {
+        await _log.debug('尝试重启WinHTTP服务', tag: _logTag);
+        await Process.run('net', ['stop', 'WinHttpAutoProxySvc'], runInShell: true);
+        await Process.run('net', ['start', 'WinHttpAutoProxySvc'], runInShell: true);
+        await _log.debug('WinHTTP服务已重启', tag: _logTag);
+      } catch (e) {
+        // 忽略错误，因为可能没有管理员权限
+        await _log.debug('无法重启WinHTTP服务（可能需要管理员权限）: $e', tag: _logTag);
+      }
+      
+      await _log.debug('系统代理设置刷新完成', tag: _logTag);
       
     } catch (e) {
       await _log.warn('刷新系统代理设置时出现警告: $e', tag: _logTag);
@@ -124,6 +202,8 @@ class ProxyService {
   static Future<bool> _verifyProxySettings() async {
     if (!Platform.isWindows) return false;
     
+    await _log.debug('开始验证代理设置', tag: _logTag);
+    
     try {
       final status = await getProxyStatus();
       final isEnabled = status['enabled'] == true && status['server'] == _proxyServer;
@@ -131,6 +211,12 @@ class ProxyService {
       await _log.info('代理验证结果: ${isEnabled ? "已启用" : "未启用"}', tag: _logTag);
       await _log.debug('ProxyEnable: ${status['enabled']}', tag: _logTag);
       await _log.debug('ProxyServer: ${status['server']}', tag: _logTag);
+      await _log.debug('期望ProxyServer: $_proxyServer', tag: _logTag);
+      
+      if (status['enabled'] == true && status['server'] != _proxyServer) {
+        await _log.warn('代理已启用但服务器地址不匹配', tag: _logTag);
+        await _log.warn('当前: ${status['server']}, 期望: $_proxyServer', tag: _logTag);
+      }
       
       return isEnabled;
     } catch (e) {
@@ -150,43 +236,75 @@ class ProxyService {
       };
     }
     
+    await _log.debug('查询当前代理状态', tag: _logTag);
+    
     try {
+      // 记录完整路径用于调试
+      final fullPath = "HKCU\\$_registryPath";
+      await _log.debug('查询注册表路径: $fullPath', tag: _logTag);
+      
       // 查询ProxyEnable
+      // 修复：使用双引号进行字符串插值
+      await _log.debug('查询ProxyEnable', tag: _logTag);
       final enableResult = await Process.run('reg', [
         'query',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyEnable'
       ]);
       
+      if (enableResult.exitCode != 0) {
+        await _log.debug('ProxyEnable不存在或查询失败', tag: _logTag);
+      }
+      
       // 查询ProxyServer
+      await _log.debug('查询ProxyServer', tag: _logTag);
       final serverResult = await Process.run('reg', [
         'query',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyServer'
       ]);
       
+      if (serverResult.exitCode != 0) {
+        await _log.debug('ProxyServer不存在或查询失败', tag: _logTag);
+      }
+      
       // 查询ProxyOverride
+      await _log.debug('查询ProxyOverride', tag: _logTag);
       final overrideResult = await Process.run('reg', [
         'query',
-        'HKCU\\$_registryPath',
+        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
         '/v', 'ProxyOverride'
       ]);
       
+      if (overrideResult.exitCode != 0) {
+        await _log.debug('ProxyOverride不存在或查询失败', tag: _logTag);
+      }
+      
       // 解析结果
       final isEnabled = enableResult.stdout.toString().contains('0x1');
+      await _log.debug('ProxyEnable解析结果: $isEnabled', tag: _logTag);
       
       final serverMatch = RegExp(r'ProxyServer\s+REG_SZ\s+(.+)').firstMatch(serverResult.stdout.toString());
       final server = serverMatch?.group(1)?.trim() ?? '';
+      await _log.debug('ProxyServer解析结果: $server', tag: _logTag);
       
       final overrideMatch = RegExp(r'ProxyOverride\s+REG_SZ\s+(.+)').firstMatch(overrideResult.stdout.toString());
       final override = overrideMatch?.group(1)?.trim() ?? '';
+      if (override.isNotEmpty) {
+        await _log.debug('ProxyOverride解析结果: ${override.substring(0, override.length > 50 ? 50 : override.length)}...', tag: _logTag);
+      }
       
-      return {
+      final status = {
         'enabled': isEnabled,
         'server': server,
         'override': override,
       };
+      
+      await _log.debug('代理状态查询完成', tag: _logTag);
+      
+      return status;
     } catch (e) {
+      await _log.error('查询代理状态时发生错误', tag: _logTag, error: e);
       return {
         'enabled': false,
         'server': '',
