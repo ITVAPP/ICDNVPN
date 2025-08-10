@@ -13,7 +13,11 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-    
+
+  # 使用flutter_v2ray
+  flutter_v2ray:
+    path: ./packages/flutter_v2ray  # 指向本地flutter_v2ray目录
+
   path_provider: ^2.1.2
   http: ^1.1.0 
   
@@ -42,9 +46,6 @@ dependencies:
   
   # 新增：设备信息获取
   device_info_plus: ^11.2.0
-  
-  # 新增：flutter_v2ray插件
-  flutter_v2ray: ^1.0.10
 
 dev_dependencies:
   flutter_test:
