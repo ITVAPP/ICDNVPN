@@ -28,39 +28,51 @@ jobs:
     - name: Build Windows app
       run: flutter build windows --release
     
-    - name: Copy V2Ray core from project
+    - name: Copy V2Ray core and geo files
       shell: pwsh
       run: |
-        # 从项目目录复制V2Ray核心文件
-        $sourcePath = "windows\runner\v2ray"
         $buildPath = "build\windows\x64\runner\Release\v2ray"
         
         # 创建目标目录
         New-Item -ItemType Directory -Force -Path $buildPath
         
-        # 复制V2Ray核心文件
-        if (Test-Path "$sourcePath\v2ray.exe") {
-            Copy-Item "$sourcePath\v2ray.exe" -Destination "$buildPath\" -Force
+        # 复制 V2Ray 可执行文件（从 windows/runner/v2ray）
+        $v2rayExePath = "windows\runner\v2ray\v2ray.exe"
+        if (Test-Path $v2rayExePath) {
+            Copy-Item $v2rayExePath -Destination "$buildPath\" -Force
             Write-Host "✓ Copied v2ray.exe"
         } else {
-            Write-Error "v2ray.exe not found in $sourcePath"
+            Write-Error "v2ray.exe not found in $v2rayExePath"
             exit 1
         }
         
-        if (Test-Path "$sourcePath\geoip.dat") {
-            Copy-Item "$sourcePath\geoip.dat" -Destination "$buildPath\" -Force
-            Write-Host "✓ Copied geoip.dat"
+        # 复制 geo 文件（从 assets 目录）
+        $assetsPath = "assets"
+        
+        # 复制 geoip.dat
+        if (Test-Path "$assetsPath\geoip.dat") {
+            Copy-Item "$assetsPath\geoip.dat" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied geoip.dat from assets"
         } else {
-            Write-Error "geoip.dat not found in $sourcePath"
+            Write-Error "geoip.dat not found in $assetsPath"
             exit 1
         }
         
-        if (Test-Path "$sourcePath\geosite.dat") {
-            Copy-Item "$sourcePath\geosite.dat" -Destination "$buildPath\" -Force
-            Write-Host "✓ Copied geosite.dat"
+        # 复制 geosite.dat
+        if (Test-Path "$assetsPath\geosite.dat") {
+            Copy-Item "$assetsPath\geosite.dat" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied geosite.dat from assets"
         } else {
-            Write-Error "geosite.dat not found in $sourcePath"
+            Write-Error "geosite.dat not found in $assetsPath"
             exit 1
+        }
+        
+        # 复制 geoip-only-cn-private.dat（如果存在）
+        if (Test-Path "$assetsPath\geoip-only-cn-private.dat") {
+            Copy-Item "$assetsPath\geoip-only-cn-private.dat" -Destination "$buildPath\" -Force
+            Write-Host "✓ Copied geoip-only-cn-private.dat from assets"
+        } else {
+            Write-Host "⚠ geoip-only-cn-private.dat not found (optional)"
         }
         
         Write-Host "All required files copied successfully"
@@ -134,4 +146,3 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
