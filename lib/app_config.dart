@@ -30,29 +30,44 @@ class AppConfig {
   static const Duration v2rayTerminateInterval = Duration(milliseconds: 500); // 终止重试间隔
   
   // ===== V2Ray服务器群组配置 =====
-  // 服务器群组用于指定多个后端服务器域名，实现域前置的灵活切换
-  // 注意：这里只配置serverName（SNI和Host头），不配置address
-  // TCP连接始终使用Cloudflare CDN IP，通过Host头路由到不同后端
+  // 服务器群组用于指定多个后端服务器，实现域前置的灵活切换
+  // 注意：address和port字段会被忽略，TCP连接始终使用Cloudflare CDN IP
   // 
   // 工作原理：
   // 1. 客户端始终连接到Cloudflare CDN IP（如172.67.x.x）
   // 2. 通过设置不同的Host头，CDN会将流量转发到对应的后端服务器
   // 3. 这样可以在不改变CDN IP的情况下，切换多个后端服务器
   //
+  // 配置字段说明：
+  // - serverName: 必需，后端服务器域名，用于设置SNI和Host头
+  // - uuid: 可选，VLESS协议的用户ID，不提供则使用JSON配置的默认值
+  //
   // 示例配置：
   // static const List<Map<String, dynamic>> serverGroup = [
-  //   {'serverName': 'server1.pages.dev'},   // 后端服务器1
-  //   {'serverName': 'server2.pages.dev'},   // 后端服务器2
+  //   {
+  //     'serverName': 'pages-vless-a9f.pages.dev',  // 后端服务器1
+  //     'uuid': 'bc24baea-3e5c-4107-a231-416cf00504fe',  // 可选：指定UUID
+  //   },
+  //   {
+  //     'serverName': 'another-server.pages.dev',    // 后端服务器2
+  //     'uuid': 'd8f7c9e2-4a6b-5108-b342-527df11615ge',  // 可选：不同的UUID
+  //   },
+  //   {
+  //     'serverName': 'third-server.pages.dev',      // 后端服务器3
+  //     // 未指定uuid，将使用JSON配置文件中的默认UUID
+  //   },
   // ];
   //
   // 留空则使用v2ray_config.json中的默认配置
   static const List<Map<String, dynamic>> serverGroup = [
-    // 默认为空，使用JSON配置文件中的serverName
+    // 默认为空，使用JSON配置文件中的serverName和uuid
     // 如需配置多个后端服务器，请按上述示例添加
   ];
   
   // 获取随机服务器
-  // 返回的Map中包含serverName字段，用于设置SNI和Host头
+  // 返回的Map中可能包含：
+  // - serverName: 用于设置SNI和Host头
+  // - uuid: 用于VLESS认证（可选）
   // 注意：address和port字段将被忽略，始终使用CDN IP
   static Map<String, dynamic>? getRandomServer() {
     if (serverGroup.isEmpty) return null;
