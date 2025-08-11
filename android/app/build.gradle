@@ -40,7 +40,7 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
-        // 关键修改：添加 Flutter assets 目录，让原生代码能读取 geo 文件
+        main.jniLibs.srcDirs = ['src/main/jniLibs']
         main.assets.srcDirs += ['../../assets']
     }
 
@@ -100,3 +100,4 @@ dependencies {
     // 添加Gson用于JSON处理
     implementation 'com.google.code.gson:gson:2.10.1'
 }
+
