@@ -170,7 +170,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 初始化文件日志系统（从配置读取是否启用，默认启用）
         val enableFileLog = true  // TODO: 从配置文件读取
-        VpnFileLogger.init(applicationContext, enableFileLog)
+        VpnFileLogger.init(applicationContext)
         
         VpnFileLogger.d(TAG, "VPN服务onCreate开始")
         

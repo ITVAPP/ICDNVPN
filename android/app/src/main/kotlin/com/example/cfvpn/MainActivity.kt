@@ -36,7 +36,7 @@ class MainActivity: FlutterActivity() {
         
         // 初始化文件日志系统（与V2RayVpnService保持一致）
         val enableFileLog = true  // TODO: 从配置文件读取
-        VpnFileLogger.init(applicationContext, enableFileLog)
+        VpnFileLogger.init(applicationContext)
         
         // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
