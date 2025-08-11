@@ -588,14 +588,17 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     }
     
     override fun setup(parameters: String?): Long {
+        // 返回VPN文件描述符
         return mInterface?.fd?.toLong() ?: -1
     }
     
     override fun prepare(): Boolean {
+        // 检查VPN权限
         return VpnService.prepare(this) == null
     }
     
     override fun protect(fd: Long): Boolean {
+        // 保护socket不通过VPN
         return protect(fd.toInt())
     }
     
