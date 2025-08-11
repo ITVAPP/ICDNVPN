@@ -14,10 +14,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # 使用flutter_v2ray
-  flutter_v2ray:
-    path: ./packages/flutter_v2ray  # 指向本地flutter_v2ray目录
-
   path_provider: ^2.1.2
   http: ^1.1.0 
   
@@ -55,7 +51,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # 应用图标
+  # 应用图标和资源
   assets:
     - assets/images/
     - assets/js/
