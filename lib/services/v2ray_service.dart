@@ -8,6 +8,18 @@ import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
 
+/// V2Ray连接模式
+enum V2RayConnectionMode {
+  vpnTun,      // VPN隧道模式（全局）
+  proxyOnly    // 仅代理模式（局部，不创建VPN）
+}
+
+/// 应用代理模式
+enum AppProxyMode {
+  exclude,     // 排除模式：指定的应用不走代理
+  include      // 包含模式：仅指定的应用走代理
+}
+
 /// V2Ray连接状态
 enum V2RayConnectionState {
   disconnected,
@@ -226,6 +238,12 @@ class V2RayService {
           break;
         case 'onVpnPermissionDenied':
           _log.info('VPN权限被拒绝', tag: _logTag);
+          break;
+        case 'onNotificationPermissionGranted':
+          _log.info('通知权限已授予', tag: _logTag);
+          break;
+        case 'onNotificationPermissionDenied':
+          _log.info('通知权限被拒绝', tag: _logTag);
           break;
         case 'onVpnStatusUpdate':
           final message = call.arguments as String?;
@@ -670,12 +688,19 @@ class V2RayService {
     _connectionStartTime = null;
   }
   
-  // 启动V2Ray服务
+  // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
     String? serverName,
     bool globalProxy = false,
+    // 新增参数（移动端特有）
+    V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
+    List<String>? blockedApps,
+    List<String>? allowedApps,
+    AppProxyMode appProxyMode = AppProxyMode.exclude,
+    List<String>? bypassSubnets,
+    String disconnectButtonName = '停止',
   }) async {
     // 并发控制
     if (_isStarting || _isStopping) {
@@ -691,7 +716,7 @@ class V2RayService {
         await Future.delayed(const Duration(seconds: 1));
       }
       
-      await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy', tag: _logTag);
+      await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy, 模式: $mode', tag: _logTag);
       
       // 更新状态为连接中
       _updateStatus(V2RayStatus(state: V2RayConnectionState.connecting));
@@ -703,6 +728,12 @@ class V2RayService {
           serverPort: serverPort,
           serverName: serverName,
           globalProxy: globalProxy,
+          mode: mode,
+          blockedApps: blockedApps,
+          allowedApps: allowedApps,
+          appProxyMode: appProxyMode,
+          bypassSubnets: bypassSubnets,
+          disconnectButtonName: disconnectButtonName,
         );
       }
       
@@ -724,14 +755,20 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 使用原生通道
+  // 移动平台启动逻辑 - 增强版，支持新功能
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
     bool globalProxy = false,
+    V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
+    List<String>? blockedApps,
+    List<String>? allowedApps,
+    AppProxyMode appProxyMode = AppProxyMode.exclude,
+    List<String>? bypassSubnets,
+    String disconnectButtonName = '停止',
   }) async {
-    await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy)', tag: _logTag);
+    await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy, 模式: $mode)', tag: _logTag);
     
     try {
       // 1. 初始化通道监听
@@ -757,6 +794,17 @@ class V2RayService {
         await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
         await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
+        await _log.debug('  - 连接模式: $mode', tag: _logTag);
+        await _log.debug('  - 应用代理模式: $appProxyMode', tag: _logTag);
+        if (blockedApps != null && blockedApps.isNotEmpty) {
+          await _log.debug('  - 排除应用: ${blockedApps.length}个', tag: _logTag);
+        }
+        if (allowedApps != null && allowedApps.isNotEmpty) {
+          await _log.debug('  - 包含应用: ${allowedApps.length}个', tag: _logTag);
+        }
+        if (bypassSubnets != null && bypassSubnets.isNotEmpty) {
+          await _log.debug('  - 绕过子网: ${bypassSubnets.length}个', tag: _logTag);
+        }
         
         // 输出UUID信息（安全显示）
         final users = configMap['outbounds']?[0]?['settings']?['vnext']?[0]?['users'];
@@ -769,17 +817,26 @@ class V2RayService {
         }
       }
       
-      // 3. 通过原生通道启动V2Ray
+      // 3. 通过原生通道启动V2Ray（增强版）
       final result = await _channel.invokeMethod<bool>('startVpn', {
         'config': configJson,
+        'mode': mode == V2RayConnectionMode.vpnTun ? 'VPN_TUN' : 'PROXY_ONLY',
         'globalProxy': globalProxy,
+        'blockedApps': blockedApps,
+        'allowedApps': allowedApps,
+        'appProxyMode': appProxyMode == AppProxyMode.exclude ? 'EXCLUDE' : 'INCLUDE',
+        'bypassSubnets': bypassSubnets,
+        'disconnectButtonName': disconnectButtonName,
       });
       
       if (result == true) {
         await _log.info('V2Ray启动命令已发送，等待连接建立', tag: _logTag);
         
-        // 4. 等待连接建立
-        await Future.delayed(AppConfig.v2rayCheckDelay);
+        // 4. 等待连接建立（PROXY_ONLY模式可能更快）
+        final waitTime = mode == V2RayConnectionMode.proxyOnly 
+            ? const Duration(seconds: 1) 
+            : AppConfig.v2rayCheckDelay;
+        await Future.delayed(waitTime);
         
         // 5. 检查连接状态
         final isConnected = await _channel.invokeMethod<bool>('isVpnConnected') ?? false;
@@ -820,6 +877,104 @@ class V2RayService {
       await _log.error('启动V2Ray失败', tag: _logTag, error: e, stackTrace: stackTrace);
       _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
       return false;
+    }
+  }
+  
+  // 获取已安装应用列表（Android）
+  static Future<List<Map<String, dynamic>>> getInstalledApps() async {
+    if (!Platform.isAndroid) return [];
+    
+    try {
+      final apps = await _channel.invokeMethod<List>('getInstalledApps');
+      if (apps != null) {
+        return apps.map((app) => Map<String, dynamic>.from(app as Map)).toList();
+      }
+    } catch (e) {
+      _log.error('获取应用列表失败: $e', tag: _logTag);
+    }
+    
+    return [];
+  }
+  
+  // 保存代理配置（分应用代理、子网绕过等）
+  static Future<void> saveProxyConfig({
+    List<String>? blockedApps,
+    List<String>? bypassSubnets,
+  }) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    
+    try {
+      await _channel.invokeMethod('saveProxyConfig', {
+        'blockedApps': blockedApps ?? [],
+        'bypassSubnets': bypassSubnets ?? [],
+      });
+      _log.info('代理配置已保存', tag: _logTag);
+    } catch (e) {
+      _log.error('保存代理配置失败: $e', tag: _logTag);
+    }
+  }
+  
+  // 加载代理配置
+  static Future<Map<String, List<String>>> loadProxyConfig() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return {
+        'blockedApps': [],
+        'bypassSubnets': [],
+      };
+    }
+    
+    try {
+      final config = await _channel.invokeMethod<Map>('loadProxyConfig');
+      if (config != null) {
+        return {
+          'blockedApps': List<String>.from(config['blockedApps'] ?? []),
+          'bypassSubnets': List<String>.from(config['bypassSubnets'] ?? []),
+        };
+      }
+    } catch (e) {
+      _log.error('加载代理配置失败: $e', tag: _logTag);
+    }
+    
+    return {
+      'blockedApps': [],
+      'bypassSubnets': [],
+    };
+  }
+  
+  // 测试服务器延迟（Android）
+  static Future<int> testServerDelay({
+    required String config,
+    String testUrl = 'https://www.google.com/generate_204',
+  }) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return -1;
+    
+    try {
+      final delay = await _channel.invokeMethod<int>('testServerDelay', {
+        'config': config,
+        'url': testUrl,
+      });
+      return delay ?? -1;
+    } catch (e) {
+      _log.error('测试服务器延迟失败: $e', tag: _logTag);
+      return -1;
+    }
+  }
+  
+  // 测试已连接服务器延迟（Android）
+  static Future<int> testConnectedDelay({
+    String testUrl = 'https://www.google.com/generate_204',
+  }) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return -1;
+    if (!_isRunning) return -1;
+    
+    try {
+      final delay = await _channel.invokeMethod<int>('testConnectedDelay', {
+        'url': testUrl,
+      });
+      return delay ?? -1;
+    } catch (e) {
+      _log.error('测试已连接服务器延迟失败: $e', tag: _logTag);
+      return -1;
     }
   }
   
