@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     
@@ -8,6 +9,11 @@
     
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    
+    <!-- Android 14+ 特殊前台服务权限 - 添加minSdkVersion -->
+    <uses-permission 
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+        android:minSdkVersion="34" />
     
     <!-- Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -46,19 +52,28 @@
             </intent-filter>
         </activity>
         
-        <!-- V2Ray VPN服务声明 -->
+        <!-- V2Ray VPN服务声明 - 借鉴开源项目的完整配置 -->
         <service
             android:name=".V2RayVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:enabled="true"
             android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse">
+            
+            <!-- VPN服务必需的intent-filter -->
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
-            <!-- Android 14+ 需要的特殊前台服务类型声明 -->
-            <meta-data 
-                android:name="android.app.METADATA_SPECIAL_USE_FGS_SUBTYPE"
+            
+            <!-- Android 14+ 使用property声明 -->
+            <property 
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="vpn" />
+            
+            <!-- 支持Always-on VPN（可选但推荐） -->
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="true" />
         </service>
         
         <!-- Flutter embedding version -->
