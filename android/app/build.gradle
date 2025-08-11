@@ -53,9 +53,23 @@ android {
         versionName flutterVersionName
         multiDexEnabled true
         
-        // 添加NDK架构过滤（根据libv2ray.aar支持的架构）
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        // 只在不使用 split APK 时才设置 abiFilters
+        // 这样可以同时支持 split-per-abi 和普通构建
+        if (!project.hasProperty('split-per-abi')) {
+            ndk {
+                // 根据libv2ray.aar支持的架构，只包含主要架构
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
+        }
+    }
+    
+    // 配置 APK 分割（可选）
+    splits {
+        abi {
+            enable project.hasProperty('split-per-abi')
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a'
+            universalApk false
         }
     }
 
