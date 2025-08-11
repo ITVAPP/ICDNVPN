@@ -57,6 +57,35 @@ jobs:
           echo "  $f ($size)"
         done
     
+    - name: Check for Tun2Socks Integration
+      run: |
+        cd /tmp/aar_analysis
+        
+        echo "================================================"
+        echo "      Checking for Tun2Socks Integration"
+        echo "================================================"
+        
+        # Check for native libraries related to tun2socks
+        echo -e "\n🔍 CHECKING NATIVE LIBRARIES FOR TUN2SOCKS:"
+        if [ -d "jni" ]; then
+          find jni -type f -name "*.so" | while read lib; do
+            echo "Found native lib: $lib"
+            # Check if the library contains tun2socks symbols
+            strings "$lib" 2>/dev/null | grep -i -E "tun2socks|lwip|socks|tun" | head -20 || true
+          done
+        fi
+        
+        # Check AndroidManifest for tun2socks related permissions or services
+        echo -e "\n📋 CHECKING ANDROIDMANIFEST.XML:"
+        if [ -f "AndroidManifest.xml" ]; then
+          # Try to decode AndroidManifest
+          cat AndroidManifest.xml | strings | grep -i -E "tun|socks|vpn" || echo "No tun2socks references in manifest"
+        fi
+        
+        # Extract and check classes.jar for tun2socks
+        echo -e "\n📦 EXTRACTING CLASSES FOR TUN2SOCKS CHECK:"
+        jar tf classes.jar | grep -i -E "tun2socks|tun|socks|lwip" || echo "No obvious tun2socks classes in jar"
+    
     - name: Extract and Prepare classes.jar
       run: |
         cd /tmp/aar_analysis
@@ -79,6 +108,79 @@ jobs:
         find . -name "*.class" | sed 's|^\./||' | sed 's|/[^/]*\.class$||' | sort | uniq | while read pkg; do
           count=$(find "./$pkg" -maxdepth 1 -name "*.class" 2>/dev/null | wc -l)
           echo "  📁 $pkg ($count classes)"
+        done
+    
+    - name: Deep Search for Tun2Socks Code
+      run: |
+        cd /tmp/aar_analysis/extracted_classes
+        
+        echo "================================================"
+        echo "    Deep Search for Tun2Socks Related Code"
+        echo "================================================"
+        
+        # Keywords specific to tun2socks implementation
+        TUN2SOCKS_KEYWORDS=(
+          "Tun2socks"
+          "tun2socks"
+          "TunInterface"
+          "SocksProxy"
+          "LwIP"
+          "lwip"
+          "PacketFlow"
+          "TunDevice"
+          "VpnTunnel"
+          "TcpStack"
+          "UdpStack"
+          "IpStack"
+          "PacketHandler"
+          "TunWriter"
+          "TunReader"
+          "SocksClient"
+          "Socks5"
+          "ProxyHandler"
+          "TunnelInterface"
+          "NetworkStack"
+        )
+        
+        echo -e "\n🔍 SEARCHING FOR TUN2SOCKS SPECIFIC CLASSES AND METHODS:\n"
+        
+        for keyword in "${TUN2SOCKS_KEYWORDS[@]}"; do
+          echo "━━━ Searching for: $keyword ━━━"
+          
+          # Search in class names
+          find . -name "*.class" | grep -i "$keyword" 2>/dev/null && echo "  ✓ Found in class names" || true
+          
+          # Search in class content using javap
+          for class_file in $(find . -name "*.class" | head -50); do
+            class_name=$(echo $class_file | sed 's|^\./||' | sed 's|\.class$||' | sed 's|/|.|g')
+            javap -p -cp . "$class_name" 2>/dev/null | grep -i "$keyword" | head -3 || true
+          done
+          
+          echo ""
+        done
+        
+        # Check for specific tun2socks method signatures
+        echo -e "\n🔧 CHECKING FOR TUN2SOCKS METHOD SIGNATURES:"
+        
+        SIGNATURE_PATTERNS=(
+          "startTun2socks"
+          "stopTun2socks"
+          "writeTun"
+          "readTun"
+          "handlePacket"
+          "processTunPacket"
+          "socksConnect"
+          "setupTunnel"
+          "protectSocket"
+          "getVpnInterface"
+        )
+        
+        for pattern in "${SIGNATURE_PATTERNS[@]}"; do
+          echo "Checking for method: $pattern"
+          for class_file in $(find . -name "*.class"); do
+            class_name=$(echo $class_file | sed 's|^\./||' | sed 's|\.class$||' | sed 's|/|.|g')
+            javap -p -cp . "$class_name" 2>/dev/null | grep -i "$pattern" && echo "  ✓ Found in $class_name" || true
+          done
         done
     
     - name: Complete javap Analysis (All Access Levels)
@@ -150,6 +252,34 @@ jobs:
         echo "📄 ALL JADX DECOMPILED CODE"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         cat all_decompiled_jadx.java || echo "No source to display"
+    
+    - name: Search for Tun2Socks in Decompiled Code
+      run: |
+        cd /tmp/aar_analysis
+        
+        echo "================================================"
+        echo "   Searching Tun2Socks in Decompiled Code"
+        echo "================================================"
+        
+        if [ -d "decompiled_jadx" ]; then
+          echo -e "\n🔍 TUN2SOCKS REFERENCES IN DECOMPILED CODE:\n"
+          
+          # Search for tun2socks patterns in decompiled Java files
+          echo "━━━ Direct tun2socks references ━━━"
+          grep -r -i "tun2socks" decompiled_jadx --include="*.java" 2>/dev/null | head -20 || echo "No direct tun2socks references"
+          
+          echo -e "\n━━━ TUN interface references ━━━"
+          grep -r -i -E "tun|tunnel" decompiled_jadx --include="*.java" 2>/dev/null | grep -v "import" | grep -v "//" | head -20 || echo "No TUN references"
+          
+          echo -e "\n━━━ SOCKS proxy references ━━━"
+          grep -r -i "socks" decompiled_jadx --include="*.java" 2>/dev/null | grep -v "import" | grep -v "//" | head -20 || echo "No SOCKS references"
+          
+          echo -e "\n━━━ VPN tunnel handling ━━━"
+          grep -r -E "vpn|VPN|Vpn" decompiled_jadx --include="*.java" 2>/dev/null | grep -E "tunnel|interface|packet" | head -20 || echo "No VPN tunnel references"
+          
+          echo -e "\n━━━ Packet processing ━━━"
+          grep -r -i -E "packet|datagram" decompiled_jadx --include="*.java" 2>/dev/null | grep -v "import" | head -20 || echo "No packet processing references"
+        fi
     
     - name: CFR Decompilation (Alternative)
       run: |
@@ -246,6 +376,57 @@ jobs:
           
           echo ""
         done
+    
+    - name: Generate Tun2Socks Analysis Report
+      run: |
+        cd /tmp/aar_analysis
+        
+        echo "================================================"
+        echo "    Generating Tun2Socks Analysis Report"
+        echo "================================================"
+        
+        cat > tun2socks_analysis.md << 'EOF'
+        # Tun2Socks Integration Analysis Report
+        
+        ## Analysis Summary
+        This report analyzes whether libv2ray.aar contains tun2socks functionality.
+        
+        ## Key Findings
+        
+        ### 1. Native Libraries
+        EOF
+        
+        # Add native library findings
+        echo -e "\n#### Native Libraries Found:" >> tun2socks_analysis.md
+        if [ -d "jni" ]; then
+          find jni -name "*.so" -exec basename {} \; >> tun2socks_analysis.md 2>/dev/null || echo "No native libraries found" >> tun2socks_analysis.md
+        else
+          echo "No JNI directory found" >> tun2socks_analysis.md
+        fi
+        
+        echo -e "\n### 2. Tun2Socks Related Classes" >> tun2socks_analysis.md
+        echo '```' >> tun2socks_analysis.md
+        find extracted_classes -name "*.class" | xargs -I {} basename {} .class | grep -i -E "tun|socks|tunnel|vpn" >> tun2socks_analysis.md 2>/dev/null || echo "No tun2socks related classes found" >> tun2socks_analysis.md
+        echo '```' >> tun2socks_analysis.md
+        
+        echo -e "\n### 3. Tun2Socks Methods Found" >> tun2socks_analysis.md
+        echo '```' >> tun2socks_analysis.md
+        # Search for tun2socks methods in all classes
+        for class_file in $(find extracted_classes -name "*.class"); do
+          class_name=$(echo $class_file | sed 's|extracted_classes/||' | sed 's|\.class$||' | sed 's|/|.|g')
+          javap -p -cp extracted_classes "$class_name" 2>/dev/null | grep -i -E "tun|socks|tunnel|packet|vpn" | grep -E "\(" >> tun2socks_analysis.md 2>/dev/null || true
+        done
+        echo '```' >> tun2socks_analysis.md
+        
+        echo -e "\n### 4. Integration Status" >> tun2socks_analysis.md
+        echo -e "\n- [ ] Contains standalone tun2socks implementation" >> tun2socks_analysis.md
+        echo "- [ ] Contains tun2socks JNI bindings" >> tun2socks_analysis.md
+        echo "- [ ] Contains packet handling interfaces" >> tun2socks_analysis.md
+        echo "- [ ] Contains SOCKS proxy client" >> tun2socks_analysis.md
+        echo -e "\n## Conclusion" >> tun2socks_analysis.md
+        echo "Based on the analysis, determine if libv2ray.aar includes tun2socks functionality or if it needs to be integrated separately." >> tun2socks_analysis.md
+        
+        cat tun2socks_analysis.md
     
     - name: Generate Complete Kotlin Implementation
       run: |
@@ -435,27 +616,37 @@ jobs:
         - Analysis completed successfully
         - All classes and methods extracted
         - Multiple decompilers used for accuracy
+        - Tun2socks integration checked
         - Kotlin implementation template generated
+        
+        ## Tun2Socks Integration Status
+        The workflow has checked for the presence of tun2socks functionality within libv2ray.aar.
+        See tun2socks_analysis.md for detailed findings.
         
         ## Key Files Generated
         1. method_summary.md - All public methods
-        2. V2RayVpnService_Complete.kt - Implementation template
-        3. Decompiled source code in artifacts
+        2. tun2socks_analysis.md - Tun2socks integration analysis
+        3. V2RayVpnService_Complete.kt - Implementation template
+        4. Decompiled source code in artifacts
         
         ## Next Steps
-        1. Review the decompiled source code
-        2. Update the Kotlin implementation based on actual methods found
-        3. Test the implementation
+        1. Review the tun2socks analysis to determine if additional integration is needed
+        2. Review the decompiled source code
+        3. Update the Kotlin implementation based on actual methods found
+        4. If tun2socks is not included, consider integrating it separately
+        5. Test the implementation
         
         ## Important Notes
         - Check the method signatures carefully
         - Some methods might require specific parameters
         - Native methods need proper JNI setup
+        - If tun2socks is not included, you may need to add it as a separate dependency
         
         EOF
         
         cp FINAL_REPORT.md $GITHUB_WORKSPACE/
         cp method_summary.md $GITHUB_WORKSPACE/
+        cp tun2socks_analysis.md $GITHUB_WORKSPACE/
         cp V2RayVpnService_Complete.kt $GITHUB_WORKSPACE/
     
     - name: Upload all artifacts
@@ -465,6 +656,7 @@ jobs:
         path: |
           FINAL_REPORT.md
           method_summary.md
+          tun2socks_analysis.md
           V2RayVpnService_Complete.kt
           /tmp/aar_analysis/all_decompiled_jadx.java
           /tmp/aar_analysis/all_decompiled_cfr.java
@@ -477,13 +669,23 @@ jobs:
         echo ""
         echo "📊 Results:"
         echo "  • All classes analyzed"
-        echo "  • All methods documented"  
+        echo "  • All methods documented"
+        echo "  • Tun2socks integration checked"
         echo "  • Source code decompiled"
         echo "  • Kotlin template created"
+        echo ""
+        echo "🔍 Tun2Socks Status:"
+        if grep -q "tun2socks\|Tun2socks\|TUN2SOCKS" /tmp/aar_analysis/tun2socks_analysis.md 2>/dev/null; then
+          echo "  • Tun2socks references found - check report for details"
+        else
+          echo "  • No obvious tun2socks integration detected"
+          echo "  • May need separate tun2socks integration"
+        fi
         echo ""
         echo "📥 Download artifacts to get:"
         echo "  • Complete source code"
         echo "  • Method documentation"
+        echo "  • Tun2socks analysis report"
         echo "  • Implementation template"
         echo ""
         echo "================================================"
