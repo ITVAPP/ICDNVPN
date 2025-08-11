@@ -102,10 +102,14 @@ dependencies {
     
     // 修改：使用标准的本地 AAR 引用方式
     implementation(name: 'libv2ray', ext: 'aar')
-    
-    // 添加协程支持
+
+    // 协程支持
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'  // 添加core
     
-    // 添加Gson用于JSON处理
+    // Gson用于JSON处理
     implementation 'com.google.code.gson:gson:2.10.1'
+    
+    // 添加：生命周期组件（用于MainScope）
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
 }

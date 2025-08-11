@@ -7,10 +7,13 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     
+    <!-- WiFi状态（可选，用于智能分流判断） -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     
-    <!-- Android 14+ 特殊前台服务权限 - 添加minSdkVersion -->
+    <!-- Android 14+ 特殊前台服务权限 -->
     <uses-permission 
         android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         android:minSdkVersion="34" />
@@ -24,6 +27,12 @@
     
     <!-- 存储权限（可选，用于导入配置） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    
+    <!-- 开机自启动权限 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- 防止休眠（可选，保持服务稳定） -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:label="CFVPN"
@@ -52,7 +61,7 @@
             </intent-filter>
         </activity>
         
-        <!-- V2Ray VPN服务声明 - 借鉴开源项目的完整配置 -->
+        <!-- V2Ray VPN服务声明 -->
         <service
             android:name=".V2RayVpnService"
             android:enabled="true"
@@ -70,11 +79,24 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="vpn" />
             
-            <!-- 支持Always-on VPN（可选但推荐） -->
+            <!-- 支持Always-on VPN -->
             <meta-data
                 android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
                 android:value="true" />
         </service>
+        
+        <!-- 开机自启动接收器 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="false"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
         
         <!-- Flutter embedding version -->
         <meta-data

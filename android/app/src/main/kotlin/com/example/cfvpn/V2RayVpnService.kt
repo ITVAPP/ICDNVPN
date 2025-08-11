@@ -86,15 +86,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val DEFAULT_HTTP_PORT = 7899
         
         // 流量统计配置
-        private const val STATS_UPDATE_INTERVAL = 5000L  // 5秒更新一次
+        private const val STATS_UPDATE_INTERVAL = 3000L  // 3秒更新一次（降低频率）
         private const val ENABLE_AUTO_STATS = false      // 默认关闭自动统计
         
         // 服务状态
         @Volatile
         private var currentState: V2RayState = V2RayState.DISCONNECTED
-        
-        @Volatile
-        private var connectionMode: ConnectionMode = ConnectionMode.VPN_TUN
         
         // 单例服务引用
         @Volatile
@@ -127,7 +124,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         ) {
             VpnFileLogger.d(TAG, "准备启动服务，模式: $mode, 全局代理: $globalProxy, 自动统计: $enableAutoStats")
             
-            connectionMode = mode
             notificationDisconnectButtonName = disconnectButtonName
             
             val intent = Intent(context, V2RayVpnService::class.java).apply {
@@ -216,13 +212,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                         }
                         configJson.toString()
                     } catch (e: Exception) {
+                        VpnFileLogger.w(TAG, "修改测试配置失败，使用原始配置", e)
                         config
                     }
                     
                     // 使用libv2ray的measureOutboundDelay方法
-                    val delay = Libv2ray.measureOutboundDelay(testConfig, testUrl)
-                    VpnFileLogger.d(TAG, "服务器延迟测试结果: ${delay}ms")
-                    delay
+                    try {
+                        val delay = Libv2ray.measureOutboundDelay(testConfig, testUrl)
+                        VpnFileLogger.d(TAG, "服务器延迟测试结果: ${delay}ms")
+                        delay
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "measureOutboundDelay调用失败", e)
+                        -1L
+                    }
                 } catch (e: Exception) {
                     VpnFileLogger.e(TAG, "测试服务器延迟失败", e)
                     -1L
@@ -398,8 +400,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 启动前台服务
         try {
-            startForeground(NOTIFICATION_ID, createNotification())
-            VpnFileLogger.d(TAG, "前台服务已启动")
+            val notification = createNotification()
+            if (notification != null) {
+                startForeground(NOTIFICATION_ID, notification)
+                VpnFileLogger.d(TAG, "前台服务已启动")
+            } else {
+                VpnFileLogger.e(TAG, "无法创建通知，服务可能被系统终止")
+                currentState = V2RayState.DISCONNECTED
+                stopSelf()
+                return START_NOT_STICKY
+            }
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动前台服务失败", e)
             currentState = V2RayState.DISCONNECTED
@@ -689,7 +699,22 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             VpnFileLogger.i(TAG, "V2Ray服务（VPN模式）完全启动成功")
             
-            // 步骤8：启动流量监控
+            // 步骤8：保存配置用于开机自启动（如果启用）
+            try {
+                if (AutoStartManager.isAutoStartEnabled(this)) {
+                    AutoStartManager.saveAutoStartConfig(
+                        this,
+                        config.originalConfig,
+                        mode.name,
+                        globalProxy
+                    )
+                    VpnFileLogger.d(TAG, "已更新自启动配置")
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "保存自启动配置失败", e)
+            }
+            
+            // 步骤9：启动流量监控
             if (enableAutoStats) {
                 VpnFileLogger.d(TAG, "启动自动流量统计")
                 startTrafficMonitor()
@@ -740,7 +765,22 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.i(TAG, "SOCKS5: 127.0.0.1:${config.localSocks5Port}")
             VpnFileLogger.i(TAG, "HTTP: 127.0.0.1:${config.localHttpPort}")
             
-            // 步骤5：启动流量监控
+            // 步骤5：保存配置用于开机自启动（如果启用）
+            try {
+                if (AutoStartManager.isAutoStartEnabled(this)) {
+                    AutoStartManager.saveAutoStartConfig(
+                        this,
+                        config.originalConfig,
+                        mode.name,
+                        globalProxy
+                    )
+                    VpnFileLogger.d(TAG, "已更新自启动配置")
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "保存自启动配置失败", e)
+            }
+            
+            // 步骤6：启动流量监控
             if (enableAutoStats) {
                 VpnFileLogger.d(TAG, "启动自动流量统计")
                 startTrafficMonitor()
@@ -890,9 +930,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 
                 AppProxyMode.INCLUDE -> {
                     // 包含模式：仅指定的应用走代理
-                    VpnFileLogger.d(TAG, "使用包含模式，包含${allowedApps.size}个应用")
-                    
                     if (allowedApps.isNotEmpty()) {
+                        VpnFileLogger.d(TAG, "使用包含模式，包含${allowedApps.size}个应用")
                         allowedApps.forEach { app ->
                             try {
                                 builder.addAllowedApplication(app)
@@ -902,13 +941,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                             }
                         }
                     } else {
-                        // 如果没有指定应用，则包含所有应用（除了自身）
-                        VpnFileLogger.w(TAG, "包含模式但未指定应用，将使用排除模式")
-                        try {
-                            builder.addDisallowedApplication(packageName)
-                        } catch (e: Exception) {
-                            VpnFileLogger.w(TAG, "排除自身应用失败", e)
-                        }
+                        // 如果没有指定应用，警告并使用默认行为
+                        VpnFileLogger.e(TAG, "包含模式但未指定任何应用，VPN将不会路由任何流量！")
+                        // 至少包含一个应用，避免VPN完全无效
+                        // 可以考虑包含自身或返回错误
                     }
                 }
             }
@@ -925,9 +961,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 启动tun2socks进程
+     * 启动tun2socks进程（仅VPN模式需要）
      */
     private suspend fun runTun2socks(): Unit = withContext(Dispatchers.IO) {
+        // 仅在VPN模式下运行
+        if (mode != ConnectionMode.VPN_TUN) {
+            VpnFileLogger.d(TAG, "非VPN模式，跳过tun2socks")
+            return@withContext
+        }
+        
         VpnFileLogger.d(TAG, "开始启动tun2socks进程")
         
         val config = v2rayConfig ?: throw Exception("配置为空")
@@ -1320,72 +1362,86 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 创建前台服务通知（增强版）
+     * 处理通知权限缺失的情况
      */
-    private fun createNotification(): android.app.Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "CFVPN服务",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "CFVPN服务运行状态"
-                setShowBadge(false)
-                enableLights(false)
-                enableVibration(false)
+    private fun createNotification(): android.app.Notification? {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "CFVPN服务",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "CFVPN服务运行状态"
+                    setShowBadge(false)
+                    enableLights(false)
+                    enableVibration(false)
+                }
+                
+                val notificationManager = getSystemService(NotificationManager::class.java)
+                notificationManager.createNotificationChannel(channel)
             }
             
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-        }
-        
-        val stopIntent = Intent(ACTION_STOP_VPN)
-        val stopPendingIntent = PendingIntent.getBroadcast(
-            this, 0, stopIntent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-        )
-        
-        val mainIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val mainPendingIntent = if (mainIntent != null) {
-            PendingIntent.getActivity(
-                this, 0, mainIntent,
+            val stopIntent = Intent(ACTION_STOP_VPN)
+            val stopPendingIntent = PendingIntent.getBroadcast(
+                this, 0, stopIntent,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 } else {
                     PendingIntent.FLAG_UPDATE_CURRENT
                 }
             )
-        } else {
-            null
+            
+            val mainIntent = packageManager.getLaunchIntentForPackage(packageName)
+            val mainPendingIntent = if (mainIntent != null) {
+                PendingIntent.getActivity(
+                    this, 0, mainIntent,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    } else {
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                    }
+                )
+            } else {
+                null
+            }
+            
+            // 根据模式显示不同的内容
+            val modeText = when (mode) {
+                ConnectionMode.VPN_TUN -> if (globalProxy) "全局代理模式" else "智能代理模式"
+                ConnectionMode.PROXY_ONLY -> "仅代理模式"
+            }
+            
+            val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(v2rayConfig?.remark ?: "CFVPN")
+                .setContentText(modeText)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .setShowWhen(false)
+                .addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel, 
+                    disconnectButtonName,
+                    stopPendingIntent
+                )
+            
+            mainPendingIntent?.let {
+                builder.setContentIntent(it)
+            }
+            
+            return builder.build()
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "创建通知失败", e)
+            // 返回一个最小的通知
+            return try {
+                NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                    .setContentTitle("CFVPN")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .build()
+            } catch (e2: Exception) {
+                null
+            }
         }
-        
-        // 根据模式显示不同的内容
-        val modeText = when (mode) {
-            ConnectionMode.VPN_TUN -> if (globalProxy) "全局代理模式" else "智能代理模式"
-            ConnectionMode.PROXY_ONLY -> "仅代理模式"
-        }
-        
-        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(v2rayConfig?.remark ?: "CFVPN")
-            .setContentText(modeText)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .setShowWhen(false)
-            .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel, 
-                disconnectButtonName,  // 使用可配置的按钮文本
-                stopPendingIntent
-            )
-        
-        mainPendingIntent?.let {
-            builder.setContentIntent(it)
-        }
-        
-        return builder.build()
     }
     
     /**

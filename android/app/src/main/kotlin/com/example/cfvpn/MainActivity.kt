@@ -63,10 +63,12 @@ class MainActivity: FlutterActivity() {
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets")
                     
                     if (config != null) {
-                        // 检查并请求通知权限（Android 13+）
+                        // 检查通知权限（Android 13+）- 但不阻塞VPN启动
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             if (!checkNotificationPermission()) {
+                                VpnFileLogger.w(TAG, "没有通知权限，但继续启动VPN")
                                 requestNotificationPermission()
+                                // 不等待权限结果，继续启动VPN
                             }
                         }
                         
@@ -169,6 +171,41 @@ class MainActivity: FlutterActivity() {
                     // 加载代理配置
                     val config = loadProxyConfig()
                     result.success(config)
+                }
+                
+                // ===== 开机自启动相关 =====
+                
+                "setAutoStartEnabled" -> {
+                    // 设置开机自启动
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    AutoStartManager.setAutoStartEnabled(this, enabled)
+                    result.success(true)
+                }
+                
+                "isAutoStartEnabled" -> {
+                    // 检查开机自启动是否启用
+                    val enabled = AutoStartManager.isAutoStartEnabled(this)
+                    result.success(enabled)
+                }
+                
+                "saveAutoStartConfig" -> {
+                    // 保存自启动配置
+                    val config = call.argument<String>("config")
+                    val mode = call.argument<String>("mode") ?: "VPN_TUN"
+                    val globalProxy = call.argument<Boolean>("globalProxy") ?: false
+                    
+                    if (config != null) {
+                        AutoStartManager.saveAutoStartConfig(this, config, mode, globalProxy)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_CONFIG", "配置为空", null)
+                    }
+                }
+                
+                "clearAutoStartConfig" -> {
+                    // 清除自启动配置（可选功能）
+                    AutoStartManager.clearAutoStartConfig(this)
+                    result.success(true)
                 }
                 
                 else -> {
