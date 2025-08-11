@@ -163,6 +163,46 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           cat "$java_file"
         done || echo "No source files to display"
+        
+        # 🆕 合并所有JADX反编译文件到单一文件
+        echo -e "\n================================================"
+        echo "      🔄 合并JADX反编译文件为单一文件"
+        echo "================================================"
+        
+        # 创建合并文件
+        cat > JADX_ALL_SOURCES.java << 'HEADER'
+/*
+ * =================================================================
+ *               JADX 反编译完整源码 - 合并文件
+ * =================================================================
+ * 生成时间: $(date)
+ * 反编译工具: JADX v1.4.7
+ * 源文件: libv2ray.aar
+ * =================================================================
+ */
+
+HEADER
+        
+        # 合并所有Java文件
+        file_count=0
+        for java_file in $(find decompiled_jadx -name "*.java" 2>/dev/null | sort); do
+          relative_path=$(echo $java_file | sed 's|decompiled_jadx/||')
+          
+          cat >> JADX_ALL_SOURCES.java << EOF
+
+// ═══════════════════════════════════════════════════════════════
+// 📁 文件: $relative_path
+// ═══════════════════════════════════════════════════════════════
+
+EOF
+          cat "$java_file" >> JADX_ALL_SOURCES.java
+          echo -e "\n\n" >> JADX_ALL_SOURCES.java
+          
+          file_count=$((file_count + 1))
+        done
+        
+        echo "✅ 已合并 $file_count 个文件到 JADX_ALL_SOURCES.java"
+        echo "📊 合并文件大小: $(ls -lh JADX_ALL_SOURCES.java | awk '{print $5}')"
     
     - name: CFR Decompilation (Alternative)
       run: |
@@ -194,6 +234,157 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           cat "$java_file"
         done
+        
+        # 🆕 合并所有CFR反编译文件到单一文件
+        echo -e "\n================================================"
+        echo "      🔄 合并CFR反编译文件为单一文件"
+        echo "================================================"
+        
+        # 创建CFR合并文件
+        cat > CFR_ALL_SOURCES.java << 'HEADER'
+/*
+ * =================================================================
+ *               CFR 反编译完整源码 - 合并文件
+ * =================================================================
+ * 生成时间: $(date)
+ * 反编译工具: CFR v0.152
+ * 源文件: libv2ray.aar
+ * =================================================================
+ */
+
+HEADER
+        
+        # 合并所有CFR Java文件
+        cfr_file_count=0
+        for java_file in $(find decompiled_cfr -name "*.java" | sort); do
+          class_name=$(basename "$java_file" .java)
+          
+          cat >> CFR_ALL_SOURCES.java << EOF
+
+// ═══════════════════════════════════════════════════════════════
+// 📁 类: $class_name
+// ═══════════════════════════════════════════════════════════════
+
+EOF
+          cat "$java_file" >> CFR_ALL_SOURCES.java
+          echo -e "\n\n" >> CFR_ALL_SOURCES.java
+          
+          cfr_file_count=$((cfr_file_count + 1))
+        done
+        
+        echo "✅ 已合并 $cfr_file_count 个文件到 CFR_ALL_SOURCES.java"
+        echo "📊 合并文件大小: $(ls -lh CFR_ALL_SOURCES.java | awk '{print $5}')"
+    
+    # 🆕 新增：创建终极合并文件
+    - name: Create Ultimate Unified Source File
+      run: |
+        cd /tmp/aar_analysis
+        
+        echo "================================================"
+        echo "    🎯 创建终极统一源码文件"
+        echo "================================================"
+        
+        # 创建最终的超级合并文件
+        cat > ULTIMATE_ALL_SOURCES.java << 'MEGAHEADER'
+/*
+ * ═════════════════════════════════════════════════════════════════════════════════
+ *                          LIBV2RAY.AAR 完整反编译源码
+ * ═════════════════════════════════════════════════════════════════════════════════
+ * 
+ * 📋 分析信息:
+ *    - 源文件: libv2ray.aar
+ *    - 分析时间: $(date)
+ *    - 反编译工具: JADX v1.4.7 + CFR v0.152
+ *    - 输出格式: 统一合并文件
+ * 
+ * 📊 文件结构:
+ *    ├─ 第一部分: JADX 反编译结果 (主要)
+ *    ├─ 第二部分: CFR 反编译结果 (对比)
+ *    └─ 第三部分: 方法总结表
+ * 
+ * 🔍 使用说明:
+ *    1. 搜索 "SECTION 1" 查看 JADX 反编译结果
+ *    2. 搜索 "SECTION 2" 查看 CFR 反编译结果  
+ *    3. 搜索 "SECTION 3" 查看方法总结
+ *    4. 搜索具体类名快速定位代码
+ * 
+ * ═════════════════════════════════════════════════════════════════════════════════
+ */
+
+MEGAHEADER
+        
+        # 第一部分：JADX 结果
+        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION1'
+
+/*
+ * ═════════════════════════════════════════════════════════════════════════════════
+ *                                  SECTION 1
+ *                             JADX 反编译结果 (主要)
+ * ═════════════════════════════════════════════════════════════════════════════════
+ */
+
+SECTION1
+        
+        if [ -f "JADX_ALL_SOURCES.java" ]; then
+          # 跳过JADX文件的头部注释，只要源码部分
+          tail -n +15 JADX_ALL_SOURCES.java >> ULTIMATE_ALL_SOURCES.java
+          echo "✅ JADX 内容已添加"
+        else
+          echo "// JADX 反编译结果未找到" >> ULTIMATE_ALL_SOURCES.java
+        fi
+        
+        # 第二部分：CFR 结果
+        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION2'
+
+/*
+ * ═════════════════════════════════════════════════════════════════════════════════
+ *                                  SECTION 2
+ *                             CFR 反编译结果 (对比)
+ * ═════════════════════════════════════════════════════════════════════════════════
+ */
+
+SECTION2
+        
+        if [ -f "CFR_ALL_SOURCES.java" ]; then
+          # 跳过CFR文件的头部注释，只要源码部分
+          tail -n +15 CFR_ALL_SOURCES.java >> ULTIMATE_ALL_SOURCES.java
+          echo "✅ CFR 内容已添加"
+        else
+          echo "// CFR 反编译结果未找到" >> ULTIMATE_ALL_SOURCES.java
+        fi
+        
+        # 第三部分：方法总结
+        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION3'
+
+/*
+ * ═════════════════════════════════════════════════════════════════════════════════
+ *                                  SECTION 3
+ *                                方法总结表
+ * ═════════════════════════════════════════════════════════════════════════════════
+ */
+
+/*
+SECTION3
+        
+        # 添加方法总结（如果存在）
+        if [ -f "method_summary.md" ]; then
+          cat method_summary.md | sed 's/^/ * /' >> ULTIMATE_ALL_SOURCES.java
+        fi
+        
+        echo " */" >> ULTIMATE_ALL_SOURCES.java
+        
+        # 显示最终统计
+        echo ""
+        echo "🎉 终极合并文件创建完成！"
+        echo "📊 文件统计信息："
+        echo "   - 文件大小: $(ls -lh ULTIMATE_ALL_SOURCES.java | awk '{print $5}')"
+        echo "   - 行数: $(wc -l ULTIMATE_ALL_SOURCES.java | awk '{print $1}')"
+        echo "   - 字符数: $(wc -c ULTIMATE_ALL_SOURCES.java | awk '{print $1}')"
+        
+        # 复制到工作区以便下载
+        cp ULTIMATE_ALL_SOURCES.java $GITHUB_WORKSPACE/
+        cp JADX_ALL_SOURCES.java $GITHUB_WORKSPACE/ 2>/dev/null || true
+        cp CFR_ALL_SOURCES.java $GITHUB_WORKSPACE/ 2>/dev/null || true
     
     - name: Extract Critical Information
       run: |
@@ -435,7 +626,7 @@ jobs:
             }
             
             override fun onDestroy() {
-                super.onDestroy()
+                Super.onDestroy()
                 Log.d(TAG, "onDestroy")
                 stopVPN()
             }
@@ -457,22 +648,25 @@ jobs:
         - Analysis completed successfully
         - All classes and methods extracted
         - Multiple decompilers used for accuracy
-        - Kotlin implementation template generated
+        - 🆕 **统一源码文件已生成**
         
         ## Key Files Generated
-        1. method_summary.md - All public methods
-        2. V2RayVpnService_Complete.kt - Implementation template
-        3. Decompiled source code in artifacts
+        1. **ULTIMATE_ALL_SOURCES.java** - 📁 **终极统一源码文件 (推荐)**
+        2. JADX_ALL_SOURCES.java - JADX 反编译合并文件
+        3. CFR_ALL_SOURCES.java - CFR 反编译合并文件
+        4. method_summary.md - 所有公共方法总结
+        5. V2RayVpnService_Complete.kt - Kotlin 实现模板
         
-        ## Next Steps
-        1. Review the decompiled source code
-        2. Update the Kotlin implementation based on actual methods found
-        3. Test the implementation
+        ## 🎯 使用建议
+        1. **优先查看 ULTIMATE_ALL_SOURCES.java**
+        2. 在文件中搜索 "SECTION 1", "SECTION 2", "SECTION 3" 快速导航
+        3. 搜索具体类名或方法名快速定位代码
+        4. 根据反编译结果更新 Kotlin 实现
         
         ## Important Notes
-        - Check the method signatures carefully
-        - Some methods might require specific parameters
-        - Native methods need proper JNI setup
+        - 所有源码已合并到单一文件，便于查看和分析
+        - 同时保留了分散文件版本，满足不同需求
+        - Native 方法需要特别关注 JNI 实现
         
         EOF
         
@@ -483,11 +677,14 @@ jobs:
     - name: Upload all artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: complete-aar-analysis
+        name: complete-aar-analysis-unified
         path: |
           FINAL_REPORT.md
           method_summary.md
           V2RayVpnService_Complete.kt
+          ULTIMATE_ALL_SOURCES.java
+          JADX_ALL_SOURCES.java
+          CFR_ALL_SOURCES.java
           /tmp/aar_analysis/decompiled_jadx/**/*.java
           /tmp/aar_analysis/decompiled_cfr/*.java
     
@@ -501,11 +698,11 @@ jobs:
         echo "  • All classes analyzed"
         echo "  • All methods documented"  
         echo "  • Source code decompiled"
+        echo "  • 🎯 Sources unified into single files"
         echo "  • Kotlin template created"
         echo ""
-        echo "📥 Download artifacts to get:"
-        echo "  • Complete source code"
-        echo "  • Method documentation"
-        echo "  • Implementation template"
-        echo ""
-        echo "================================================"
+        echo "📥 Key Downloads:"
+        echo "  • 🌟 ULTIMATE_ALL_SOURCES.java (终极合并文件)"
+        echo "  • 📄 JADX_ALL_SOURCES.java (JADX合并版)"
+        echo "  • 📄 CFR_ALL_SOURCES.java (CFR合并版)"
+        echo "
