@@ -145,7 +145,7 @@ class BootReceiver : BroadcastReceiver() {
             }
             
             if (!success) {
-                VpnFileLogger.e(TAG, "VPN自动启动失败，已尝试$MAX_RETRY_COUNT次")
+                VpnFileLogger.e(TAG, "VPN自动启动失败，已尝试${MAX_RETRY_COUNT}次")
                 sendNotification(context, "VPN自动连接失败", "请手动打开应用连接")
             }
             

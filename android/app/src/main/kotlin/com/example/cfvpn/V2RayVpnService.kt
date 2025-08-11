@@ -93,6 +93,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         @Volatile
         private var currentState: V2RayState = V2RayState.DISCONNECTED
         
+        // 服务运行状态 - 移除重复定义，只保留一个
+        @Volatile
+        private var isRunning: Boolean = false
+        
         // 单例服务引用
         @Volatile
         private var instance: V2RayVpnService? = null
@@ -101,7 +105,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private var notificationDisconnectButtonName = "停止"
         
         /**
-         * 检查服务是否运行
+         * 检查服务是否运行 - 只保留一个定义
          */
         @JvmStatic
         fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
@@ -164,12 +168,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.e(TAG, "停止服务失败", e)
             }
         }
-        
-        /**
-         * 检查服务是否运行
-         */
-        @JvmStatic
-        fun isServiceRunning(): Boolean = isRunning
         
         /**
          * 获取流量统计（按需查询，不影响性能）
@@ -361,6 +359,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 更新状态
         currentState = V2RayState.CONNECTING
+        isRunning = false
         
         // 获取配置
         val configContent = intent.getStringExtra("config") ?: ""
