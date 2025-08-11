@@ -1,4 +1,3 @@
-// ============= android/app/build.gradle =============
 plugins {
     id "com.android.application"
     id "kotlin-android"
@@ -52,25 +51,6 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
-        
-        // 只在不使用 split APK 时才设置 abiFilters
-        // 这样可以同时支持 split-per-abi 和普通构建
-        if (!project.hasProperty('split-per-abi')) {
-            ndk {
-                // 根据libv2ray.aar支持的架构，只包含主要架构
-                abiFilters 'armeabi-v7a', 'arm64-v8a'
-            }
-        }
-    }
-    
-    // 配置 APK 分割（可选）
-    splits {
-        abi {
-            enable project.hasProperty('split-per-abi')
-            reset()
-            include 'armeabi-v7a', 'arm64-v8a'
-            universalApk false
-        }
     }
 
     buildTypes {
@@ -111,8 +91,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     
-    // 添加libv2ray.aar依赖
-    implementation(name: 'libv2ray', ext: 'aar')
+    // 添加libv2ray.aar依赖 - 使用明确的文件路径
+    implementation files('libs/libv2ray.aar')
     
     // 添加协程支持
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
