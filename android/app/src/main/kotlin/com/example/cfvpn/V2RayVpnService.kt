@@ -11,7 +11,8 @@ import android.content.IntentFilter
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.net.VpnService
-import android.os.*
+import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -128,8 +129,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // VPN接口文件描述符
     private var mInterface: ParcelFileDescriptor? = null
     
-    // tun2socks进程
-    private var tun2socksProcess: Process? = null
+    // tun2socks进程 - 使用java.lang.Process
+    private var tun2socksProcess: java.lang.Process? = null
     
     // 配置内容
     private var configContent: String = ""
@@ -469,12 +470,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 directory(filesDir)        // 设置工作目录
             }
             
-            tun2socksProcess = processBuilder.start()
+            val process = processBuilder.start()
+            tun2socksProcess = process
             
             // 读取进程输出（用于调试）
             serviceScope.launch {
                 try {
-                    tun2socksProcess?.inputStream?.bufferedReader()?.use { reader ->
+                    process.inputStream?.bufferedReader()?.use { reader ->
                         var line: String?
                         while (reader.readLine().also { line = it } != null) {
                             Log.d(TAG, "tun2socks: $line")
@@ -488,18 +490,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 监控进程状态，支持自动重启
             serviceScope.launch {
                 try {
-                    val exitCode = tun2socksProcess?.waitFor()
+                    val exitCode = process.waitFor()
                     Log.w(TAG, "tun2socks进程退出，退出码: $exitCode")
                     
                     // 如果服务仍在运行，自动重启tun2socks
                     if (isRunning) {
                         Log.d(TAG, "自动重启tun2socks进程")
                         delay(1000)
-                        runTun2socks()
-                        // 重新传递文件描述符
-                        val success = sendFileDescriptor()
-                        if (!success) {
-                            Log.e(TAG, "重启后文件描述符传递失败，停止服务")
+                        // 重新启动tun2socks和传递文件描述符
+                        try {
+                            runTun2socks()
+                            val success = sendFileDescriptor()
+                            if (!success) {
+                                Log.e(TAG, "重启后文件描述符传递失败，停止服务")
+                                stopV2Ray()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "重启tun2socks失败", e)
                             stopV2Ray()
                         }
                     }
@@ -510,7 +517,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 检查进程是否成功启动
             delay(100)
-            if (tun2socksProcess?.isAlive != true) {
+            if (!process.isAlive) {
                 throw Exception("tun2socks进程启动后立即退出")
             }
             
@@ -587,9 +594,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         Log.d(TAG, "停止tun2socks进程")
         
         try {
-            tun2socksProcess?.destroy()
-            tun2socksProcess = null
-            Log.d(TAG, "tun2socks进程已停止")
+            val process = tun2socksProcess
+            if (process != null) {
+                process.destroy()
+                tun2socksProcess = null
+                Log.d(TAG, "tun2socks进程已停止")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "停止tun2socks进程失败", e)
         }
