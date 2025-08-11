@@ -18,19 +18,16 @@ jobs:
     
     - name: Install analysis tools
       run: |
-        # 安装 jadx (最新版本)
         echo "Installing JADX..."
         wget -q https://github.com/skylot/jadx/releases/download/v1.4.7/jadx-1.4.7.zip
         unzip -q jadx-1.4.7.zip -d jadx
         chmod +x jadx/bin/jadx
         echo "✓ JADX installed"
         
-        # 安装 cfr (另一个优秀的反编译器)
         echo "Installing CFR..."
         wget -q https://github.com/leibnitz27/cfr/releases/download/0.152/cfr-0.152.jar -O cfr.jar
         echo "✓ CFR installed"
         
-        # 安装 procyon (备选反编译器)
         echo "Installing Procyon..."
         wget -q https://github.com/mstrobel/procyon/releases/download/v0.6.0/procyon-decompiler-0.6.0.jar -O procyon.jar
         echo "✓ Procyon installed"
@@ -41,13 +38,11 @@ jobs:
         echo "           AAR File Basic Information"
         echo "================================================"
         
-        # 文件信息
         echo -e "\n📁 FILE INFO:"
         ls -lh android/app/libs/libv2ray.aar
         file android/app/libs/libv2ray.aar
         md5sum android/app/libs/libv2ray.aar
         
-        # 解压 AAR
         mkdir -p /tmp/aar_analysis
         cp android/app/libs/libv2ray.aar /tmp/aar_analysis/
         cd /tmp/aar_analysis
@@ -70,7 +65,6 @@ jobs:
         echo "           Extracting classes.jar"
         echo "================================================"
         
-        # 解压 classes.jar
         mkdir -p extracted_classes
         cd extracted_classes
         jar xf ../classes.jar
@@ -95,7 +89,6 @@ jobs:
         echo "    Complete javap Analysis (All Members)"
         echo "================================================"
         
-        # 分析每个类
         for class_file in $(find . -name "*.class" | sort); do
           class_name=$(echo $class_file | sed 's|^\./||' | sed 's|\.class$||' | sed 's|/|.|g')
           
@@ -104,23 +97,19 @@ jobs:
           echo "🔍 CLASS: $class_name"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # 基本信息
           echo -e "\n📊 CLASS INFO:"
           javap -cp . "$class_name" 2>/dev/null | head -5 || echo "Failed to analyze"
           
-          # 所有字段（包括私有）
           echo -e "\n📌 ALL FIELDS:"
           javap -p -cp . "$class_name" 2>/dev/null | grep -E "^\s+(public|protected|private|static|final).*;" | while read line; do
             echo "    $line"
           done || echo "    No fields found"
           
-          # 所有方法（包括私有）
           echo -e "\n🔧 ALL METHODS:"
           javap -p -cp . "$class_name" 2>/dev/null | grep -E "^\s+(public|protected|private|static|final|synchronized|native|abstract).*\(" | while read line; do
             echo "    $line"
           done || echo "    No methods found"
           
-          # Native 方法特别标记
           native_methods=$(javap -p -cp . "$class_name" 2>/dev/null | grep "native" || true)
           if [ ! -z "$native_methods" ]; then
             echo -e "\n⚡ NATIVE METHODS:"
@@ -138,7 +127,6 @@ jobs:
         echo "          JADX Decompilation"
         echo "================================================"
         
-        # 使用 jadx 反编译
         $GITHUB_WORKSPACE/jadx/bin/jadx \
           --show-bad-code \
           --no-res \
@@ -151,58 +139,17 @@ jobs:
         echo -e "\n📝 DECOMPILED JAVA FILES:"
         find decompiled_jadx -name "*.java" 2>/dev/null | sort || echo "No files found"
         
+        cat $(find decompiled_jadx -name "*.java" 2>/dev/null | sort) > all_decompiled_jadx.java || true
+        
         echo -e "\n================================================"
         echo "          Complete Source Code (JADX)"
         echo "================================================"
         
-        # 显示所有反编译的源代码
-        for java_file in $(find decompiled_jadx -name "*.java" 2>/dev/null | sort); do
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📄 FILE: $(echo $java_file | sed 's|decompiled_jadx/||')"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          cat "$java_file"
-        done || echo "No source files to display"
-        
-        # 🆕 合并所有JADX反编译文件到单一文件
-        echo -e "\n================================================"
-        echo "      🔄 合并JADX反编译文件为单一文件"
-        echo "================================================"
-        
-        # 创建合并文件
-        cat > JADX_ALL_SOURCES.java << 'EOF'
-/*
- * =================================================================
- *               JADX 反编译完整源码 - 合并文件
- * =================================================================
- * 生成时间: $(date)
- * 反编译工具: JADX v1.4.7
- * 源文件: libv2ray.aar
- * =================================================================
- */
-
-EOF
-        
-        # 合并所有Java文件
-        file_count=0
-        for java_file in $(find decompiled_jadx -name "*.java" 2>/dev/null | sort); do
-          relative_path=$(echo $java_file | sed 's|decompiled_jadx/||')
-          
-          cat >> JADX_ALL_SOURCES.java << EOF
-
-// ═══════════════════════════════════════════════════════════════
-// 📁 文件: $relative_path
-// ═══════════════════════════════════════════════════════════════
-
-EOF
-          cat "$java_file" >> JADX_ALL_SOURCES.java
-          echo -e "\n\n" >> JADX_ALL_SOURCES.java
-          
-          file_count=$((file_count + 1))
-        done
-        
-        echo "✅ 已合并 $file_count 个文件到 JADX_ALL_SOURCES.java"
-        echo "📊 合并文件大小: $(ls -lh JADX_ALL_SOURCES.java | awk '{print $5}')"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📄 ALL JADX DECOMPILED CODE"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        cat all_decompiled_jadx.java || echo "No source to display"
     
     - name: CFR Decompilation (Alternative)
       run: |
@@ -214,7 +161,6 @@ EOF
         
         mkdir -p decompiled_cfr
         
-        # 使用 CFR 反编译每个类
         for class_file in $(find extracted_classes -name "*.class" | grep -E "libv2ray|go/Seq" | sort); do
           class_name=$(echo $class_file | sed 's|extracted_classes/||' | sed 's|\.class$||' | sed 's|/|.|g')
           output_file="decompiled_cfr/${class_name}.java"
@@ -226,165 +172,13 @@ EOF
         echo -e "\n📝 CFR DECOMPILED FILES:"
         find decompiled_cfr -name "*.java" | sort
         
-        # 显示 CFR 反编译结果
-        for java_file in $(find decompiled_cfr -name "*.java" | sort); do
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📄 CFR: $(basename $java_file)"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          cat "$java_file"
-        done
+        cat $(find decompiled_cfr -name "*.java" | sort) > all_decompiled_cfr.java || true
         
-        # 🆕 合并所有CFR反编译文件到单一文件
-        echo -e "\n================================================"
-        echo "      🔄 合并CFR反编译文件为单一文件"
-        echo "================================================"
-        
-        # 创建CFR合并文件
-        cat > CFR_ALL_SOURCES.java << 'EOF'
-/*
- * =================================================================
- *               CFR 反编译完整源码 - 合并文件
- * =================================================================
- * 生成时间: $(date)
- * 反编译工具: CFR v0.152
- * 源文件: libv2ray.aar
- * =================================================================
- */
-
-EOF
-        
-        # 合并所有CFR Java文件
-        cfr_file_count=0
-        for java_file in $(find decompiled_cfr -name "*.java" | sort); do
-          class_name=$(basename "$java_file" .java)
-          
-          cat >> CFR_ALL_SOURCES.java << EOF
-
-// ═══════════════════════════════════════════════════════════════
-// 📁 类: $class_name
-// ═══════════════════════════════════════════════════════════════
-
-EOF
-          cat "$java_file" >> CFR_ALL_SOURCES.java
-          echo -e "\n\n" >> CFR_ALL_SOURCES.java
-          
-          cfr_file_count=$((cfr_file_count + 1))
-        done
-        
-        echo "✅ 已合并 $cfr_file_count 个文件到 CFR_ALL_SOURCES.java"
-        echo "📊 合并文件大小: $(ls -lh CFR_ALL_SOURCES.java | awk '{print $5}')"
-    
-    # 🆕 新增：创建终极合并文件
-    - name: Create Ultimate Unified Source File
-      run: |
-        cd /tmp/aar_analysis
-        
-        echo "================================================"
-        echo "    🎯 创建终极统一源码文件"
-        echo "================================================"
-        
-        # 创建最终的超级合并文件
-        cat > ULTIMATE_ALL_SOURCES.java << 'EOF'
-/*
- * ═════════════════════════════════════════════════════════════════════════════════
- *                          LIBV2RAY.AAR 完整反编译源码
- * ═════════════════════════════════════════════════════════════════════════════════
- * 
- * 📋 分析信息:
- *    - 源文件: libv2ray.aar
- *    - 分析时间: $(date)
- *    - 反编译工具: JADX v1.4.7 + CFR v0.152
- *    - 输出格式: 统一合并文件
- * 
- * 📊 文件结构:
- *    ├─ 第一部分: JADX 反编译结果 (主要)
- *    ├─ 第二部分: CFR 反编译结果 (对比)
- *    └─ 第三部分: 方法总结表
- * 
- * 🔍 使用说明:
- *    1. 搜索 "SECTION 1" 查看 JADX 反编译结果
- *    2. 搜索 "SECTION 2" 查看 CFR 反编译结果  
- *    3. 搜索 "SECTION 3" 查看方法总结
- *    4. 搜索具体类名快速定位代码
- * 
- * ═════════════════════════════════════════════════════════════════════════════════
- */
-
-EOF
-        
-        # 第一部分：JADX 结果
-        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
-
-/*
- * ═════════════════════════════════════════════════════════════════════════════════
- *                                  SECTION 1
- *                             JADX 反编译结果 (主要)
- * ═════════════════════════════════════════════════════════════════════════════════
- */
-
-EOF
-        
-        if [ -f "JADX_ALL_SOURCES.java" ]; then
-          # 跳过JADX文件的头部注释，只要源码部分
-          tail -n +15 JADX_ALL_SOURCES.java >> ULTIMATE_ALL_SOURCES.java
-          echo "✅ JADX 内容已添加"
-        else
-          echo "// JADX 反编译结果未找到" >> ULTIMATE_ALL_SOURCES.java
-        fi
-        
-        # 第二部分：CFR 结果
-        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
-
-/*
- * ═════════════════════════════════════════════════════════════════════════════════
- *                                  SECTION 2
- *                             CFR 反编译结果 (对比)
- * ═════════════════════════════════════════════════════════════════════════════════
- */
-
-EOF
-        
-        if [ -f "CFR_ALL_SOURCES.java" ]; then
-          # 跳过CFR文件的头部注释，只要源码部分
-          tail -n +15 CFR_ALL_SOURCES.java >> ULTIMATE_ALL_SOURCES.java
-          echo "✅ CFR 内容已添加"
-        else
-          echo "// CFR 反编译结果未找到" >> ULTIMATE_ALL_SOURCES.java
-        fi
-        
-        # 第三部分：方法总结
-        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
-
-/*
- * ═════════════════════════════════════════════════════════════════════════════════
- *                                  SECTION 3
- *                                方法总结表
- * ═════════════════════════════════════════════════════════════════════════════════
- */
-
-/*
-EOF
-        
-        # 添加方法总结（如果存在）
-        if [ -f "method_summary.md" ]; then
-          cat method_summary.md | sed 's/^/ * /' >> ULTIMATE_ALL_SOURCES.java
-        fi
-        
-        echo " */" >> ULTIMATE_ALL_SOURCES.java
-        
-        # 显示最终统计
         echo ""
-        echo "🎉 终极合并文件创建完成！"
-        echo "📊 文件统计信息："
-        echo "   - 文件大小: $(ls -lh ULTIMATE_ALL_SOURCES.java | awk '{print $5}')"
-        echo "   - 行数: $(wc -l ULTIMATE_ALL_SOURCES.java | awk '{print $1}')"
-        echo "   - 字符数: $(wc -c ULTIMATE_ALL_SOURCES.java | awk '{print $1}')"
-        
-        # 复制到工作区以便下载
-        cp ULTIMATE_ALL_SOURCES.java $GITHUB_WORKSPACE/
-        cp JADX_ALL_SOURCES.java $GITHUB_WORKSPACE/ 2>/dev/null || true
-        cp CFR_ALL_SOURCES.java $GITHUB_WORKSPACE/ 2>/dev/null || true
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📄 ALL CFR DECOMPILED CODE"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        cat all_decompiled_cfr.java
     
     - name: Extract Critical Information
       run: |
@@ -394,15 +188,13 @@ EOF
         echo "       Critical Information Extraction"
         echo "================================================"
         
-        # 创建一个汇总文件
-        cat > method_summary.md << 'EOF'
-# Method Summary for libv2ray.aar
-
-## Available Classes and Methods
-
-EOF
+        cat > method_summary.md << 'HEADER'
+        # Method Summary for libv2ray.aar
         
-        # 提取关键类的所有公共方法
+        ## Available Classes and Methods
+        
+        HEADER
+        
         for class_name in "libv2ray.Libv2ray" "libv2ray.CoreController" "libv2ray.CoreCallbackHandler" "go.Seq"; do
           echo -e "\n### $class_name\n" >> method_summary.md
           echo '```java' >> method_summary.md
@@ -421,7 +213,6 @@ EOF
         echo "    V2Ray Specific Methods Search"
         echo "================================================"
         
-        # 关键词列表
         KEYWORDS=(
           "init" "start" "stop" "run"
           "config" "Config"
@@ -447,10 +238,8 @@ EOF
         for keyword in "${KEYWORDS[@]}"; do
           echo "━━━ Searching: $keyword ━━━"
           
-          # 在类文件中搜索
           javap -p -cp extracted_classes $(find extracted_classes -name "*.class" | head -20 | xargs) 2>/dev/null | grep -i "$keyword" | head -5 || true
           
-          # 在反编译代码中搜索
           if [ -d "decompiled_jadx" ]; then
             grep -r "$keyword" decompiled_jadx --include="*.java" 2>/dev/null | grep -v "import" | grep -v "//" | head -3 || true
           fi
@@ -466,172 +255,171 @@ EOF
         echo "    Generating Kotlin Implementation"
         echo "================================================"
         
-        # 基于发现的方法生成完整的 Kotlin 实现
-        cat > V2RayVpnService_Complete.kt << 'EOF'
-package com.example.cfvpn
-
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.net.VpnService
-import android.os.*
-import android.util.Log
-import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.*
-import java.io.File
-
-// Import based on AAR analysis
-import go.Seq
-import libv2ray.*
-
-/**
- * V2Ray VPN Service Implementation
- * Compatible with libv2ray.aar from 2dust/AndroidLibV2rayLite
- */
-class V2RayVpnService : VpnService() {
-    
-    companion object {
-        private const val TAG = "V2RayVpnService"
-        private const val NOTIFICATION_ID = 1
-        private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
-    }
-    
-    private var mInterface: ParcelFileDescriptor? = null
-    private var isRunning = false
-    
-    override fun onCreate() {
-        super.onCreate()
-        Log.d(TAG, "onCreate")
+        cat > V2RayVpnService_Complete.kt << 'KOTLIN'
+        package com.example.cfvpn
         
-        try {
-            // Initialize Go runtime
-            Seq.setContext(applicationContext)
-            Log.d(TAG, "Go runtime initialized")
+        import android.app.NotificationChannel
+        import android.app.NotificationManager
+        import android.app.PendingIntent
+        import android.app.Service
+        import android.content.BroadcastReceiver
+        import android.content.Context
+        import android.content.Intent
+        import android.content.IntentFilter
+        import android.net.VpnService
+        import android.os.*
+        import android.util.Log
+        import androidx.core.app.NotificationCompat
+        import kotlinx.coroutines.*
+        import java.io.File
+        
+        // Import based on AAR analysis
+        import go.Seq
+        import libv2ray.*
+        
+        /**
+         * V2Ray VPN Service Implementation
+         * Compatible with libv2ray.aar from 2dust/AndroidLibV2rayLite
+         */
+        class V2RayVpnService : VpnService() {
             
-            // Initialize V2Ray environment
-            // Based on the AAR analysis, use appropriate method
-            // Example: Libv2ray.initV2Env(filesDir.absolutePath)
+            companion object {
+                private const val TAG = "V2RayVpnService"
+                private const val NOTIFICATION_ID = 1
+                private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
+            }
             
-        } catch (e: Exception) {
-            Log.e(TAG, "Initialization failed", e)
-        }
-    }
-    
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand")
-        
-        if (intent?.action == "STOP_VPN") {
-            stopVPN()
-            return START_NOT_STICKY
-        }
-        
-        val config = intent?.getStringExtra("config")
-        if (config.isNullOrEmpty()) {
-            Log.e(TAG, "No config provided")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        
-        startForeground(NOTIFICATION_ID, createNotification())
-        
-        GlobalScope.launch(Dispatchers.IO) {
-            startVPN(config)
-        }
-        
-        return START_STICKY
-    }
-    
-    private suspend fun startVPN(config: String) = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "Starting VPN with config")
+            private var mInterface: ParcelFileDescriptor? = null
+            private var isRunning = false
             
-            // 1. Establish VPN tunnel
-            establishVPN()
+            override fun onCreate() {
+                super.onCreate()
+                Log.d(TAG, "onCreate")
+                
+                try {
+                    // Initialize Go runtime
+                    Seq.setContext(applicationContext)
+                    Log.d(TAG, "Go runtime initialized")
+                    
+                    // Initialize V2Ray environment
+                    // Based on the AAR analysis, use appropriate method
+                    // Example: Libv2ray.initV2Env(filesDir.absolutePath)
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Initialization failed", e)
+                }
+            }
             
-            // 2. Start V2Ray core
-            // TODO: Call appropriate method from libv2ray
-            // Based on AAR analysis, this might be:
-            // - Libv2ray.startV2Ray(config)
-            // - CoreController.start(config)
-            // etc.
+            override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                Log.d(TAG, "onStartCommand")
+                
+                if (intent?.action == "STOP_VPN") {
+                    stopVPN()
+                    return START_NOT_STICKY
+                }
+                
+                val config = intent?.getStringExtra("config")
+                if (config.isNullOrEmpty()) {
+                    Log.e(TAG, "No config provided")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                
+                startForeground(NOTIFICATION_ID, createNotification())
+                
+                GlobalScope.launch(Dispatchers.IO) {
+                    startVPN(config)
+                }
+                
+                return START_STICKY
+            }
             
-            isRunning = true
-            Log.i(TAG, "VPN started successfully")
+            private suspend fun startVPN(config: String) = withContext(Dispatchers.IO) {
+                try {
+                    Log.d(TAG, "Starting VPN with config")
+                    
+                    // 1. Establish VPN tunnel
+                    establishVPN()
+                    
+                    // 2. Start V2Ray core
+                    // TODO: Call appropriate method from libv2ray
+                    // Based on AAR analysis, this might be:
+                    // - Libv2ray.startV2Ray(config)
+                    // - CoreController.start(config)
+                    // etc.
+                    
+                    isRunning = true
+                    Log.i(TAG, "VPN started successfully")
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to start VPN", e)
+                    stopSelf()
+                }
+            }
             
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start VPN", e)
-            stopSelf()
+            private fun establishVPN() {
+                Log.d(TAG, "Establishing VPN tunnel")
+                
+                val builder = Builder()
+                builder.setSession("CFVPN")
+                builder.setMtu(1500)
+                builder.addAddress("10.0.0.2", 32)
+                builder.addRoute("0.0.0.0", 0)
+                builder.addDnsServer("8.8.8.8")
+                builder.addDnsServer("8.8.4.4")
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    builder.addDisallowedApplication(packageName)
+                }
+                
+                mInterface?.close()
+                mInterface = builder.establish()
+                
+                Log.d(TAG, "VPN tunnel established: ${mInterface?.fd}")
+            }
+            
+            private fun stopVPN() {
+                Log.d(TAG, "Stopping VPN")
+                
+                isRunning = false
+                
+                // TODO: Stop V2Ray core
+                // Based on AAR analysis
+                
+                mInterface?.close()
+                mInterface = null
+                
+                stopForeground(true)
+                stopSelf()
+            }
+            
+            private fun createNotification(): android.app.Notification {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val channel = NotificationChannel(
+                        NOTIFICATION_CHANNEL_ID,
+                        "VPN Service",
+                        NotificationManager.IMPORTANCE_LOW
+                    )
+                    val nm = getSystemService(NotificationManager::class.java)
+                    nm.createNotificationChannel(channel)
+                }
+                
+                return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                    .setContentTitle("CFVPN")
+                    .setContentText("VPN is running")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setOngoing(true)
+                    .build()
+            }
+            
+            override fun onDestroy() {
+                super.onDestroy()
+                Log.d(TAG, "onDestroy")
+                stopVPN()
+            }
         }
-    }
-    
-    private fun establishVPN() {
-        Log.d(TAG, "Establishing VPN tunnel")
-        
-        val builder = Builder()
-        builder.setSession("CFVPN")
-        builder.setMtu(1500)
-        builder.addAddress("10.0.0.2", 32)
-        builder.addRoute("0.0.0.0", 0)
-        builder.addDnsServer("8.8.8.8")
-        builder.addDnsServer("8.8.4.4")
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            builder.addDisallowedApplication(packageName)
-        }
-        
-        mInterface?.close()
-        mInterface = builder.establish()
-        
-        Log.d(TAG, "VPN tunnel established: ${mInterface?.fd}")
-    }
-    
-    private fun stopVPN() {
-        Log.d(TAG, "Stopping VPN")
-        
-        isRunning = false
-        
-        // TODO: Stop V2Ray core
-        // Based on AAR analysis
-        
-        mInterface?.close()
-        mInterface = null
-        
-        stopForeground(true)
-        stopSelf()
-    }
-    
-    private fun createNotification(): android.app.Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "VPN Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
-        }
-        
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("CFVPN")
-            .setContentText("VPN is running")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build()
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d(TAG, "onDestroy")
-        stopVPN()
-    }
-}
-EOF
+        KOTLIN
         
         echo "✅ Kotlin implementation generated"
         cat V2RayVpnService_Complete.kt
@@ -640,7 +428,6 @@ EOF
       run: |
         cd /tmp/aar_analysis
         
-        # 创建最终报告
         cat > FINAL_REPORT.md << 'EOF'
         # libv2ray.aar Analysis Complete Report
         
@@ -648,25 +435,22 @@ EOF
         - Analysis completed successfully
         - All classes and methods extracted
         - Multiple decompilers used for accuracy
-        - 🆕 **统一源码文件已生成**
+        - Kotlin implementation template generated
         
         ## Key Files Generated
-        1. **ULTIMATE_ALL_SOURCES.java** - 📁 **终极统一源码文件 (推荐)**
-        2. JADX_ALL_SOURCES.java - JADX 反编译合并文件
-        3. CFR_ALL_SOURCES.java - CFR 反编译合并文件
-        4. method_summary.md - 所有公共方法总结
-        5. V2RayVpnService_Complete.kt - Kotlin 实现模板
+        1. method_summary.md - All public methods
+        2. V2RayVpnService_Complete.kt - Implementation template
+        3. Decompiled source code in artifacts
         
-        ## 🎯 使用建议
-        1. **优先查看 ULTIMATE_ALL_SOURCES.java**
-        2. 在文件中搜索 "SECTION 1", "SECTION 2", "SECTION 3" 快速导航
-        3. 搜索具体类名或方法名快速定位代码
-        4. 根据反编译结果更新 Kotlin 实现
+        ## Next Steps
+        1. Review the decompiled source code
+        2. Update the Kotlin implementation based on actual methods found
+        3. Test the implementation
         
         ## Important Notes
-        - 所有源码已合并到单一文件，便于查看和分析
-        - 同时保留了分散文件版本，满足不同需求
-        - Native 方法需要特别关注 JNI 实现
+        - Check the method signatures carefully
+        - Some methods might require specific parameters
+        - Native methods need proper JNI setup
         
         EOF
         
@@ -677,16 +461,13 @@ EOF
     - name: Upload all artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: complete-aar-analysis-unified
+        name: complete-aar-analysis
         path: |
           FINAL_REPORT.md
           method_summary.md
           V2RayVpnService_Complete.kt
-          ULTIMATE_ALL_SOURCES.java
-          JADX_ALL_SOURCES.java
-          CFR_ALL_SOURCES.java
-          /tmp/aar_analysis/decompiled_jadx/**/*.java
-          /tmp/aar_analysis/decompiled_cfr/*.java
+          /tmp/aar_analysis/all_decompiled_jadx.java
+          /tmp/aar_analysis/all_decompiled_cfr.java
     
     - name: Display Summary
       run: |
@@ -698,11 +479,11 @@ EOF
         echo "  • All classes analyzed"
         echo "  • All methods documented"  
         echo "  • Source code decompiled"
-        echo "  • 🎯 Sources unified into single files"
         echo "  • Kotlin template created"
         echo ""
-        echo "📥 Key Downloads:"
-        echo "  • 🌟 ULTIMATE_ALL_SOURCES.java (终极合并文件)"
-        echo "  • 📄 JADX_ALL_SOURCES.java (JADX合并版)"
-        echo "  • 📄 CFR_ALL_SOURCES.java (CFR合并版)"
-        echo "
+        echo "📥 Download artifacts to get:"
+        echo "  • Complete source code"
+        echo "  • Method documentation"
+        echo "  • Implementation template"
+        echo ""
+        echo "================================================"
