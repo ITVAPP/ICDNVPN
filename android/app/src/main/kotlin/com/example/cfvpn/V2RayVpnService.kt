@@ -127,13 +127,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 协程作用域 - 用于管理异步任务
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // 流量统计数据
-    private var uploadBytes: Long = 0
-    private var downloadBytes: Long = 0
-    private var lastUploadBytes: Long = 0
-    private var lastDownloadBytes: Long = 0
-    private var lastQueryTime: Long = 0
-    private var startTime: Long = 0
+    // 流量统计数据 - 修正：分离总量和速度
+    private var uploadBytes: Long = 0      // 上传总字节数
+    private var downloadBytes: Long = 0    // 下载总字节数
+    private var lastUploadTotal: Long = 0  // 上次的上传总量（用于计算速度）
+    private var lastDownloadTotal: Long = 0 // 上次的下载总量（用于计算速度）
+    private var uploadSpeed: Long = 0      // 当前上传速度
+    private var downloadSpeed: Long = 0    // 当前下载速度
+    private var lastQueryTime: Long = 0    // 上次查询时间
+    private var startTime: Long = 0        // 连接开始时间
     
     // 统计任务
     private var statsJob: Job? = null
@@ -654,37 +656,42 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 download = controller.queryStats("proxy", "downlink")
             }
             
-            // 保存当前值
-            val previousUpload = uploadBytes
-            val previousDownload = downloadBytes
-            val previousTime = lastQueryTime
-            
+            // 更新总量
             uploadBytes = upload
             downloadBytes = download
             
             // 计算速度
             val now = System.currentTimeMillis()
-            if (previousTime > 0 && now > previousTime) {
-                val timeDiff = (now - previousTime) / 1000.0
+            if (lastQueryTime > 0 && now > lastQueryTime) {
+                val timeDiff = (now - lastQueryTime) / 1000.0
                 if (timeDiff > 0) {
-                    val uploadDiff = upload - previousUpload
-                    val downloadDiff = download - previousDownload
+                    val uploadDiff = uploadBytes - lastUploadTotal
+                    val downloadDiff = downloadBytes - lastDownloadTotal
                     
                     if (uploadDiff >= 0 && downloadDiff >= 0) {
-                        lastUploadBytes = (uploadDiff / timeDiff).toLong()
-                        lastDownloadBytes = (downloadDiff / timeDiff).toLong()
+                        // 正确计算速度
+                        uploadSpeed = (uploadDiff / timeDiff).toLong()
+                        downloadSpeed = (downloadDiff / timeDiff).toLong()
+                    } else {
+                        // 如果差值为负（可能是重置了），速度归零
+                        uploadSpeed = 0
+                        downloadSpeed = 0
                     }
                 }
             }
             
+            // 保存本次查询的值，用于下次计算速度
             lastQueryTime = now
+            lastUploadTotal = uploadBytes
+            lastDownloadTotal = downloadBytes
             
             // 更新通知（限制频率）
             if (now - startTime > 10000) {
                 updateNotification()
             }
             
-            Log.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
+            Log.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}, " +
+                      "速度: ↑${formatBytes(uploadSpeed)}/s ↓${formatBytes(downloadSpeed)}/s")
             
         } catch (e: Exception) {
             Log.w(TAG, "查询流量统计失败", e)
@@ -724,8 +731,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return mapOf(
             "uploadTotal" to uploadBytes,
             "downloadTotal" to downloadBytes,
-            "uploadSpeed" to lastUploadBytes,
-            "downloadSpeed" to lastDownloadBytes
+            "uploadSpeed" to uploadSpeed,      // 返回真正的速度值
+            "downloadSpeed" to downloadSpeed   // 返回真正的速度值
         )
     }
     
