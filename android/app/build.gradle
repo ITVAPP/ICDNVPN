@@ -1,3 +1,4 @@
+// ============= android/app/build.gradle =============
 plugins {
     id "com.android.application"
     id "kotlin-android"
@@ -40,7 +41,7 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
-        // 关键修改：添加 Flutter assets 目录，让 flutter_v2ray 能读取 geo 文件
+        // 关键修改：添加 Flutter assets 目录，让原生代码能读取 geo 文件
         main.assets.srcDirs += ['../../assets']
     }
 
@@ -51,6 +52,11 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
+        
+        // 添加NDK架构过滤（根据libv2ray.aar支持的架构）
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
 
     buildTypes {
@@ -72,6 +78,13 @@ android {
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86_64/libc++_shared.so'
     }
+    
+    // 添加本地AAR文件支持
+    repositories {
+        flatDir {
+            dirs 'libs'
+        }
+    }
 }
 
 flutter {
@@ -83,4 +96,13 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+    
+    // 添加libv2ray.aar依赖
+    implementation(name: 'libv2ray', ext: 'aar')
+    
+    // 添加协程支持
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    
+    // 添加Gson用于JSON处理
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
