@@ -40,7 +40,6 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
-        main.jniLibs.srcDirs = ['src/main/jniLibs']
         main.assets.srcDirs += ['../../assets']
     }
 
@@ -100,4 +99,5 @@ dependencies {
     // 添加Gson用于JSON处理
     implementation 'com.google.code.gson:gson:2.10.1'
 }
+
 
