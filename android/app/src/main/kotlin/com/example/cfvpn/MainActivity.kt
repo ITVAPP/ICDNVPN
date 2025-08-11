@@ -6,7 +6,6 @@ import android.net.VpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.util.Log
 import kotlinx.coroutines.*
 
 /**
@@ -34,6 +33,10 @@ class MainActivity: FlutterActivity() {
     
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // 初始化文件日志系统（与V2RayVpnService保持一致）
+        val enableFileLog = true  // TODO: 从配置文件读取
+        VpnFileLogger.init(applicationContext, enableFileLog)
         
         // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -90,7 +93,7 @@ class MainActivity: FlutterActivity() {
             try {
                 // 检查是否已在运行
                 if (V2RayVpnService.isServiceRunning()) {
-                    Log.w(TAG, "VPN已在运行，先停止再启动")
+                    VpnFileLogger.w(TAG, "VPN已在运行，先停止再启动")
                     V2RayVpnService.stopVpnService(this@MainActivity)
                     delay(500) // 等待服务停止
                 }
@@ -99,7 +102,7 @@ class MainActivity: FlutterActivity() {
                 val intent = VpnService.prepare(this@MainActivity)
                 if (intent != null) {
                     // 需要请求VPN权限
-                    Log.d(TAG, "需要请求VPN权限")
+                    VpnFileLogger.d(TAG, "需要请求VPN权限")
                     
                     // 保存待处理的请求
                     pendingRequest = PendingVpnRequest(config, globalProxy, result)
@@ -108,13 +111,13 @@ class MainActivity: FlutterActivity() {
                     try {
                         startActivityForResult(intent, VPN_REQUEST_CODE)
                     } catch (e: Exception) {
-                        Log.e(TAG, "无法请求VPN权限", e)
+                        VpnFileLogger.e(TAG, "无法请求VPN权限", e)
                         pendingRequest = null
                         result.error("PERMISSION_REQUEST_FAILED", "无法请求VPN权限: ${e.message}", null)
                     }
                 } else {
                     // 已有权限，直接启动VPN服务
-                    Log.d(TAG, "已有VPN权限，直接启动服务")
+                    VpnFileLogger.d(TAG, "已有VPN权限，直接启动服务")
                     V2RayVpnService.startVpnService(this@MainActivity, config, globalProxy)
                     
                     // 等待服务启动
@@ -131,7 +134,7 @@ class MainActivity: FlutterActivity() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "启动VPN失败", e)
+                VpnFileLogger.e(TAG, "启动VPN失败", e)
                 result.error("START_FAILED", e.message, null)
             }
         }
@@ -141,7 +144,7 @@ class MainActivity: FlutterActivity() {
      * 停止VPN
      */
     private fun stopVpn() {
-        Log.d(TAG, "停止VPN服务")
+        VpnFileLogger.d(TAG, "停止VPN服务")
         V2RayVpnService.stopVpnService(this)
         
         // 通知Flutter端断开连接
@@ -158,7 +161,7 @@ class MainActivity: FlutterActivity() {
         return try {
             VpnService.prepare(this) == null
         } catch (e: Exception) {
-            Log.e(TAG, "检查VPN权限失败", e)
+            VpnFileLogger.e(TAG, "检查VPN权限失败", e)
             false
         }
     }
@@ -174,13 +177,13 @@ class MainActivity: FlutterActivity() {
             pendingRequest = null // 清理待处理请求
             
             if (request == null) {
-                Log.w(TAG, "没有待处理的VPN请求")
+                VpnFileLogger.w(TAG, "没有待处理的VPN请求")
                 return
             }
             
             if (resultCode == Activity.RESULT_OK) {
                 // VPN权限获取成功
-                Log.d(TAG, "VPN权限获取成功")
+                VpnFileLogger.d(TAG, "VPN权限获取成功")
                 
                 // 通知Flutter端权限已授予
                 channel.invokeMethod("onVpnPermissionGranted", null)
@@ -207,13 +210,13 @@ class MainActivity: FlutterActivity() {
                             request.result.error("START_FAILED", "VPN服务启动失败", null)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "启动VPN服务失败", e)
+                        VpnFileLogger.e(TAG, "启动VPN服务失败", e)
                         request.result.error("START_FAILED", e.message, null)
                     }
                 }
             } else {
                 // VPN权限被拒绝
-                Log.d(TAG, "VPN权限被拒绝")
+                VpnFileLogger.d(TAG, "VPN权限被拒绝")
                 
                 // 通知Flutter端权限被拒绝
                 channel.invokeMethod("onVpnPermissionDenied", null)
