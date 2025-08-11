@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'libv2ray version (e.g., v25.8.3)'
+        description: 'libv2ray version (e.g., v5.37.0)'
         required: true
-        default: 'v25.8.3'
+        default: 'v5.37.0'
         type: string
 jobs:
   download-and-commit:
