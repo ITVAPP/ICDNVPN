@@ -13,7 +13,6 @@ import android.net.LocalSocketAddress
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.File
@@ -70,7 +69,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
          * @param globalProxy 是否全局代理
          */
         fun startVpnService(context: Context, config: String, globalProxy: Boolean = false) {
-            Log.d(TAG, "准备启动VPN服务，全局代理: $globalProxy")
+            VpnFileLogger.d(TAG, "准备启动VPN服务，全局代理: $globalProxy")
             
             val intent = Intent(context, V2RayVpnService::class.java).apply {
                 action = "START_VPN"
@@ -85,7 +84,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "启动服务失败", e)
+                VpnFileLogger.e(TAG, "启动服务失败", e)
             }
         }
         
@@ -93,7 +92,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
          * 停止VPN服务
          */
         fun stopVpnService(context: Context) {
-            Log.d(TAG, "准备停止VPN服务")
+            VpnFileLogger.d(TAG, "准备停止VPN服务")
             
             try {
                 // 先发送停止广播
@@ -101,7 +100,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 // 再停止服务
                 context.stopService(Intent(context, V2RayVpnService::class.java))
             } catch (e: Exception) {
-                Log.e(TAG, "停止服务失败", e)
+                VpnFileLogger.e(TAG, "停止服务失败", e)
             }
         }
         
@@ -156,7 +155,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_STOP_VPN) {
-                Log.d(TAG, "收到停止VPN广播")
+                VpnFileLogger.d(TAG, "收到停止VPN广播")
                 stopV2Ray()
             }
         }
@@ -169,7 +168,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     override fun onCreate() {
         super.onCreate()
         
-        Log.d(TAG, "VPN服务onCreate开始")
+        // 初始化文件日志系统（从配置读取是否启用，默认启用）
+        val enableFileLog = true  // TODO: 从配置文件读取
+        VpnFileLogger.init(applicationContext, enableFileLog)
+        
+        VpnFileLogger.d(TAG, "VPN服务onCreate开始")
         
         // 保存实例引用
         instance = this
@@ -177,9 +180,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 步骤1：初始化Go运行时 - 必须在使用任何Go代码之前
         try {
             Seq.setContext(applicationContext)
-            Log.d(TAG, "Go运行时初始化成功")
+            VpnFileLogger.d(TAG, "Go运行时初始化成功")
         } catch (e: Exception) {
-            Log.e(TAG, "Go运行时初始化失败", e)
+            VpnFileLogger.e(TAG, "Go运行时初始化失败", e)
             // Go运行时初始化失败，服务无法工作
             stopSelf()
             return
@@ -188,28 +191,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 步骤2：注册广播接收器
         try {
             registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
-            Log.d(TAG, "广播接收器注册成功")
+            VpnFileLogger.d(TAG, "广播接收器注册成功")
         } catch (e: Exception) {
-            Log.e(TAG, "注册广播接收器失败", e)
+            VpnFileLogger.e(TAG, "注册广播接收器失败", e)
         }
         
         // 步骤3：初始化V2Ray环境
         try {
             val envPath = filesDir.absolutePath
             Libv2ray.initCoreEnv(envPath, "")
-            Log.d(TAG, "V2Ray环境初始化成功: $envPath")
+            VpnFileLogger.d(TAG, "V2Ray环境初始化成功: $envPath")
             
             // 获取版本信息
             val version = Libv2ray.checkVersionX()
-            Log.i(TAG, "V2Ray版本: $version")
+            VpnFileLogger.i(TAG, "V2Ray版本: $version")
         } catch (e: Exception) {
-            Log.e(TAG, "V2Ray环境初始化失败", e)
+            VpnFileLogger.e(TAG, "V2Ray环境初始化失败", e)
         }
         
         // 步骤4：复制资源文件
         copyAssetFiles()
         
-        Log.d(TAG, "VPN服务onCreate完成")
+        VpnFileLogger.d(TAG, "VPN服务onCreate完成")
     }
     
     /**
@@ -217,18 +220,18 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 验证：检查意图、配置、权限
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: action=${intent?.action}, flags=$flags, startId=$startId")
+        VpnFileLogger.d(TAG, "onStartCommand: action=${intent?.action}, flags=$flags, startId=$startId")
         
         // 验证1：检查意图
         if (intent == null || intent.action != "START_VPN") {
-            Log.w(TAG, "无效的启动意图: ${intent?.action}")
+            VpnFileLogger.w(TAG, "无效的启动意图: ${intent?.action}")
             stopSelf()
             return START_NOT_STICKY
         }
         
         // 验证2：检查是否已在运行
         if (isRunning) {
-            Log.w(TAG, "VPN服务已在运行，忽略重复启动")
+            VpnFileLogger.w(TAG, "VPN服务已在运行，忽略重复启动")
             return START_STICKY
         }
         
@@ -237,7 +240,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         globalProxy = intent.getBooleanExtra("globalProxy", false)
         
         if (configContent.isEmpty()) {
-            Log.e(TAG, "配置为空，无法启动")
+            VpnFileLogger.e(TAG, "配置为空，无法启动")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -245,9 +248,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 步骤1：启动前台服务
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            Log.d(TAG, "前台服务已启动")
+            VpnFileLogger.d(TAG, "前台服务已启动")
         } catch (e: Exception) {
-            Log.e(TAG, "启动前台服务失败", e)
+            VpnFileLogger.e(TAG, "启动前台服务失败", e)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -257,7 +260,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             try {
                 startV2Ray()
             } catch (e: Exception) {
-                Log.e(TAG, "启动V2Ray失败", e)
+                VpnFileLogger.e(TAG, "启动V2Ray失败", e)
                 withContext(Dispatchers.Main) {
                     stopSelf()
                 }
@@ -272,13 +275,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 错误处理：单个文件失败不影响其他文件
      */
     private fun copyAssetFiles() {
-        Log.d(TAG, "开始复制资源文件")
+        VpnFileLogger.d(TAG, "开始复制资源文件")
         
         // 创建目标目录
         val assetDir = filesDir
         if (!assetDir.exists()) {
             if (!assetDir.mkdirs()) {
-                Log.e(TAG, "创建资源目录失败: ${assetDir.absolutePath}")
+                VpnFileLogger.e(TAG, "创建资源目录失败: ${assetDir.absolutePath}")
                 return
             }
         }
@@ -293,15 +296,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 if (shouldUpdateFile(fileName, targetFile)) {
                     copyAssetFile(fileName, targetFile)
                 } else {
-                    Log.d(TAG, "文件已是最新，跳过: $fileName")
+                    VpnFileLogger.d(TAG, "文件已是最新，跳过: $fileName")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "处理文件失败: $fileName", e)
+                VpnFileLogger.e(TAG, "处理文件失败: $fileName", e)
                 // 继续处理其他文件
             }
         }
         
-        Log.d(TAG, "资源文件复制完成")
+        VpnFileLogger.d(TAG, "资源文件复制完成")
     }
     
     /**
@@ -310,7 +313,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun shouldUpdateFile(assetName: String, targetFile: File): Boolean {
         if (!targetFile.exists()) {
-            Log.d(TAG, "目标文件不存在: $assetName")
+            VpnFileLogger.d(TAG, "目标文件不存在: $assetName")
             return true
         }
         
@@ -318,11 +321,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             val assetSize = assets.open(assetName).use { it.available() }
             val needUpdate = targetFile.length() != assetSize.toLong()
             if (needUpdate) {
-                Log.d(TAG, "文件大小不匹配: $assetName (asset=$assetSize, target=${targetFile.length()})")
+                VpnFileLogger.d(TAG, "文件大小不匹配: $assetName (asset=$assetSize, target=${targetFile.length()})")
             }
             needUpdate
         } catch (e: Exception) {
-            Log.e(TAG, "检查文件失败: $assetName", e)
+            VpnFileLogger.e(TAG, "检查文件失败: $assetName", e)
             true // 出错时尝试更新
         }
     }
@@ -333,7 +336,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun copyAssetFile(assetName: String, targetFile: File) {
         try {
-            Log.d(TAG, "正在复制文件: $assetName -> ${targetFile.absolutePath}")
+            VpnFileLogger.d(TAG, "正在复制文件: $assetName -> ${targetFile.absolutePath}")
             
             assets.open(assetName).use { input ->
                 targetFile.outputStream().use { output ->
@@ -341,9 +344,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }
             
-            Log.d(TAG, "文件复制成功: $assetName (${targetFile.length()} bytes)")
+            VpnFileLogger.d(TAG, "文件复制成功: $assetName (${targetFile.length()} bytes)")
         } catch (e: Exception) {
-            Log.e(TAG, "复制文件失败: $assetName", e)
+            VpnFileLogger.e(TAG, "复制文件失败: $assetName", e)
             // 不抛出异常，允许继续运行
         }
     }
@@ -353,11 +356,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 关键流程：启动V2Ray核心 -> 建立VPN -> 启动tun2socks -> 传递文件描述符
      */
     private suspend fun startV2Ray() = withContext(Dispatchers.IO) {
-        Log.d(TAG, "开始启动V2Ray核心")
+        VpnFileLogger.d(TAG, "开始启动V2Ray核心")
         
         try {
             // 步骤1：创建核心控制器并启动V2Ray核心（先启动SOCKS5服务）
-            Log.d(TAG, "步骤1: 创建核心控制器")
+            VpnFileLogger.d(TAG, "步骤1: 创建核心控制器")
             coreController = Libv2ray.newCoreController(this@V2RayVpnService)
             
             if (coreController == null) {
@@ -365,7 +368,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             
             // 步骤2：启动V2Ray核心
-            Log.d(TAG, "步骤2: 启动V2Ray核心")
+            VpnFileLogger.d(TAG, "步骤2: 启动V2Ray核心")
             coreController?.startLoop(configContent)
             
             // 步骤3：验证运行状态
@@ -374,10 +377,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 throw Exception("V2Ray核心未运行")
             }
             
-            Log.i(TAG, "V2Ray核心启动成功，SOCKS5端口: $SOCKS_PORT")
+            VpnFileLogger.i(TAG, "V2Ray核心启动成功，SOCKS5端口: $SOCKS_PORT")
             
             // 步骤4：建立VPN隧道
-            Log.d(TAG, "步骤4: 建立VPN隧道")
+            VpnFileLogger.d(TAG, "步骤4: 建立VPN隧道")
             withContext(Dispatchers.Main) {
                 establishVpn()
             }
@@ -388,11 +391,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             
             // 步骤5：启动tun2socks进程
-            Log.d(TAG, "步骤5: 启动tun2socks进程")
+            VpnFileLogger.d(TAG, "步骤5: 启动tun2socks进程")
             runTun2socks()
             
             // 步骤6：传递文件描述符给tun2socks
-            Log.d(TAG, "步骤6: 传递文件描述符")
+            VpnFileLogger.d(TAG, "步骤6: 传递文件描述符")
             val fdSuccess = sendFileDescriptor()
             if (!fdSuccess) {
                 throw Exception("文件描述符传递失败，VPN无法工作")
@@ -402,13 +405,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             isRunning = true
             startTime = System.currentTimeMillis()
             
-            Log.i(TAG, "V2Ray服务完全启动成功")
+            VpnFileLogger.i(TAG, "V2Ray服务完全启动成功")
             
             // 步骤8：启动流量监控
             startTrafficMonitor()
             
         } catch (e: Exception) {
-            Log.e(TAG, "启动V2Ray失败: ${e.message}", e)
+            VpnFileLogger.e(TAG, "启动V2Ray失败: ${e.message}", e)
             
             // 清理资源
             isRunning = false
@@ -426,8 +429,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 启动tun2socks进程
      * 将TUN接口流量转发到V2Ray的SOCKS5端口
      */
-    private suspend fun runTun2socks() = withContext(Dispatchers.IO) {
-        Log.d(TAG, "开始启动tun2socks进程")
+    private suspend fun runTun2socks(): Unit = withContext(Dispatchers.IO) {
+        VpnFileLogger.d(TAG, "开始启动tun2socks进程")
         
         try {
             // 获取libtun2socks.so的路径
@@ -438,7 +441,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 throw Exception("libtun2socks.so不存在: $libtun2socksPath")
             }
             
-            Log.d(TAG, "libtun2socks路径: $libtun2socksPath")
+            VpnFileLogger.d(TAG, "libtun2socks路径: $libtun2socksPath")
             
             // Unix域套接字文件路径（使用绝对路径）
             val sockPath = File(filesDir, "sock_path").absolutePath
@@ -462,7 +465,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 "--loglevel", "error"                          // 日志级别
             )
             
-            Log.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
+            VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
             
             // 启动进程
             val processBuilder = ProcessBuilder(cmd).apply {
@@ -479,11 +482,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     process.inputStream?.bufferedReader()?.use { reader ->
                         var line: String?
                         while (reader.readLine().also { line = it } != null) {
-                            Log.d(TAG, "tun2socks: $line")
+                            VpnFileLogger.d(TAG, "tun2socks: $line")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "读取tun2socks输出失败", e)
+                    VpnFileLogger.w(TAG, "读取tun2socks输出失败", e)
                 }
             }
             
@@ -491,27 +494,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             serviceScope.launch {
                 try {
                     val exitCode = process.waitFor()
-                    Log.w(TAG, "tun2socks进程退出，退出码: $exitCode")
+                    VpnFileLogger.w(TAG, "tun2socks进程退出，退出码: $exitCode")
                     
                     // 如果服务仍在运行，自动重启tun2socks
                     if (isRunning) {
-                        Log.d(TAG, "自动重启tun2socks进程")
+                        VpnFileLogger.d(TAG, "自动重启tun2socks进程")
                         delay(1000)
-                        // 重新启动tun2socks和传递文件描述符
-                        try {
-                            runTun2socks()
-                            val success = sendFileDescriptor()
-                            if (!success) {
-                                Log.e(TAG, "重启后文件描述符传递失败，停止服务")
-                                stopV2Ray()
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "重启tun2socks失败", e)
-                            stopV2Ray()
-                        }
+                        // 调用重启方法而不是递归调用
+                        restartTun2socks()
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "监控tun2socks进程失败", e)
+                    VpnFileLogger.e(TAG, "监控tun2socks进程失败", e)
                 }
             }
             
@@ -521,11 +514,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 throw Exception("tun2socks进程启动后立即退出")
             }
             
-            Log.d(TAG, "tun2socks进程已启动")
+            VpnFileLogger.d(TAG, "tun2socks进程已启动")
             
         } catch (e: Exception) {
-            Log.e(TAG, "启动tun2socks失败", e)
+            VpnFileLogger.e(TAG, "启动tun2socks失败", e)
             throw e
+        }
+    }
+    
+    /**
+     * 重启tun2socks进程（避免递归类型推断）
+     */
+    private suspend fun restartTun2socks(): Unit = withContext(Dispatchers.IO) {
+        try {
+            runTun2socks()
+            val success = sendFileDescriptor()
+            if (!success) {
+                VpnFileLogger.e(TAG, "重启后文件描述符传递失败，停止服务")
+                stopV2Ray()
+            }
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "重启tun2socks失败", e)
+            stopV2Ray()
         }
     }
     
@@ -534,14 +544,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 这是Android特有的机制，用于跨进程共享TUN设备
      */
     private suspend fun sendFileDescriptor(): Boolean {
-        Log.d(TAG, "开始传递文件描述符给tun2socks")
+        VpnFileLogger.d(TAG, "开始传递文件描述符给tun2socks")
         
         return withContext(Dispatchers.IO) {
             val sockPath = File(filesDir, "sock_path").absolutePath
             val tunFd = mInterface?.fileDescriptor
             
             if (tunFd == null) {
-                Log.e(TAG, "TUN文件描述符为空")
+                VpnFileLogger.e(TAG, "TUN文件描述符为空")
                 return@withContext false
             }
             
@@ -553,7 +563,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     // 递增延迟：0ms, 50ms, 100ms, 150ms, 200ms, 250ms
                     delay(50L * tries)
                     
-                    Log.d(TAG, "尝试连接Unix域套接字 (第${tries + 1}次)")
+                    VpnFileLogger.d(TAG, "尝试连接Unix域套接字 (第${tries + 1}次)")
                     
                     // 创建本地套接字并连接到tun2socks
                     val clientSocket = LocalSocket()
@@ -570,16 +580,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     clientSocket.shutdownOutput()
                     clientSocket.close()
                     
-                    Log.d(TAG, "文件描述符传递成功")
+                    VpnFileLogger.d(TAG, "文件描述符传递成功")
                     return@withContext true
                     
                 } catch (e: Exception) {
                     tries++
                     if (tries >= maxTries) {
-                        Log.e(TAG, "文件描述符传递失败，已达最大重试次数", e)
+                        VpnFileLogger.e(TAG, "文件描述符传递失败，已达最大重试次数", e)
                         return@withContext false
                     } else {
-                        Log.w(TAG, "文件描述符传递失败，将重试 (${tries}/$maxTries): ${e.message}")
+                        VpnFileLogger.w(TAG, "文件描述符传递失败，将重试 (${tries}/$maxTries): ${e.message}")
                     }
                 }
             }
@@ -591,17 +601,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 停止tun2socks进程
      */
     private fun stopTun2socks() {
-        Log.d(TAG, "停止tun2socks进程")
+        VpnFileLogger.d(TAG, "停止tun2socks进程")
         
         try {
             val process = tun2socksProcess
             if (process != null) {
                 process.destroy()
                 tun2socksProcess = null
-                Log.d(TAG, "tun2socks进程已停止")
+                VpnFileLogger.d(TAG, "tun2socks进程已停止")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "停止tun2socks进程失败", e)
+            VpnFileLogger.e(TAG, "停止tun2socks进程失败", e)
         }
     }
     
@@ -614,10 +624,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 尝试匹配 "address": "domain.com" 格式
             val regex = """"address"\s*:\s*"([^"]+)"""".toRegex()
             val result = regex.find(config)?.groupValues?.get(1) ?: ""
-            Log.d(TAG, "解析域名: $result")
+            VpnFileLogger.d(TAG, "解析域名: $result")
             result
         } catch (e: Exception) {
-            Log.w(TAG, "解析域名失败", e)
+            VpnFileLogger.w(TAG, "解析域名失败", e)
             ""
         }
     }
@@ -628,15 +638,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 修改为/30子网以支持tun2socks
      */
     private fun establishVpn() {
-        Log.d(TAG, "开始建立VPN隧道")
+        VpnFileLogger.d(TAG, "开始建立VPN隧道")
         
         // 关闭旧接口
         mInterface?.let {
             try {
                 it.close()
-                Log.d(TAG, "已关闭旧VPN接口")
+                VpnFileLogger.d(TAG, "已关闭旧VPN接口")
             } catch (e: Exception) {
-                Log.w(TAG, "关闭旧接口失败", e)
+                VpnFileLogger.w(TAG, "关闭旧接口失败", e)
             }
         }
         mInterface = null
@@ -650,15 +660,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // IPv4地址 - 使用/30子网
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
-        Log.d(TAG, "添加IPv4地址: $PRIVATE_VLAN4_CLIENT/30")
+        VpnFileLogger.d(TAG, "添加IPv4地址: $PRIVATE_VLAN4_CLIENT/30")
         
         // IPv6地址（可选）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 builder.addAddress(PRIVATE_VLAN6_CLIENT, 126)
-                Log.d(TAG, "添加IPv6地址: $PRIVATE_VLAN6_CLIENT/126")
+                VpnFileLogger.d(TAG, "添加IPv6地址: $PRIVATE_VLAN6_CLIENT/126")
             } catch (e: Exception) {
-                Log.w(TAG, "添加IPv6地址失败（可能不支持）", e)
+                VpnFileLogger.w(TAG, "添加IPv6地址失败（可能不支持）", e)
             }
         }
         
@@ -667,15 +677,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         dnsServers.forEach { dns ->
             try {
                 builder.addDnsServer(dns)
-                Log.d(TAG, "添加DNS: $dns")
+                VpnFileLogger.d(TAG, "添加DNS: $dns")
             } catch (e: Exception) {
-                Log.w(TAG, "添加DNS失败: $dns", e)
+                VpnFileLogger.w(TAG, "添加DNS失败: $dns", e)
             }
         }
         
         // 路由规则配置
         if (globalProxy) {
-            Log.d(TAG, "配置全局代理路由")
+            VpnFileLogger.d(TAG, "配置全局代理路由")
             
             // IPv4全局路由
             builder.addRoute("0.0.0.0", 0)
@@ -684,13 +694,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     builder.addRoute("::", 0)
-                    Log.d(TAG, "添加IPv6全局路由")
+                    VpnFileLogger.d(TAG, "添加IPv6全局路由")
                 } catch (e: Exception) {
-                    Log.w(TAG, "添加IPv6路由失败", e)
+                    VpnFileLogger.w(TAG, "添加IPv6路由失败", e)
                 }
             }
         } else {
-            Log.d(TAG, "配置智能分流路由")
+            VpnFileLogger.d(TAG, "配置智能分流路由")
             // 仅代理国外流量 - 目前设置为全局，后续可以根据需要添加分流规则
             builder.addRoute("0.0.0.0", 0)
         }
@@ -699,9 +709,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 builder.addDisallowedApplication(packageName)
-                Log.d(TAG, "设置绕过应用: $packageName")
+                VpnFileLogger.d(TAG, "设置绕过应用: $packageName")
             } catch (e: Exception) {
-                Log.w(TAG, "设置绕过应用失败", e)
+                VpnFileLogger.w(TAG, "设置绕过应用失败", e)
             }
         }
         
@@ -709,9 +719,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         mInterface = builder.establish()
         
         if (mInterface == null) {
-            Log.e(TAG, "VPN接口建立失败（可能没有权限）")
+            VpnFileLogger.e(TAG, "VPN接口建立失败（可能没有权限）")
         } else {
-            Log.d(TAG, "VPN隧道建立成功，FD: ${mInterface?.fd}")
+            VpnFileLogger.d(TAG, "VPN隧道建立成功，FD: ${mInterface?.fd}")
         }
     }
     
@@ -720,7 +730,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 清理顺序：停止tun2socks -> 停止核心 -> 关闭接口 -> 清理状态
      */
     private fun stopV2Ray() {
-        Log.d(TAG, "开始停止V2Ray服务")
+        VpnFileLogger.d(TAG, "开始停止V2Ray服务")
         
         // 更新状态
         isRunning = false
@@ -728,7 +738,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 停止流量监控
         statsJob?.cancel()
         statsJob = null
-        Log.d(TAG, "流量监控已停止")
+        VpnFileLogger.d(TAG, "流量监控已停止")
         
         // 停止tun2socks进程
         stopTun2socks()
@@ -736,18 +746,18 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 停止V2Ray核心
         try {
             coreController?.stopLoop()
-            Log.d(TAG, "V2Ray核心已停止")
+            VpnFileLogger.d(TAG, "V2Ray核心已停止")
         } catch (e: Exception) {
-            Log.e(TAG, "停止V2Ray核心异常", e)
+            VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
         }
         
         // 关闭VPN接口
         try {
             mInterface?.close()
             mInterface = null
-            Log.d(TAG, "VPN接口已关闭")
+            VpnFileLogger.d(TAG, "VPN接口已关闭")
         } catch (e: Exception) {
-            Log.e(TAG, "关闭VPN接口异常", e)
+            VpnFileLogger.e(TAG, "关闭VPN接口异常", e)
         }
         
         // 停止前台服务
@@ -756,7 +766,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 停止服务自身
         stopSelf()
         
-        Log.i(TAG, "V2Ray服务已完全停止")
+        VpnFileLogger.i(TAG, "V2Ray服务已完全停止")
     }
     
     /**
@@ -828,7 +838,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * 定期查询V2Ray统计信息
      */
     private fun startTrafficMonitor() {
-        Log.d(TAG, "启动流量监控")
+        VpnFileLogger.d(TAG, "启动流量监控")
         
         // 取消旧任务
         statsJob?.cancel()
@@ -842,7 +852,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 try {
                     updateTrafficStats()
                 } catch (e: Exception) {
-                    Log.w(TAG, "更新流量统计异常", e)
+                    VpnFileLogger.w(TAG, "更新流量统计异常", e)
                 }
                 
                 // 间隔10秒
@@ -903,11 +913,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 updateNotification()
             }
             
-            Log.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}, " +
+            VpnFileLogger.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}, " +
                       "速度: ↑${formatBytes(uploadSpeed)}/s ↓${formatBytes(downloadSpeed)}/s")
             
         } catch (e: Exception) {
-            Log.w(TAG, "查询流量统计失败", e)
+            VpnFileLogger.w(TAG, "查询流量统计失败", e)
         }
     }
     
@@ -932,7 +942,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.notify(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
-            Log.w(TAG, "更新通知失败", e)
+            VpnFileLogger.w(TAG, "更新通知失败", e)
         }
     }
     
@@ -957,11 +967,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * @return 0表示成功，-1表示失败
      */
     override fun startup(): Long {
-        Log.d(TAG, "CoreCallbackHandler.startup() 被调用")
+        VpnFileLogger.d(TAG, "CoreCallbackHandler.startup() 被调用")
         
         // 这里只是记录状态，VPN已经在startV2Ray中建立
         return if (mInterface != null) {
-            Log.d(TAG, "startup: VPN隧道已就绪")
+            VpnFileLogger.d(TAG, "startup: VPN隧道已就绪")
             // 如果需要，这里可以保护V2Ray的socket
             val fd = mInterface?.fd
             if (fd != null && fd > 0) {
@@ -969,7 +979,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             0L
         } else {
-            Log.e(TAG, "startup: VPN隧道未就绪")
+            VpnFileLogger.e(TAG, "startup: VPN隧道未就绪")
             -1L
         }
     }
@@ -979,7 +989,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * @return 0表示成功
      */
     override fun shutdown(): Long {
-        Log.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
+        VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
         
         // 异步停止服务，避免阻塞Native线程
         serviceScope.launch {
@@ -997,18 +1007,18 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     override fun onEmitStatus(level: Long, status: String?): Long {
         try {
-            // 根据级别记录日志
+            // 根据级别记录日志到文件
             when (level.toInt()) {
-                0 -> Log.v(TAG, "V2Ray: $status")
-                1 -> Log.d(TAG, "V2Ray: $status")
-                2 -> Log.i(TAG, "V2Ray: $status")
-                3 -> Log.w(TAG, "V2Ray: $status")
-                4 -> Log.e(TAG, "V2Ray: $status")
-                else -> Log.d(TAG, "V2Ray[$level]: $status")
+                0 -> VpnFileLogger.d(TAG, "V2Ray: $status")
+                1 -> VpnFileLogger.i(TAG, "V2Ray: $status")
+                2 -> VpnFileLogger.i(TAG, "V2Ray: $status")
+                3 -> VpnFileLogger.w(TAG, "V2Ray: $status")
+                4 -> VpnFileLogger.e(TAG, "V2Ray: $status")
+                else -> VpnFileLogger.d(TAG, "V2Ray[$level]: $status")
             }
             return 0L
         } catch (e: Exception) {
-            Log.e(TAG, "onEmitStatus异常", e)
+            VpnFileLogger.e(TAG, "onEmitStatus异常", e)
             return -1L
         }
     }
@@ -1047,7 +1057,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     override fun onDestroy() {
         super.onDestroy()
         
-        Log.d(TAG, "onDestroy开始")
+        VpnFileLogger.d(TAG, "onDestroy开始")
         
         // 清除实例引用
         instance = null
@@ -1058,7 +1068,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 注销广播接收器
         try {
             unregisterReceiver(stopReceiver)
-            Log.d(TAG, "广播接收器已注销")
+            VpnFileLogger.d(TAG, "广播接收器已注销")
         } catch (e: Exception) {
             // 可能已经注销
         }
@@ -1074,6 +1084,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 清理CoreController
         coreController = null
         
-        Log.d(TAG, "onDestroy完成，服务已销毁")
+        VpnFileLogger.d(TAG, "onDestroy完成，服务已销毁")
+        
+        // 刷新并关闭日志系统
+        runBlocking {
+            VpnFileLogger.flushAll()
+        }
+        VpnFileLogger.close()
     }
 }
