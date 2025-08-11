@@ -170,7 +170,7 @@ jobs:
         echo "================================================"
         
         # 创建合并文件
-        cat > JADX_ALL_SOURCES.java << 'HEADER'
+        cat > JADX_ALL_SOURCES.java << 'EOF'
 /*
  * =================================================================
  *               JADX 反编译完整源码 - 合并文件
@@ -181,7 +181,7 @@ jobs:
  * =================================================================
  */
 
-HEADER
+EOF
         
         # 合并所有Java文件
         file_count=0
@@ -241,7 +241,7 @@ EOF
         echo "================================================"
         
         # 创建CFR合并文件
-        cat > CFR_ALL_SOURCES.java << 'HEADER'
+        cat > CFR_ALL_SOURCES.java << 'EOF'
 /*
  * =================================================================
  *               CFR 反编译完整源码 - 合并文件
@@ -252,7 +252,7 @@ EOF
  * =================================================================
  */
 
-HEADER
+EOF
         
         # 合并所有CFR Java文件
         cfr_file_count=0
@@ -285,7 +285,7 @@ EOF
         echo "================================================"
         
         # 创建最终的超级合并文件
-        cat > ULTIMATE_ALL_SOURCES.java << 'MEGAHEADER'
+        cat > ULTIMATE_ALL_SOURCES.java << 'EOF'
 /*
  * ═════════════════════════════════════════════════════════════════════════════════
  *                          LIBV2RAY.AAR 完整反编译源码
@@ -311,10 +311,10 @@ EOF
  * ═════════════════════════════════════════════════════════════════════════════════
  */
 
-MEGAHEADER
+EOF
         
         # 第一部分：JADX 结果
-        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION1'
+        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
 
 /*
  * ═════════════════════════════════════════════════════════════════════════════════
@@ -323,7 +323,7 @@ MEGAHEADER
  * ═════════════════════════════════════════════════════════════════════════════════
  */
 
-SECTION1
+EOF
         
         if [ -f "JADX_ALL_SOURCES.java" ]; then
           # 跳过JADX文件的头部注释，只要源码部分
@@ -334,7 +334,7 @@ SECTION1
         fi
         
         # 第二部分：CFR 结果
-        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION2'
+        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
 
 /*
  * ═════════════════════════════════════════════════════════════════════════════════
@@ -343,7 +343,7 @@ SECTION1
  * ═════════════════════════════════════════════════════════════════════════════════
  */
 
-SECTION2
+EOF
         
         if [ -f "CFR_ALL_SOURCES.java" ]; then
           # 跳过CFR文件的头部注释，只要源码部分
@@ -354,7 +354,7 @@ SECTION2
         fi
         
         # 第三部分：方法总结
-        cat >> ULTIMATE_ALL_SOURCES.java << 'SECTION3'
+        cat >> ULTIMATE_ALL_SOURCES.java << 'EOF'
 
 /*
  * ═════════════════════════════════════════════════════════════════════════════════
@@ -364,7 +364,7 @@ SECTION2
  */
 
 /*
-SECTION3
+EOF
         
         # 添加方法总结（如果存在）
         if [ -f "method_summary.md" ]; then
@@ -395,12 +395,12 @@ SECTION3
         echo "================================================"
         
         # 创建一个汇总文件
-        cat > method_summary.md << 'HEADER'
-        # Method Summary for libv2ray.aar
-        
-        ## Available Classes and Methods
-        
-        HEADER
+        cat > method_summary.md << 'EOF'
+# Method Summary for libv2ray.aar
+
+## Available Classes and Methods
+
+EOF
         
         # 提取关键类的所有公共方法
         for class_name in "libv2ray.Libv2ray" "libv2ray.CoreController" "libv2ray.CoreCallbackHandler" "go.Seq"; do
@@ -467,171 +467,171 @@ SECTION3
         echo "================================================"
         
         # 基于发现的方法生成完整的 Kotlin 实现
-        cat > V2RayVpnService_Complete.kt << 'KOTLIN'
-        package com.example.cfvpn
+        cat > V2RayVpnService_Complete.kt << 'EOF'
+package com.example.cfvpn
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.VpnService
+import android.os.*
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
+import java.io.File
+
+// Import based on AAR analysis
+import go.Seq
+import libv2ray.*
+
+/**
+ * V2Ray VPN Service Implementation
+ * Compatible with libv2ray.aar from 2dust/AndroidLibV2rayLite
+ */
+class V2RayVpnService : VpnService() {
+    
+    companion object {
+        private const val TAG = "V2RayVpnService"
+        private const val NOTIFICATION_ID = 1
+        private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
+    }
+    
+    private var mInterface: ParcelFileDescriptor? = null
+    private var isRunning = false
+    
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "onCreate")
         
-        import android.app.NotificationChannel
-        import android.app.NotificationManager
-        import android.app.PendingIntent
-        import android.app.Service
-        import android.content.BroadcastReceiver
-        import android.content.Context
-        import android.content.Intent
-        import android.content.IntentFilter
-        import android.net.VpnService
-        import android.os.*
-        import android.util.Log
-        import androidx.core.app.NotificationCompat
-        import kotlinx.coroutines.*
-        import java.io.File
-        
-        // Import based on AAR analysis
-        import go.Seq
-        import libv2ray.*
-        
-        /**
-         * V2Ray VPN Service Implementation
-         * Compatible with libv2ray.aar from 2dust/AndroidLibV2rayLite
-         */
-        class V2RayVpnService : VpnService() {
+        try {
+            // Initialize Go runtime
+            Seq.setContext(applicationContext)
+            Log.d(TAG, "Go runtime initialized")
             
-            companion object {
-                private const val TAG = "V2RayVpnService"
-                private const val NOTIFICATION_ID = 1
-                private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
-            }
+            // Initialize V2Ray environment
+            // Based on the AAR analysis, use appropriate method
+            // Example: Libv2ray.initV2Env(filesDir.absolutePath)
             
-            private var mInterface: ParcelFileDescriptor? = null
-            private var isRunning = false
-            
-            override fun onCreate() {
-                super.onCreate()
-                Log.d(TAG, "onCreate")
-                
-                try {
-                    // Initialize Go runtime
-                    Seq.setContext(applicationContext)
-                    Log.d(TAG, "Go runtime initialized")
-                    
-                    // Initialize V2Ray environment
-                    // Based on the AAR analysis, use appropriate method
-                    // Example: Libv2ray.initV2Env(filesDir.absolutePath)
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "Initialization failed", e)
-                }
-            }
-            
-            override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                Log.d(TAG, "onStartCommand")
-                
-                if (intent?.action == "STOP_VPN") {
-                    stopVPN()
-                    return START_NOT_STICKY
-                }
-                
-                val config = intent?.getStringExtra("config")
-                if (config.isNullOrEmpty()) {
-                    Log.e(TAG, "No config provided")
-                    stopSelf()
-                    return START_NOT_STICKY
-                }
-                
-                startForeground(NOTIFICATION_ID, createNotification())
-                
-                GlobalScope.launch(Dispatchers.IO) {
-                    startVPN(config)
-                }
-                
-                return START_STICKY
-            }
-            
-            private suspend fun startVPN(config: String) = withContext(Dispatchers.IO) {
-                try {
-                    Log.d(TAG, "Starting VPN with config")
-                    
-                    // 1. Establish VPN tunnel
-                    establishVPN()
-                    
-                    // 2. Start V2Ray core
-                    // TODO: Call appropriate method from libv2ray
-                    // Based on AAR analysis, this might be:
-                    // - Libv2ray.startV2Ray(config)
-                    // - CoreController.start(config)
-                    // etc.
-                    
-                    isRunning = true
-                    Log.i(TAG, "VPN started successfully")
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start VPN", e)
-                    stopSelf()
-                }
-            }
-            
-            private fun establishVPN() {
-                Log.d(TAG, "Establishing VPN tunnel")
-                
-                val builder = Builder()
-                builder.setSession("CFVPN")
-                builder.setMtu(1500)
-                builder.addAddress("10.0.0.2", 32)
-                builder.addRoute("0.0.0.0", 0)
-                builder.addDnsServer("8.8.8.8")
-                builder.addDnsServer("8.8.4.4")
-                
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    builder.addDisallowedApplication(packageName)
-                }
-                
-                mInterface?.close()
-                mInterface = builder.establish()
-                
-                Log.d(TAG, "VPN tunnel established: ${mInterface?.fd}")
-            }
-            
-            private fun stopVPN() {
-                Log.d(TAG, "Stopping VPN")
-                
-                isRunning = false
-                
-                // TODO: Stop V2Ray core
-                // Based on AAR analysis
-                
-                mInterface?.close()
-                mInterface = null
-                
-                stopForeground(true)
-                stopSelf()
-            }
-            
-            private fun createNotification(): android.app.Notification {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val channel = NotificationChannel(
-                        NOTIFICATION_CHANNEL_ID,
-                        "VPN Service",
-                        NotificationManager.IMPORTANCE_LOW
-                    )
-                    val nm = getSystemService(NotificationManager::class.java)
-                    nm.createNotificationChannel(channel)
-                }
-                
-                return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                    .setContentTitle("CFVPN")
-                    .setContentText("VPN is running")
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setOngoing(true)
-                    .build()
-            }
-            
-            override fun onDestroy() {
-                Super.onDestroy()
-                Log.d(TAG, "onDestroy")
-                stopVPN()
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Initialization failed", e)
         }
-        KOTLIN
+    }
+    
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand")
+        
+        if (intent?.action == "STOP_VPN") {
+            stopVPN()
+            return START_NOT_STICKY
+        }
+        
+        val config = intent?.getStringExtra("config")
+        if (config.isNullOrEmpty()) {
+            Log.e(TAG, "No config provided")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        
+        startForeground(NOTIFICATION_ID, createNotification())
+        
+        GlobalScope.launch(Dispatchers.IO) {
+            startVPN(config)
+        }
+        
+        return START_STICKY
+    }
+    
+    private suspend fun startVPN(config: String) = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Starting VPN with config")
+            
+            // 1. Establish VPN tunnel
+            establishVPN()
+            
+            // 2. Start V2Ray core
+            // TODO: Call appropriate method from libv2ray
+            // Based on AAR analysis, this might be:
+            // - Libv2ray.startV2Ray(config)
+            // - CoreController.start(config)
+            // etc.
+            
+            isRunning = true
+            Log.i(TAG, "VPN started successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start VPN", e)
+            stopSelf()
+        }
+    }
+    
+    private fun establishVPN() {
+        Log.d(TAG, "Establishing VPN tunnel")
+        
+        val builder = Builder()
+        builder.setSession("CFVPN")
+        builder.setMtu(1500)
+        builder.addAddress("10.0.0.2", 32)
+        builder.addRoute("0.0.0.0", 0)
+        builder.addDnsServer("8.8.8.8")
+        builder.addDnsServer("8.8.4.4")
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            builder.addDisallowedApplication(packageName)
+        }
+        
+        mInterface?.close()
+        mInterface = builder.establish()
+        
+        Log.d(TAG, "VPN tunnel established: ${mInterface?.fd}")
+    }
+    
+    private fun stopVPN() {
+        Log.d(TAG, "Stopping VPN")
+        
+        isRunning = false
+        
+        // TODO: Stop V2Ray core
+        // Based on AAR analysis
+        
+        mInterface?.close()
+        mInterface = null
+        
+        stopForeground(true)
+        stopSelf()
+    }
+    
+    private fun createNotification(): android.app.Notification {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
+        }
+        
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("CFVPN")
+            .setContentText("VPN is running")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy")
+        stopVPN()
+    }
+}
+EOF
         
         echo "✅ Kotlin implementation generated"
         cat V2RayVpnService_Complete.kt
