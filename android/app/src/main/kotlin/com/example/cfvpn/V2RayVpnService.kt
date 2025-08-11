@@ -15,7 +15,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.File
 
-// 导入libv2ray - 使用正确的包名
+// 导入libv2ray - 注意：这些import需要根据实际的AAR文件调整
 import go.Seq
 import libv2ray.Libv2ray
 import libv2ray.V2RayPoint
@@ -24,6 +24,7 @@ import libv2ray.V2RayVPNServiceSupportsSet
 /**
  * V2Ray VPN服务实现
  * 使用libv2ray.aar提供VPN功能
+ * 参考v2rayNG的实现方式
  */
 class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     
@@ -43,7 +44,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
         @Volatile
         private var isRunning = false
         
-        // 单例服务引用
+        // 单例服务引用（用于状态查询）
         @Volatile
         private var instance: V2RayVpnService? = null
         
@@ -67,7 +68,9 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
          * 停止VPN服务
          */
         fun stopVpnService(context: Context) {
+            // 发送停止广播
             context.sendBroadcast(Intent(ACTION_STOP_VPN))
+            // 同时停止服务
             context.stopService(Intent(context, V2RayVpnService::class.java))
         }
         
@@ -90,7 +93,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     }
     
     // V2Ray核心对象
-    private var v2rayPoint: V2RayPoint? = null
+    private lateinit var v2rayPoint: V2RayPoint
     private var mInterface: ParcelFileDescriptor? = null
     
     // 配置
@@ -111,7 +114,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     // 统计定时器
     private var statsJob: Job? = null
     
-    // 广播接收器
+    // 广播接收器 - 用于接收停止命令
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_STOP_VPN) {
@@ -124,9 +127,10 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     override fun onCreate() {
         super.onCreate()
         
+        // 设置单例引用
         instance = this
         
-        // 初始化Go运行时
+        // 初始化Go运行时（重要！）
         try {
             Seq.setContext(applicationContext)
             Log.d(TAG, "Go运行时初始化成功")
@@ -137,7 +141,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
         // 注册广播接收器
         registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
         
-        // 初始化V2Ray
+        // 初始化V2Ray点
         initializeV2Ray()
         
         Log.d(TAG, "VPN服务已创建")
@@ -151,12 +155,12 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             // 复制geo文件
             copyAssetFiles()
             
-            // 创建V2Ray点
+            // 创建V2Ray点 - 使用正确的构造函数
             val assetPath = File(filesDir, "assets").absolutePath
             v2rayPoint = Libv2ray.newV2RayPoint(this, assetPath)
             
             // 设置包名
-            v2rayPoint?.packageName = packageName
+            v2rayPoint.packageName = packageName
             
             Log.d(TAG, "V2Ray初始化成功，资源路径: $assetPath")
         } catch (e: Exception) {
@@ -165,29 +169,32 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 检查意图和动作
         if (intent == null || intent.action != "START_VPN") {
             Log.w(TAG, "无效的启动意图")
             return START_NOT_STICKY
         }
         
+        // 如果已经在运行，忽略重复启动
         if (isRunning) {
-            Log.w(TAG, "VPN服务已在运行")
+            Log.w(TAG, "VPN服务已在运行，忽略重复启动")
             return START_STICKY
         }
         
+        // 获取配置
         configContent = intent.getStringExtra("config") ?: ""
         globalProxy = intent.getBooleanExtra("globalProxy", false)
         
         if (configContent.isEmpty()) {
-            Log.e(TAG, "配置为空")
+            Log.e(TAG, "配置为空，停止服务")
             stopSelf()
             return START_NOT_STICKY
         }
         
-        // 启动前台服务
+        // 启动前台服务（Android O及以上需要）
         startForeground(NOTIFICATION_ID, createNotification())
         
-        // 启动V2Ray
+        // 在协程中启动V2Ray
         serviceScope.launch {
             try {
                 startV2Ray()
@@ -203,7 +210,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     }
     
     /**
-     * 复制资源文件
+     * 复制资源文件（geo文件）
      */
     private fun copyAssetFiles() {
         val assetDir = File(filesDir, "assets")
@@ -211,11 +218,13 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             assetDir.mkdirs()
         }
         
+        // 需要复制的geo文件列表
         val files = listOf("geoip.dat", "geoip-only-cn-private.dat", "geosite.dat")
         
         for (fileName in files) {
             val targetFile = File(assetDir, fileName)
             
+            // 检查文件是否需要更新
             if (shouldUpdateFile(fileName, targetFile)) {
                 copyAssetFile(fileName, targetFile)
             } else {
@@ -265,17 +274,18 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             establishVpn()
             
             // 设置配置
-            v2rayPoint?.configureFileContent = configContent
+            v2rayPoint.configureFileContent = configContent
             
-            // 设置域名
-            v2rayPoint?.domainName = parseDomainFromConfig(configContent)
+            // 设置域名（可选，从配置中解析）
+            v2rayPoint.domainName = parseDomainFromConfig(configContent)
             
             // 启动V2Ray核心
-            val result = v2rayPoint?.runLoop(false) ?: -1L
+            val result = v2rayPoint.runLoop(false)
             if (result != 0L) {
                 throw Exception("V2Ray启动失败，错误码: $result")
             }
             
+            // 标记为运行中
             isRunning = true
             startTime = System.currentTimeMillis()
             
@@ -296,6 +306,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
      */
     private fun parseDomainFromConfig(config: String): String {
         return try {
+            // 简单的JSON解析，获取第一个outbound的address
             val regex = """"address"\s*:\s*"([^"]+)"""".toRegex()
             regex.find(config)?.groupValues?.get(1) ?: ""
         } catch (e: Exception) {
@@ -309,10 +320,16 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     private fun establishVpn() {
         val builder = Builder()
         
+        // 设置会话名称
         builder.setSession("CFVPN")
+        
+        // 设置MTU
         builder.setMtu(VPN_MTU)
+        
+        // 设置IPv4地址
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
         
+        // 设置IPv6地址（可选）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 builder.addAddress(PRIVATE_VLAN6_CLIENT, 126)
@@ -321,17 +338,19 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             }
         }
         
-        // DNS服务器
+        // 设置DNS服务器
         builder.addDnsServer("8.8.8.8")
         builder.addDnsServer("8.8.4.4")
         builder.addDnsServer("1.1.1.1")
         builder.addDnsServer("1.0.0.1")
         
-        // 路由规则
+        // 配置路由规则
         if (globalProxy) {
+            // 全局代理模式：所有流量通过VPN
             Log.d(TAG, "设置全局代理路由")
             builder.addRoute("0.0.0.0", 0)
             
+            // IPv6路由（如果支持）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     builder.addRoute("::", 0)
@@ -340,11 +359,12 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
                 }
             }
         } else {
+            // 智能模式：使用V2Ray的路由规则
             Log.d(TAG, "设置智能路由模式")
             builder.addRoute("0.0.0.0", 0)
         }
         
-        // 绕过VPN的应用
+        // 设置允许绕过VPN的应用（防止循环）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 builder.addDisallowedApplication(packageName)
@@ -353,7 +373,10 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             }
         }
         
+        // 关闭旧的接口
         mInterface?.close()
+        
+        // 建立VPN接口
         mInterface = builder.establish() ?: throw Exception("建立VPN隧道失败")
         
         Log.d(TAG, "VPN隧道已建立，FD: ${mInterface?.fd}")
@@ -365,17 +388,22 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     private fun stopV2Ray() {
         Log.d(TAG, "正在停止V2Ray...")
         
+        // 标记为停止
         isRunning = false
+        
+        // 停止流量监控
         statsJob?.cancel()
         statsJob = null
         
+        // 停止V2Ray核心
         try {
-            v2rayPoint?.stopLoop()
+            v2rayPoint.stopLoop()
             Log.d(TAG, "V2Ray核心已停止")
         } catch (e: Exception) {
             Log.e(TAG, "停止V2Ray核心失败", e)
         }
         
+        // 关闭VPN接口
         try {
             mInterface?.close()
             mInterface = null
@@ -384,7 +412,10 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             Log.e(TAG, "关闭VPN接口失败", e)
         }
         
+        // 停止前台服务
         stopForeground(true)
+        
+        // 停止服务
         stopSelf()
         
         Log.i(TAG, "V2Ray服务已停止")
@@ -394,6 +425,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
      * 创建通知
      */
     private fun createNotification(): android.app.Notification {
+        // 创建通知渠道（Android O及以上）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
@@ -410,6 +442,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             notificationManager.createNotificationChannel(channel)
         }
         
+        // 创建停止动作的Intent
         val stopIntent = Intent(ACTION_STOP_VPN)
         val stopPendingIntent = PendingIntent.getBroadcast(
             this, 0, stopIntent,
@@ -420,6 +453,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             }
         )
         
+        // 创建点击通知打开应用的Intent
         val mainIntent = packageManager.getLaunchIntentForPackage(packageName)
         val mainPendingIntent = if (mainIntent != null) {
             PendingIntent.getActivity(
@@ -434,10 +468,11 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             null
         }
         
+        // 构建通知
         val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("CFVPN")
             .setContentText(if (globalProxy) "全局代理模式" else "智能代理模式")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(android.R.drawable.ic_dialog_info) // TODO: 替换为自定义图标
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setShowWhen(false)
@@ -457,6 +492,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
         statsJob?.cancel()
         
         statsJob = serviceScope.launch {
+            // 延迟5秒开始统计（与Windows一致）
             delay(5000)
             
             while (isRunning) {
@@ -466,6 +502,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
                     Log.w(TAG, "更新流量统计失败", e)
                 }
                 
+                // 每10秒更新一次（与Windows的AppConfig.trafficStatsInterval一致）
                 delay(10000)
             }
         }
@@ -476,27 +513,31 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
      */
     private fun updateTrafficStats() {
         try {
-            val stats = v2rayPoint?.queryStats("", true)
+            // 查询V2Ray统计信息（与Windows的v2ctl api调用对应）
+            val stats = v2rayPoint.queryStats("", true)
             
             if (!stats.isNullOrEmpty()) {
                 parseTrafficStats(stats)
                 
+                // 更新通知（限制频率，避免过于频繁）
                 val now = System.currentTimeMillis()
-                if (now - lastQueryTime > 10000) {
+                if (now - lastQueryTime > 10000) { // 10秒更新一次通知
                     updateNotification()
                     lastQueryTime = now
                 }
             }
         } catch (e: Exception) {
+            // 忽略统计错误，不影响VPN运行
             Log.w(TAG, "查询流量统计失败", e)
         }
     }
     
     /**
-     * 解析流量统计
+     * 解析流量统计（与Windows端_parseStatsOutput逻辑一致）
      */
     private fun parseTrafficStats(stats: String) {
         try {
+            // 保存上次的值用于计算速度
             val previousUpload = uploadBytes
             val previousDownload = downloadBytes
             val previousTime = lastQueryTime
@@ -504,6 +545,8 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             var proxyUplink: Long = 0
             var proxyDownlink: Long = 0
             
+            // 解析统计数据（与Windows端格式一致）
+            // 格式: "outbound>>>proxy>>>traffic>>>uplink: 12345"
             stats.split("\n").forEach { line ->
                 when {
                     line.contains("outbound>>>proxy>>>traffic>>>uplink") -> {
@@ -517,16 +560,19 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
                 }
             }
             
+            // 更新流量值
             uploadBytes = proxyUplink
             downloadBytes = proxyDownlink
             
+            // 计算速度（与Windows端逻辑一致）
             val now = System.currentTimeMillis()
             if (previousTime > 0 && now > previousTime) {
-                val timeDiff = (now - previousTime) / 1000.0
+                val timeDiff = (now - previousTime) / 1000.0 // 秒
                 if (timeDiff > 0) {
                     val uploadDiff = uploadBytes - previousUpload
                     val downloadDiff = downloadBytes - previousDownload
                     
+                    // 防止负数（可能是统计重置）
                     if (uploadDiff >= 0 && downloadDiff >= 0) {
                         lastUploadBytes = (uploadDiff / timeDiff).toLong()
                         lastDownloadBytes = (downloadDiff / timeDiff).toLong()
@@ -536,6 +582,7 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
             
             lastQueryTime = now
             
+            // 记录日志（仅在有流量变化时）
             if (uploadBytes != previousUpload || downloadBytes != previousDownload || 
                 lastUploadBytes > 0 || lastDownloadBytes > 0) {
                 Log.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)} " +
@@ -569,25 +616,26 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     }
     
     /**
-     * 获取当前流量统计
+     * 获取当前流量统计（供MainActivity调用）
+     * 返回格式与Windows端getTrafficStats一致
      */
     fun getCurrentTrafficStats(): Map<String, Long> {
         return mapOf(
             "uploadTotal" to uploadBytes,
             "downloadTotal" to downloadBytes,
-            "uploadSpeed" to lastUploadBytes,
-            "downloadSpeed" to lastDownloadBytes
+            "uploadSpeed" to lastUploadBytes,    // 速度已在parseTrafficStats中计算
+            "downloadSpeed" to lastDownloadBytes  // 速度已在parseTrafficStats中计算
         )
     }
     
     // ===== V2RayVPNServiceSupportsSet 接口实现 =====
     
-    override fun onEmitStatus(status: String?): Boolean {
+    override fun onEmitStatus(status: String): Boolean {
         Log.d(TAG, "V2Ray状态: $status")
         return true
     }
     
-    override fun setup(parameters: String?): Long {
+    override fun setup(parameters: String): Long {
         // 返回VPN文件描述符
         return mInterface?.fd?.toLong() ?: -1
     }
@@ -609,6 +657,9 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     
     // ===== 工具方法 =====
     
+    /**
+     * 格式化字节数
+     */
     private fun formatBytes(bytes: Long): String {
         return when {
             bytes < 1024 -> "$bytes B"
@@ -618,6 +669,9 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
         }
     }
     
+    /**
+     * 格式化时长
+     */
     private fun formatDuration(millis: Long): String {
         val seconds = (millis / 1000) % 60
         val minutes = (millis / (1000 * 60)) % 60
@@ -628,15 +682,20 @@ class V2RayVpnService : VpnService(), V2RayVPNServiceSupportsSet {
     override fun onDestroy() {
         super.onDestroy()
         
+        // 清除单例引用
         instance = null
+        
+        // 停止协程
         serviceScope.cancel()
         
+        // 注销广播接收器
         try {
             unregisterReceiver(stopReceiver)
         } catch (e: Exception) {
             // 忽略
         }
         
+        // 确保V2Ray停止
         if (isRunning) {
             stopV2Ray()
         }
