@@ -91,8 +91,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     
-    // 添加libv2ray.aar依赖 - 使用明确的文件路径
-    implementation files('libs/libv2ray.aar')
+    // 修改：使用标准的本地 AAR 引用方式
+    implementation(name: 'libv2ray', ext: 'aar')
     
     // 添加协程支持
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
