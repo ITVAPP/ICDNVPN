@@ -46,7 +46,7 @@ jobs:
           echo "Downloading libv2ray.aar version $VERSION..."
           
           wget -O android/app/libs/libv2ray.aar \
-            "https://github.com/2dust/AndroidLibXrayLite/releases/download/$VERSION/libv2ray.aar" || {
+            "https://github.com/2dust/AndroidLibV2rayLite/releases/download/$VERSION/libv2ray.aar" || {
               echo "Download failed, trying alternative source..."
               # 备用下载源（如果有的话）
               exit 1
