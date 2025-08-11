@@ -46,6 +46,21 @@
             </intent-filter>
         </activity>
         
+        <!-- V2Ray VPN服务声明 -->
+        <service
+            android:name=".V2RayVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <!-- Android 14+ 需要的特殊前台服务类型声明 -->
+            <meta-data 
+                android:name="android.app.METADATA_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn" />
+        </service>
+        
         <!-- Flutter embedding version -->
         <meta-data
             android:name="flutterEmbedding"
