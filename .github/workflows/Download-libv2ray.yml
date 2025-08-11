@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'libv2ray version (e.g., v5.37.0)'
+        description: 'libv2ray version (e.g., v25.8.3)'
         required: true
-        default: 'v5.37.0'
+        default: 'v25.8.3'
         type: string
 jobs:
   download-and-commit:
@@ -13,29 +13,29 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions.checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Download libv2ray.aar
       run: |
         # 创建 libs 目录
-        mkdir -p packages/flutter_v2ray/android/libs
+        mkdir -p android/app/libs
         
         # 下载 libv2ray.aar
         echo "Downloading libv2ray.aar version ${{ github.event.inputs.version }}..."
-        wget -O packages/flutter_v2ray/android/libs/libv2ray.aar \
-          https://github.com/blueboy-tm/flutter_v2ray/raw/refs/heads/master/android/libs/libv2ray.aar
+        wget -O android/app/libs/libv2ray.aar \
+          https://github.com/2dust/AndroidLibXrayLite/releases/download/${{ github.event.inputs.version }}/libv2ray.aar
         
         # 验证下载
-        if [ ! -f packages/flutter_v2ray/android/libs/libv2ray.aar ]; then
+        if [ ! -f android/app/libs/libv2ray.aar ]; then
           echo "Error: Failed to download libv2ray.aar"
           exit 1
         fi
         
         # 显示文件信息
         echo "Downloaded successfully!"
-        ls -lh packages/flutter_v2ray/android/libs/libv2ray.aar
+        ls -lh android/app/libs/libv2ray.aar
     
     - name: Commit and push changes
       run: |
@@ -43,7 +43,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         
         # 添加文件到 git
-        git add packages/flutter_v2ray/android/libs/libv2ray.aar
+        git add android/app/libs/libv2ray.aar
         
         # 检查是否有更改
         if git diff --staged --quiet; then
