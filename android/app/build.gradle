@@ -40,6 +40,7 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
+        main.jniLibs.srcDirs = ['src/main/jniLibs']
         main.assets.srcDirs += ['../../assets']
     }
 
@@ -66,10 +67,19 @@ android {
     }
     
     packagingOptions {
+        // 处理重复的 libc++_shared.so
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
         pickFirst 'lib/arm64-v8a/libc++_shared.so'
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86_64/libc++_shared.so'
+        
+        // 保留 libtun2socks.so 的执行权限，不要剥离符号
+        doNotStrip '*/*/libtun2socks.so'
+        
+        // 确保 libtun2socks.so 被打包
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
     
     // 添加本地AAR文件支持
@@ -99,5 +109,3 @@ dependencies {
     // 添加Gson用于JSON处理
     implementation 'com.google.code.gson:gson:2.10.1'
 }
-
-
