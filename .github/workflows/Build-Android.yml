@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_obfuscation:
+        description: '是否启用 Dart 代码混淆'
+        required: false
+        default: false
+        type: boolean
       
 jobs:
   build:
@@ -44,19 +49,31 @@ jobs:
     # 默认始终构建 ARM v7a 版本
     - name: Build APK - ARM v7a (always)
       run: |
-        flutter build apk --release --target-platform android-arm
+        if [ "${{ github.event.inputs.enable_obfuscation }}" = "true" ]; then
+          flutter build apk --release --target-platform android-arm --obfuscate --split-debug-info=debug-info/arm-v7a
+        else
+          flutter build apk --release --target-platform android-arm
+        fi
     
     # 可选：构建 ARM64-v8a 版本
     - name: Build APK - ARM64-v8a (optional)
       if: ${{ github.event.inputs.build_arm64 == 'true' }}
       run: |
-        flutter build apk --release --target-platform android-arm64
+        if [ "${{ github.event.inputs.enable_obfuscation }}" = "true" ]; then
+          flutter build apk --release --target-platform android-arm64 --obfuscate --split-debug-info=debug-info/arm64-v8a
+        else
+          flutter build apk --release --target-platform android-arm64
+        fi
     
     # 可选：构建通用版本 (ARM v7a + ARM64-v8a)
     - name: Build APK - Universal (optional)
       if: ${{ github.event.inputs.build_universal == 'true' }}
       run: |
-        flutter build apk --release --target-platform android-arm,android-arm64
+        if [ "${{ github.event.inputs.enable_obfuscation }}" = "true" ]; then
+          flutter build apk --release --target-platform android-arm,android-arm64 --obfuscate --split-debug-info=debug-info/universal
+        else
+          flutter build apk --release --target-platform android-arm,android-arm64
+        fi
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
