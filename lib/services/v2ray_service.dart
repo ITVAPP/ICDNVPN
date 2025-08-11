@@ -3,10 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
-// 移除 flutter_v2ray 导入
-// import 'package:flutter_v2ray/flutter_v2ray.dart' as v2ray;
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
@@ -19,7 +16,7 @@ enum V2RayConnectionState {
   error
 }
 
-/// V2Ray状态信息 - 我们自己的状态类
+/// V2Ray状态信息
 class V2RayStatus {
   final String duration;
   final int uploadSpeed;
@@ -74,10 +71,6 @@ class V2RayStatus {
 
 /// V2Ray服务管理类 - 统一Windows和移动端实现
 class V2RayService {
-  // ===== 添加 MethodChannel 相关 =====
-  static const MethodChannel _channel = MethodChannel('com.example.cfvpn/v2ray');
-  static StreamSubscription<dynamic>? _eventSubscription;
-  
   // Windows平台进程管理
   static Process? _v2rayProcess;
   
@@ -115,8 +108,10 @@ class V2RayService {
   static final LogService _log = LogService.instance;
   static const String _logTag = 'V2RayService';
   
-  // 移动平台原生集成相关
-  static bool _isNativeInitialized = false;  // 标记原生是否已初始化
+  // 原生平台通信通道
+  static const MethodChannel _channel = MethodChannel('com.example.cfvpn/v2ray');
+  static bool _isChannelInitialized = false;
+  static Timer? _statusCheckTimer;  // 移动端状态检查定时器
   
   // 记录是否已记录V2Ray目录信息
   static bool _hasLoggedV2RayInfo = false;
@@ -144,148 +139,6 @@ class V2RayService {
       return 'v2ctl.exe';
     } else {
       return 'v2ctl';
-    }
-  }
-  
-  // ===== 初始化原生通道（移动平台）=====
-  static Future<void> _initializeNativeChannel() async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    if (_isNativeInitialized) return;
-    
-    try {
-      await _log.info('初始化原生通道', tag: _logTag);
-      
-      // 设置方法调用处理器，监听来自原生的事件
-      _channel.setMethodCallHandler((call) async {
-        await _log.debug('收到原生事件: ${call.method}', tag: _logTag);
-        
-        switch (call.method) {
-          case 'onVpnConnected':
-            _handleNativeVpnConnected();
-            break;
-          case 'onVpnDisconnected':
-            _handleNativeVpnDisconnected();
-            break;
-          case 'onVpnPermissionGranted':
-            await _log.info('VPN权限已授予', tag: _logTag);
-            break;
-          case 'onVpnPermissionDenied':
-            await _log.warn('VPN权限被拒绝', tag: _logTag);
-            break;
-          case 'onTrafficUpdate':
-            // 如果原生端支持流量更新推送
-            final stats = call.arguments as Map<dynamic, dynamic>?;
-            if (stats != null) {
-              _handleNativeTrafficUpdate(stats);
-            }
-            break;
-          default:
-            await _log.debug('未处理的原生事件: ${call.method}', tag: _logTag);
-        }
-      });
-      
-      _isNativeInitialized = true;
-      await _log.info('原生通道初始化成功', tag: _logTag);
-    } catch (e) {
-      await _log.error('初始化原生通道失败: $e', tag: _logTag);
-      _isNativeInitialized = false;
-      throw e;
-    }
-  }
-  
-  // 处理原生VPN连接事件
-  static void _handleNativeVpnConnected() {
-    _log.info('收到原生VPN已连接事件', tag: _logTag);
-    _isRunning = true;
-    _connectionStartTime = DateTime.now();
-    _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
-    
-    // 启动流量统计定时器（移动端）
-    if (Platform.isAndroid || Platform.isIOS) {
-      _startMobileStatsTimer();
-    }
-  }
-  
-  // 处理原生VPN断开事件
-  static void _handleNativeVpnDisconnected() {
-    _log.info('收到原生VPN已断开事件', tag: _logTag);
-    _isRunning = false;
-    _connectionStartTime = null;
-    _updateStatus(V2RayStatus(state: V2RayConnectionState.disconnected));
-    
-    // 停止流量统计定时器
-    if (Platform.isAndroid || Platform.isIOS) {
-      _stopStatsTimer();
-    }
-  }
-  
-  // 处理原生流量更新
-  static void _handleNativeTrafficUpdate(Map<dynamic, dynamic> stats) {
-    try {
-      _uploadTotal = stats['uploadTotal'] ?? 0;
-      _downloadTotal = stats['downloadTotal'] ?? 0;
-      final uploadSpeed = stats['uploadSpeed'] ?? 0;
-      final downloadSpeed = stats['downloadSpeed'] ?? 0;
-      
-      _updateStatus(_currentStatus.copyWith(
-        upload: _uploadTotal,
-        download: _downloadTotal,
-        uploadSpeed: uploadSpeed,
-        downloadSpeed: downloadSpeed,
-      ));
-    } catch (e) {
-      _log.error('处理流量更新失败: $e', tag: _logTag);
-    }
-  }
-  
-  // 启动移动端流量统计定时器
-  static void _startMobileStatsTimer() {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    
-    _stopStatsTimer();
-    
-    // 立即查询一次
-    _queryNativeTrafficStats();
-    
-    // 定期查询流量统计
-    _statsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (_isRunning) {
-        _queryNativeTrafficStats();
-      }
-    });
-  }
-  
-  // 查询原生流量统计
-  static Future<void> _queryNativeTrafficStats() async {
-    if (!_isRunning || (!Platform.isAndroid && !Platform.isIOS)) return;
-    
-    try {
-      final result = await _channel.invokeMethod('getTrafficStats');
-      if (result != null && result is Map) {
-        final uploadTotal = result['uploadTotal'] ?? 0;
-        final downloadTotal = result['downloadTotal'] ?? 0;
-        final uploadSpeed = result['uploadSpeed'] ?? 0;
-        final downloadSpeed = result['downloadSpeed'] ?? 0;
-        
-        // 更新本地统计
-        _uploadTotal = uploadTotal;
-        _downloadTotal = downloadTotal;
-        
-        // 计算持续时间
-        final duration = _calculateDuration();
-        
-        // 更新状态
-        _updateStatus(_currentStatus.copyWith(
-          upload: uploadTotal,
-          download: downloadTotal,
-          uploadSpeed: uploadSpeed,
-          downloadSpeed: downloadSpeed,
-          duration: duration,
-        ));
-      }
-    } catch (e) {
-      // 静默失败，不影响主流程
-      await _log.debug('查询流量统计失败: $e', tag: _logTag);
     }
   }
   
@@ -345,6 +198,168 @@ class V2RayService {
     return 0;
   }
   
+  // 初始化原生通道监听器（移动平台）
+  static void _initializeChannelListeners() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (_isChannelInitialized) return;
+    
+    _log.info('初始化原生通道监听器', tag: _logTag);
+    
+    // 设置方法调用处理器，接收从原生端发来的调用
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onVpnConnected':
+          _handleNativeStatusChange(V2RayConnectionState.connected);
+          break;
+        case 'onVpnDisconnected':
+          _handleNativeStatusChange(V2RayConnectionState.disconnected);
+          break;
+        case 'onVpnStatusChanged':
+          final status = call.arguments['status'] as String?;
+          final error = call.arguments['error'] as String?;
+          if (status != null) {
+            _handleNativeStatusString(status, error);
+          }
+          break;
+        case 'onVpnPermissionGranted':
+          _log.info('VPN权限已授予', tag: _logTag);
+          break;
+        case 'onVpnPermissionDenied':
+          _log.info('VPN权限被拒绝', tag: _logTag);
+          break;
+        case 'onVpnStatusUpdate':
+          final message = call.arguments as String?;
+          if (message != null) {
+            _log.info('VPN状态: $message', tag: _logTag);
+          }
+          break;
+      }
+    });
+    
+    _isChannelInitialized = true;
+  }
+  
+  // 处理原生端状态字符串
+  static void _handleNativeStatusString(String status, String? error) {
+    V2RayConnectionState state;
+    
+    switch (status.toLowerCase()) {
+      case 'connecting':
+        state = V2RayConnectionState.connecting;
+        break;
+      case 'connected':
+        state = V2RayConnectionState.connected;
+        break;
+      case 'disconnecting':
+      case 'disconnected':
+        state = V2RayConnectionState.disconnected;
+        break;
+      case 'error':
+        state = V2RayConnectionState.error;
+        if (error != null) {
+          _log.error('VPN错误: $error', tag: _logTag);
+        }
+        break;
+      default:
+        state = V2RayConnectionState.disconnected;
+    }
+    
+    _handleNativeStatusChange(state);
+  }
+  
+  // 处理原生端状态变化
+  static void _handleNativeStatusChange(V2RayConnectionState newState) {
+    _log.info('原生状态变化: $newState', tag: _logTag);
+    
+    // 更新运行状态
+    final wasRunning = _isRunning;
+    _isRunning = (newState == V2RayConnectionState.connected);
+    
+    // 更新连接时间
+    if (newState == V2RayConnectionState.connected && !wasRunning) {
+      _connectionStartTime = DateTime.now();
+      _startMobileStatusTimer();  // 启动状态更新定时器
+    } else if (newState == V2RayConnectionState.disconnected && wasRunning) {
+      _connectionStartTime = null;
+      _stopMobileStatusTimer();  // 停止状态更新定时器
+    }
+    
+    // 更新状态
+    _updateStatus(_currentStatus.copyWith(state: newState));
+  }
+  
+  // 启动移动端状态定时器
+  static void _startMobileStatusTimer() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    
+    _stopMobileStatusTimer();
+    
+    // 立即更新一次
+    _updateMobileStatus();
+    
+    // 定期更新状态
+    _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_isRunning) {
+        _updateMobileStatus();
+      }
+    });
+  }
+  
+  // 停止移动端状态定时器
+  static void _stopMobileStatusTimer() {
+    _statusCheckTimer?.cancel();
+    _statusCheckTimer = null;
+  }
+  
+  // 更新移动端状态（包括流量统计）
+  static Future<void> _updateMobileStatus() async {
+    if (!_isRunning) return;
+    
+    try {
+      // 获取流量统计
+      final stats = await _channel.invokeMethod<Map>('getTrafficStats');
+      if (stats != null) {
+        _uploadTotal = _parseIntSafely(stats['uploadTotal']);
+        _downloadTotal = _parseIntSafely(stats['downloadTotal']);
+        
+        // 计算速度
+        final now = DateTime.now().millisecondsSinceEpoch;
+        int uploadSpeed = 0;
+        int downloadSpeed = 0;
+        
+        if (_lastUpdateTime > 0) {
+          final timeDiff = (now - _lastUpdateTime) / 1000.0;
+          if (timeDiff > 0) {
+            uploadSpeed = ((_uploadTotal - _lastUploadBytes) / timeDiff).round();
+            downloadSpeed = ((_downloadTotal - _lastDownloadBytes) / timeDiff).round();
+            
+            if (uploadSpeed < 0) uploadSpeed = 0;
+            if (downloadSpeed < 0) downloadSpeed = 0;
+          }
+        }
+        
+        _lastUpdateTime = now;
+        _lastUploadBytes = _uploadTotal;
+        _lastDownloadBytes = _downloadTotal;
+        
+        // 计算时长
+        final duration = _calculateDuration();
+        
+        // 更新状态
+        _updateStatus(V2RayStatus(
+          state: _currentStatus.state,
+          duration: duration,
+          upload: _uploadTotal,
+          download: _downloadTotal,
+          uploadSpeed: uploadSpeed,
+          downloadSpeed: downloadSpeed,
+        ));
+      }
+    } catch (e) {
+      _log.warn('更新移动端状态失败: $e', tag: _logTag);
+    }
+  }
+  
   // 请求Android VPN权限
   static Future<bool> requestPermission() async {
     if (!Platform.isAndroid) return true;
@@ -352,14 +367,12 @@ class V2RayService {
     try {
       await _log.info('请求Android VPN权限', tag: _logTag);
       
-      // 确保原生通道已初始化
-      await _initializeNativeChannel();
+      // 初始化通道监听
+      _initializeChannelListeners();
       
-      // 调用原生方法请求权限
-      final result = await _channel.invokeMethod('checkPermission');
-      final hasPermission = result == true;
-      
-      await _log.info('VPN权限检查结果: $hasPermission', tag: _logTag);
+      // 通过原生通道请求权限
+      final hasPermission = await _channel.invokeMethod<bool>('checkPermission') ?? false;
+      await _log.info('VPN权限状态: $hasPermission', tag: _logTag);
       return hasPermission;
     } catch (e) {
       await _log.error('请求权限失败: $e', tag: _logTag);
@@ -382,21 +395,11 @@ class V2RayService {
     }
     
     try {
-      // 确保原生通道已初始化
-      await _initializeNativeChannel();
-      
-      // 查询原生VPN状态
-      final result = await _channel.invokeMethod('isVpnConnected');
-      final isConnected = result == true;
-      
-      if (isConnected) {
-        return V2RayConnectionState.connected;
-      } else {
-        return V2RayConnectionState.disconnected;
-      }
+      final isConnected = await _channel.invokeMethod<bool>('isVpnConnected') ?? false;
+      return isConnected ? V2RayConnectionState.connected : V2RayConnectionState.disconnected;
     } catch (e) {
-      await _log.error('查询连接状态失败: $e', tag: _logTag);
-      return V2RayConnectionState.disconnected;
+      _log.warn('查询连接状态失败: $e', tag: _logTag);
+      return _currentStatus.state;
     }
   }
   
@@ -721,7 +724,7 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 使用原生实现
+  // 移动平台启动逻辑 - 使用原生通道
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
@@ -731,8 +734,8 @@ class V2RayService {
     await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy)', tag: _logTag);
     
     try {
-      // 1. 确保原生通道已初始化
-      await _initializeNativeChannel();
+      // 1. 初始化通道监听
+      _initializeChannelListeners();
       
       // 2. 生成配置（会自动使用移动端配置模板）
       final configMap = await _generateConfigMap(
@@ -766,60 +769,52 @@ class V2RayService {
         }
       }
       
-      // 3. 调用原生方法启动VPN
-      final result = await _channel.invokeMethod('startVpn', {
+      // 3. 通过原生通道启动V2Ray
+      final result = await _channel.invokeMethod<bool>('startVpn', {
         'config': configJson,
         'globalProxy': globalProxy,
       });
       
       if (result == true) {
-        await _log.info('原生VPN启动成功', tag: _logTag);
+        await _log.info('V2Ray启动命令已发送，等待连接建立', tag: _logTag);
         
         // 4. 等待连接建立
         await Future.delayed(AppConfig.v2rayCheckDelay);
         
         // 5. 检查连接状态
-        final isConnected = await _channel.invokeMethod('isVpnConnected');
+        final isConnected = await _channel.invokeMethod<bool>('isVpnConnected') ?? false;
         
-        if (isConnected == true) {
+        if (isConnected) {
           _isRunning = true;
           _connectionStartTime = DateTime.now();
           _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
-          
-          // 启动流量统计
-          _startMobileStatsTimer();
-          
+          _startMobileStatusTimer();  // 启动状态更新定时器
           await _log.info('V2Ray连接成功', tag: _logTag);
-          return true;
         } else {
           // 6. 如果还未连接，再等待一次
-          await _log.info('等待V2Ray连接...', tag: _logTag);
+          await _log.info('V2Ray连接中，再等待2秒', tag: _logTag);
           await Future.delayed(const Duration(seconds: 2));
           
-          final isConnectedRetry = await _channel.invokeMethod('isVpnConnected');
-          if (isConnectedRetry == true) {
+          final isConnectedRetry = await _channel.invokeMethod<bool>('isVpnConnected') ?? false;
+          if (isConnectedRetry) {
             _isRunning = true;
             _connectionStartTime = DateTime.now();
             _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
-            
-            // 启动流量统计
-            _startMobileStatsTimer();
-            
+            _startMobileStatusTimer();  // 启动状态更新定时器
             await _log.info('V2Ray连接成功（重试）', tag: _logTag);
-            return true;
+          } else {
+            _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
+            await _log.warn('V2Ray连接失败', tag: _logTag);
           }
         }
-        
-        // 连接失败
-        _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-        await _log.warn('V2Ray连接失败', tag: _logTag);
-        return false;
-        
       } else {
-        await _log.error('原生VPN启动失败', tag: _logTag);
         _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-        return false;
+        await _log.error('V2Ray启动失败', tag: _logTag);
       }
+      
+      await _log.info('移动平台：V2Ray启动流程完成，最终状态: ${_isRunning ? "已连接" : "未连接"}', 
+                      tag: _logTag);
+      return _isRunning;
       
     } catch (e, stackTrace) {
       await _log.error('启动V2Ray失败', tag: _logTag, error: e, stackTrace: stackTrace);
@@ -943,10 +938,10 @@ class V2RayService {
       // 移动平台停止
       if (Platform.isAndroid || Platform.isIOS) {
         try {
-          // 停止流量统计
-          _stopStatsTimer();
+          // 停止状态更新定时器
+          _stopMobileStatusTimer();
           
-          // 调用原生方法停止VPN
+          // 通过原生通道停止V2Ray
           await _channel.invokeMethod('stopVpn');
           await _log.info('移动平台：V2Ray已停止', tag: _logTag);
         } catch (e) {
@@ -1012,11 +1007,7 @@ class V2RayService {
   
   // Windows平台流量统计
   static void _startStatsTimer() {
-    if (Platform.isAndroid || Platform.isIOS) {
-      // 移动端使用不同的统计方式
-      _startMobileStatsTimer();
-      return;
-    }
+    if (Platform.isAndroid || Platform.isIOS) return;  // 移动端不使用
     
     _stopStatsTimer();
     
@@ -1257,6 +1248,7 @@ class V2RayService {
   static void dispose() {
     _stopStatsTimer();
     _stopDurationTimer();
+    _stopMobileStatusTimer();
     
     // 重置状态
     _isRunning = false;
@@ -1264,10 +1256,8 @@ class V2RayService {
     _uploadTotal = 0;
     _downloadTotal = 0;
     
-    // 清理原生通道
-    _eventSubscription?.cancel();
-    _eventSubscription = null;
-    _isNativeInitialized = false;
+    // 清理通道监听
+    _isChannelInitialized = false;
     
     // 关闭状态流
     if (!_statusController.isClosed) {
