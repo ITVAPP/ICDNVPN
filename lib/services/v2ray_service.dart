@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as path;
-import 'package:flutter_v2ray/flutter_v2ray.dart' as v2ray;  // 使用别名避免类名冲突
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
@@ -110,9 +109,8 @@ class V2RayService {
   static final LogService _log = LogService.instance;
   static const String _logTag = 'V2RayService';
   
-  // 移动平台flutter_v2ray插件相关
-  static v2ray.FlutterV2ray? _flutterV2ray;  // 使用带别名的类型
-  static bool _isFlutterV2rayInitialized = false;  // 标记是否已初始化
+  // 移动平台Method Channel
+  static const _platform = MethodChannel('com.example.cfvpn/v2ray');
   
   // 记录是否已记录V2Ray目录信息
   static bool _hasLoggedV2RayInfo = false;
@@ -199,33 +197,42 @@ class V2RayService {
     return 0;
   }
   
-  // 确保flutter_v2ray已初始化（移动平台）
-  static Future<void> _ensureFlutterV2rayInitialized() async {
+  // 初始化移动平台Method Channel监听
+  static bool _isMethodChannelInitialized = false;
+  
+  static void _initMobilePlatform() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (_isMethodChannelInitialized) return; // 防止重复初始化
     
-    if (_flutterV2ray == null || !_isFlutterV2rayInitialized) {
-      await _log.info('初始化flutter_v2ray插件', tag: _logTag);
-      
-      _flutterV2ray = v2ray.FlutterV2ray(
-        onStatusChanged: (v2ray.V2RayStatus status) {  // 明确类型
-          _handleV2RayStatusChange(status);
-        },
-      );
-      
-      try {
-        await _flutterV2ray!.initializeV2Ray(
-          notificationIconResourceType: "mipmap",
-          notificationIconResourceName: "ic_launcher",
-        );
-        _isFlutterV2rayInitialized = true;
-        await _log.info('flutter_v2ray初始化成功', tag: _logTag);
-      } catch (e) {
-        await _log.error('flutter_v2ray初始化失败: $e', tag: _logTag);
-        _flutterV2ray = null;
-        _isFlutterV2rayInitialized = false;
-        throw e;
+    _isMethodChannelInitialized = true;
+    _platform.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onVpnPermissionGranted':
+          await _log.info('VPN权限已授予', tag: _logTag);
+          _updateStatus(V2RayStatus(state: V2RayConnectionState.connecting));
+          break;
+        case 'onVpnPermissionDenied':
+          await _log.error('VPN权限被拒绝', tag: _logTag);
+          _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
+          break;
+        case 'onVpnConnected':
+          await _log.info('VPN已连接', tag: _logTag);
+          _isRunning = true;
+          _connectionStartTime = DateTime.now();
+          _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+          _startMobileStatsTimer();
+          break;
+        case 'onVpnDisconnected':
+          await _log.info('VPN已断开', tag: _logTag);
+          _isRunning = false;
+          _connectionStartTime = null;
+          _updateStatus(V2RayStatus(state: V2RayConnectionState.disconnected));
+          _stopStatsTimer();
+          break;
+        default:
+          await _log.warn('未知的方法调用: ${call.method}', tag: _logTag);
       }
-    }
+    });
   }
   
   // 请求Android VPN权限
@@ -235,12 +242,8 @@ class V2RayService {
     try {
       await _log.info('请求Android VPN权限', tag: _logTag);
       
-      // 确保flutter_v2ray已初始化
-      await _ensureFlutterV2rayInitialized();
-      
-      // 请求VPN权限
-      final hasPermission = await _flutterV2ray!.requestPermission();
-      await _log.info('VPN权限请求结果: $hasPermission', tag: _logTag);
+      final hasPermission = await _platform.invokeMethod<bool>('checkPermission') ?? false;
+      await _log.info('VPN权限状态: $hasPermission', tag: _logTag);
       return hasPermission;
     } catch (e) {
       await _log.error('请求权限失败: $e', tag: _logTag);
@@ -256,70 +259,9 @@ class V2RayService {
     }
   }
   
-  // 映射flutter_v2ray的状态字符串到我们的状态枚举
-  // 修复：接收String参数而不是不存在的V2RayState枚举
-  static V2RayConnectionState _mapPluginState(String stateString) {
-    final upperState = stateString.toUpperCase();
-    // 处理各种可能的状态字符串格式
-    if (upperState.contains('CONNECTED') && !upperState.contains('DISCONNECTED')) {
-      return V2RayConnectionState.connected;
-    } else if (upperState.contains('CONNECTING')) {
-      return V2RayConnectionState.connecting;
-    } else if (upperState.contains('ERROR')) {
-      return V2RayConnectionState.error;
-    } else {
-      return V2RayConnectionState.disconnected;
-    }
-  }
-  
-  // 处理flutter_v2ray状态变化
-  static void _handleV2RayStatusChange(v2ray.V2RayStatus pluginStatus) {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    
-    try {
-      // 映射插件状态到我们的状态 - pluginStatus.state已经是String
-      final mappedState = _mapPluginState(pluginStatus.state);
-      
-      // 更新流量统计
-      _uploadTotal = pluginStatus.upload;
-      _downloadTotal = pluginStatus.download;
-      
-      // 创建我们的状态对象
-      final ourStatus = V2RayStatus(
-        duration: pluginStatus.duration,
-        uploadSpeed: pluginStatus.uploadSpeed,
-        downloadSpeed: pluginStatus.downloadSpeed,
-        upload: pluginStatus.upload,
-        download: pluginStatus.download,
-        state: mappedState,
-      );
-      
-      _updateStatus(ourStatus);
-      
-      // 同步运行状态
-      final wasRunning = _isRunning;
-      if (mappedState == V2RayConnectionState.connected && !_isRunning) {
-        _isRunning = true;
-        _connectionStartTime = DateTime.now();
-      } else if (mappedState == V2RayConnectionState.disconnected && _isRunning) {
-        _isRunning = false;
-        _connectionStartTime = null;
-      }
-      
-      // 记录状态变化
-      if (wasRunning != _isRunning) {
-        _log.info('V2Ray状态变化: ${_isRunning ? "已连接" : "已断开"}', tag: _logTag);
-      }
-      
-    } catch (e) {
-      _log.error('处理V2Ray状态变化失败: $e', tag: _logTag);
-    }
-  }
-  
   // 查询当前V2Ray状态（移动平台）
   static Future<V2RayConnectionState> queryConnectionState() async {
-    // 直接返回当前状态，不主动查询
-    // 状态通过onStatusChanged回调自动更新
+    // 直接返回当前状态
     return _currentStatus.state;
   }
   
@@ -654,34 +596,23 @@ class V2RayService {
     await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy)', tag: _logTag);
     
     try {
-      // 1. 确保flutter_v2ray已初始化
-      await _ensureFlutterV2rayInitialized();
+      // 初始化Method Channel监听（必须在调用前初始化）
+      _initMobilePlatform();
       
-      // 2. 请求权限（Android）- VPN模式需要权限
-      if (Platform.isAndroid) {
-        final hasPermission = await _flutterV2ray!.requestPermission();
-        if (!hasPermission) {
-          await _log.error('VPN权限被拒绝', tag: _logTag);
-          _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-          return false;
-        }
-        await _log.info('VPN权限已授予', tag: _logTag);
-      }
-      
-      // 3. 生成配置（会自动使用移动端配置模板）
+      // 生成配置（与Windows完全一致的逻辑）
       final configMap = await _generateConfigMap(
         serverIp: serverIp,
         serverPort: serverPort,
         serverName: serverName,
-        localPort: AppConfig.v2raySocksPort,
-        httpPort: AppConfig.v2rayHttpPort,
+        localPort: AppConfig.v2raySocksPort,  // 使用AppConfig
+        httpPort: AppConfig.v2rayHttpPort,     // 使用AppConfig
         globalProxy: globalProxy,
       );
       
       final configJson = jsonEncode(configMap);
       await _log.info('配置已生成，长度: ${configJson.length}', tag: _logTag);
       
-      // 在调试模式下，输出配置的关键信息
+      // 在调试模式下，输出配置的关键信息（与Windows一致）
       if (kDebugMode) {
         await _log.debug('配置详情:', tag: _logTag);
         await _log.debug('  - 协议: ${configMap['outbounds']?[0]?['protocol']}', tag: _logTag);
@@ -700,73 +631,163 @@ class V2RayService {
         }
       }
       
-      // 4. 启动V2Ray - 根据全局代理模式设置bypassSubnets参数
-      await _flutterV2ray!.startV2Ray(
-        remark: serverName ?? "Proxy Server",
-        config: configJson,
-        blockedApps: null,  // 可以后续添加应用分流功能
-        // 根据全局代理模式设置bypassSubnets
-        bypassSubnets: globalProxy 
-          ? []  // 全局代理：不绕过任何子网
-          : [   // 智能模式：绕过本地网段
-              "10.0.0.0/8",
-              "172.16.0.0/12",
-              "192.168.0.0/16",
-              "127.0.0.0/8",
-              "224.0.0.0/4",  // 组播地址
-              "240.0.0.0/4",  // 保留地址
-            ],
-        proxyOnly: false,  // 使用VPN模式
-      );
+      // 调用原生方法启动VPN
+      // 注意：这个调用可能因为权限请求而返回false，但服务会在权限授予后启动
+      final result = await _platform.invokeMethod<bool>('startVpn', {
+        'config': configJson,
+        'globalProxy': globalProxy,
+      }).catchError((e) {
+        _log.error('调用startVpn失败: $e', tag: _logTag);
+        return false;
+      });
       
-      await _log.info('V2Ray启动命令已发送', tag: _logTag);
+      await _log.info('VPN启动调用结果: $result', tag: _logTag);
       
-      // 5. 等待连接建立 - 依赖状态回调，不主动查询
-      await Future.delayed(AppConfig.v2rayCheckDelay);
-      
-      // 6. 检查状态（通过回调更新的_currentStatus）
-      if (_currentStatus.state == V2RayConnectionState.connected) {
-        _isRunning = true;
-        await _log.info('V2Ray已连接', tag: _logTag);
-      } else if (_currentStatus.state == V2RayConnectionState.connecting) {
-        // 7. 如果还在连接中，再等待一次
-        await _log.info('V2Ray连接中，再等待2秒', tag: _logTag);
-        await Future.delayed(const Duration(seconds: 2));
+      // 如果返回true，说明直接启动成功（已有权限）
+      if (result == true) {
+        // 等待服务启动（使用AppConfig的等待时间）
+        await Future.delayed(AppConfig.v2rayCheckDelay);
         
-        // 再次检查状态
-        if (_currentStatus.state == V2RayConnectionState.connected) {
-          _isRunning = true;
-          await _log.info('V2Ray连接成功', tag: _logTag);
+        // 检查连接状态（与Windows的端口检查对应）
+        final isConnected = await _platform.invokeMethod<bool>('isVpnConnected') ?? false;
+        if (!isConnected) {
+          // 如果还未连接，使用AppConfig的启动等待时间再等待
+          await _log.info('V2Ray连接中，继续等待', tag: _logTag);
+          await Future.delayed(AppConfig.v2rayStartupWait);
+          
+          // 再次检查
+          final isConnectedRetry = await _platform.invokeMethod<bool>('isVpnConnected') ?? false;
+          if (isConnectedRetry && !_isRunning) {
+            // 状态可能还未通过回调更新，手动更新
+            _isRunning = true;
+            _connectionStartTime = DateTime.now();
+            _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+            _startMobileStatsTimer();
+          }
         }
-      }
-      
-      // 8. 更新最终状态
-      if (_isRunning) {
-        _connectionStartTime = DateTime.now();
-        _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
-        await _log.info('V2Ray连接成功', tag: _logTag);
       } else {
-        _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-        await _log.warn('V2Ray连接失败', tag: _logTag);
+        // 返回false可能是需要权限或启动失败
+        // 如果是权限问题，会通过onVpnPermissionGranted/onVpnConnected回调处理
+        await _log.info('VPN启动需要权限或失败', tag: _logTag);
         
-        // 输出更多调试信息
-        if (kDebugMode) {
-          await _log.debug('连接失败详情:', tag: _logTag);
-          await _log.debug('  - 配置长度: ${configJson.length}', tag: _logTag);
-          await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
-          await _log.debug('  - BypassSubnets: ${globalProxy ? "[]" : "[本地网段]"}', tag: _logTag);
+        // 等待权限授予和连接建立（最多等待AppConfig定义的时间）
+        int waitCount = 0;
+        const maxWaitCount = 10; // 最多等待10秒
+        while (waitCount < maxWaitCount && !_isRunning) {
+          await Future.delayed(const Duration(seconds: 1));
+          waitCount++;
+          
+          // 检查是否已经连接（通过回调更新的状态）
+          if (_currentStatus.state == V2RayConnectionState.connected) {
+            _isRunning = true;
+            break;
+          } else if (_currentStatus.state == V2RayConnectionState.error) {
+            // 如果出错，立即退出
+            break;
+          }
         }
       }
       
-      await _log.info('移动平台：V2Ray启动流程完成，最终状态: ${_isRunning ? "已连接" : "未连接"}', 
-                      tag: _logTag);
-      return _isRunning;
+      // 最终状态检查
+      if (_isRunning) {
+        await _log.info('V2Ray连接成功', tag: _logTag);
+        return true;
+      } else {
+        // 最后尝试查询一次原生端状态
+        final finalConnected = await _platform.invokeMethod<bool>('isVpnConnected') ?? false;
+        if (finalConnected && !_isRunning) {
+          // 补救：如果原生端已连接但Flutter端状态未更新
+          _isRunning = true;
+          _connectionStartTime = DateTime.now();
+          _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+          _startMobileStatsTimer();
+          await _log.info('V2Ray连接成功（状态同步）', tag: _logTag);
+          return true;
+        }
+        
+        await _log.warn('V2Ray连接失败', tag: _logTag);
+        _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
+        return false;
+      }
       
     } catch (e, stackTrace) {
       await _log.error('启动V2Ray失败', tag: _logTag, error: e, stackTrace: stackTrace);
       _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
       return false;
     }
+  }
+  
+  // 移动平台流量统计定时器
+  static void _startMobileStatsTimer() {
+    _stopStatsTimer();
+    
+    // 延迟5秒开始（与Windows一致）
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!_isRunning) return;
+      
+      _log.info('开始流量统计监控', tag: _logTag);
+      
+      // 使用AppConfig.trafficStatsInterval（与Windows一致）
+      _statsTimer = Timer.periodic(AppConfig.trafficStatsInterval, (_) async {
+        if (!_isRunning) {
+          _stopStatsTimer();
+          return;
+        }
+        
+        try {
+          // 获取流量统计
+          final stats = await _platform.invokeMethod<Map>('getTrafficStats');
+          if (stats != null) {
+            final uploadTotal = _parseIntSafely(stats['uploadTotal']);
+            final downloadTotal = _parseIntSafely(stats['downloadTotal']);
+            
+            // 计算速度（与Windows一致的逻辑）
+            final now = DateTime.now().millisecondsSinceEpoch;
+            int uploadSpeed = 0;
+            int downloadSpeed = 0;
+            
+            if (_lastUpdateTime > 0) {
+              final timeDiff = (now - _lastUpdateTime) / 1000.0; // 秒
+              if (timeDiff > 0) {
+                uploadSpeed = ((uploadTotal - _lastUploadBytes) / timeDiff).round();
+                downloadSpeed = ((downloadTotal - _lastDownloadBytes) / timeDiff).round();
+                
+                // 防止负数速度
+                if (uploadSpeed < 0) uploadSpeed = 0;
+                if (downloadSpeed < 0) downloadSpeed = 0;
+              }
+            }
+            
+            _lastUpdateTime = now;
+            _lastUploadBytes = uploadTotal;
+            _lastDownloadBytes = downloadTotal;
+            
+            _uploadTotal = uploadTotal;
+            _downloadTotal = downloadTotal;
+            
+            // 更新状态
+            _updateStatus(_currentStatus.copyWith(
+              upload: uploadTotal,
+              download: downloadTotal,
+              uploadSpeed: uploadSpeed,
+              downloadSpeed: downloadSpeed,
+              duration: _calculateDuration(),
+            ));
+            
+            // 只在流量变化时记录日志（与Windows一致）
+            if (uploadSpeed > 0 || downloadSpeed > 0) {
+              _log.info(
+                '流量: ↑${UIUtils.formatBytes(uploadTotal)} ↓${UIUtils.formatBytes(downloadTotal)} ' +
+                '速度: ↑${UIUtils.formatBytes(uploadSpeed)}/s ↓${UIUtils.formatBytes(downloadSpeed)}/s',
+                tag: _logTag
+              );
+            }
+          }
+        } catch (e) {
+          // 忽略统计错误，不影响VPN运行
+        }
+      });
+    });
   }
   
   // 桌面平台启动逻辑（Windows）
@@ -884,14 +905,13 @@ class V2RayService {
       // 移动平台停止
       if (Platform.isAndroid || Platform.isIOS) {
         try {
-          if (_flutterV2ray != null && _isFlutterV2rayInitialized) {
-            await _flutterV2ray!.stopV2Ray();
-            await _log.info('移动平台：V2Ray已停止', tag: _logTag);
-          }
+          await _platform.invokeMethod('stopVpn');
+          await _log.info('移动平台：V2Ray已停止', tag: _logTag);
         } catch (e) {
           await _log.error('移动平台停止失败: $e', tag: _logTag);
         }
-        // 移动端不使用计时器，所以不需要停止
+        // 停止统计定时器
+        _stopStatsTimer();
       } else {
         // Windows平台停止
         // 停止计时器（仅Windows使用）
@@ -1199,10 +1219,6 @@ class V2RayService {
     _hasLoggedV2RayInfo = false;
     _uploadTotal = 0;
     _downloadTotal = 0;
-    
-    // 清理flutter_v2ray引用
-    _flutterV2ray = null;
-    _isFlutterV2rayInitialized = false;
     
     // 关闭状态流
     if (!_statusController.isClosed) {
