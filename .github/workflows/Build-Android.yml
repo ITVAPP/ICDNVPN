@@ -3,9 +3,9 @@ on:
   workflow_dispatch:  # 仅手动触发
     inputs:
       libv2ray_version:
-        description: 'libv2ray version (e.g., v25.8.3)'
+        description: 'libv2ray version (e.g., v5.37.0)'
         required: false
-        default: 'v25.8.3'
+        default: 'v5.37.0'
         type: string
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
           mkdir -p android/app/libs
           
           # 下载 libv2ray.aar
-          VERSION="${{ github.event.inputs.libv2ray_version || 'v25.8.3' }}"
+          VERSION="${{ github.event.inputs.libv2ray_version || 'v5.37.0' }}"
           echo "Downloading libv2ray.aar version $VERSION..."
           
           wget -O android/app/libs/libv2ray.aar \
