@@ -93,19 +93,19 @@ class MainActivity: FlutterActivity() {
                 "getTrafficStats" -> {
                     // 获取流量统计（增强版：返回更详细的数据）
                     val stats = V2RayVpnService.getTrafficStats()
-                    // 添加格式化的数据
-                    val enhancedStats = stats.toMutableMap()
                     
-                    // 安全地获取Long值
-                    val uploadTotal = stats["uploadTotal"] ?: 0L
-                    val downloadTotal = stats["downloadTotal"] ?: 0L
-                    val uploadSpeed = stats["uploadSpeed"] ?: 0L
-                    val downloadSpeed = stats["downloadSpeed"] ?: 0L
+                    // 创建新的Map用于返回，支持混合类型（Long和String）
+                    val enhancedStats = mutableMapOf<String, Any>()
                     
-                    enhancedStats["uploadFormatted"] = formatBytes(uploadTotal)
-                    enhancedStats["downloadFormatted"] = formatBytes(downloadTotal)
-                    enhancedStats["uploadSpeedFormatted"] = "${formatBytes(uploadSpeed)}/s"
-                    enhancedStats["downloadSpeedFormatted"] = "${formatBytes(downloadSpeed)}/s"
+                    // 添加原始的Long值
+                    enhancedStats.putAll(stats)
+                    
+                    // 添加格式化的String值
+                    enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
+                    enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
+                    enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
+                    enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
+                    
                     result.success(enhancedStats)
                 }
                 
