@@ -464,7 +464,7 @@ class V2RayService {
     }
   }
   
-  // 生成配置（统一处理） - 简化版：只更新必要的动态参数
+  // 生成配置（统一处理） - 优化全局代理实现
   static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
     required int serverPort,
@@ -580,32 +580,45 @@ class V2RayService {
       }
     }
     
-    // 全局代理模式：只删除直连路由规则，保留其他所有规则
+    // 优化后的全局代理模式处理
     if (globalProxy) {
       await _log.info('配置全局代理模式', tag: _logTag);
       
       if (config['routing'] is Map && config['routing']['rules'] is List) {
         final rules = config['routing']['rules'] as List;
         
-        // 只删除直连规则，保留API路由和默认代理规则
-        rules.removeWhere((rule) {
+        // 创建新的规则列表，只保留必要的规则
+        final newRules = <Map<String, dynamic>>[];
+        
+        // 1. 保留API路由规则（如果有）
+        for (var rule in rules) {
           if (rule is Map) {
-            // 保留API路由（如果有）
+            // 检查是否是API路由
             if (rule['inboundTag'] != null && 
                 (rule['inboundTag'] is List) &&
                 (rule['inboundTag'] as List).contains('api')) {
-              return false;  // 保留API路由
-            }
-            // 删除直连规则
-            if (rule['outboundTag'] == 'direct') {
-              return true;  // 删除直连规则
+              newRules.add(rule);
+              await _log.debug('保留API路由规则', tag: _logTag);
             }
           }
-          return false;  // 保留其他规则
-        });
+        }
         
-        await _log.debug('全局代理路由: 已删除直连规则', tag: _logTag);
+        // 2. 添加一个明确的全局代理规则（确保所有流量走proxy）
+        newRules.add({
+          'type': 'field',
+          'port': '0-65535',
+          'outboundTag': 'proxy'
+        });
+        await _log.debug('添加全局代理规则: 0-65535 -> proxy', tag: _logTag);
+        
+        // 3. 替换原有规则
+        config['routing']['rules'] = newRules;
+        
+        await _log.info('全局代理配置完成，规则数量: ${newRules.length}', tag: _logTag);
       }
+    } else {
+      // 智能分流模式：保持原有规则不变
+      await _log.info('使用智能分流模式，保留所有路由规则', tag: _logTag);
     }
     
     // 记录最终配置概要
@@ -613,10 +626,16 @@ class V2RayService {
       await _log.debug('配置概要:', tag: _logTag);
       await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
       await _log.debug('  - ServerName: $serverName', tag: _logTag);
-      await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
+      await _log.debug('  - 代理模式: ${globalProxy ? "全局代理" : "智能分流"}', tag: _logTag);
       if (userId != null && userId.isNotEmpty) {
         final displayUuid = userId.length > 8 ? '${userId.substring(0, 8)}...' : userId;
         await _log.debug('  - UUID: $displayUuid', tag: _logTag);
+      }
+      
+      // 输出路由规则数量
+      if (config['routing'] is Map && config['routing']['rules'] is List) {
+        final ruleCount = (config['routing']['rules'] as List).length;
+        await _log.debug('  - 路由规则数: $ruleCount', tag: _logTag);
       }
     }
     

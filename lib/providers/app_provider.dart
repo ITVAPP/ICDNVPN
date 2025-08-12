@@ -87,8 +87,29 @@ class ConnectionProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _autoConnect = prefs.getBool('auto_connect') ?? false;
     _globalProxy = prefs.getBool('global_proxy') ?? false;  // 修改：加载全局代理设置
-    if (_autoConnect && !_isDisposed) {
-      connect();
+    // 修复：不立即连接，等待服务器列表加载完成
+    // 自动连接逻辑移到 ServerProvider 加载完成后处理
+  }
+  
+  // 新增：尝试自动连接（由 ServerProvider 调用）
+  Future<void> tryAutoConnect() async {
+    if (_autoConnect && !_isDisposed && !_isConnected) {
+      await _log.info('执行自动连接', tag: _logTag);
+      // 检查是否有可用的服务器
+      final prefs = await SharedPreferences.getInstance();
+      final String? serversJson = prefs.getString('servers');
+      if (serversJson != null) {
+        try {
+          final List<dynamic> decoded = jsonDecode(serversJson);
+          if (decoded.isNotEmpty) {
+            await connect();
+          } else {
+            await _log.info('自动连接失败：没有可用的服务器', tag: _logTag);
+          }
+        } catch (e) {
+          await _log.error('自动连接失败', tag: _logTag, error: e);
+        }
+      }
     }
   }
   
@@ -289,6 +310,9 @@ class ServerProvider with ChangeNotifier {
   String _initDetail = ''; // 新增详情字段
   double _progress = 0.0; // 新增进度字段
   
+  // 新增：保存对 ConnectionProvider 的引用
+  ConnectionProvider? _connectionProvider;
+  
   List<ServerModel> get servers => _servers;
   bool get isInitializing => _isInitializing;
   String get initMessage => _initMessage;
@@ -297,6 +321,11 @@ class ServerProvider with ChangeNotifier {
 
   ServerProvider() {
     _loadServers();
+  }
+  
+  // 新增：设置 ConnectionProvider 引用
+  void setConnectionProvider(ConnectionProvider provider) {
+    _connectionProvider = provider;
   }
 
   Future<void> _loadServers() async {
@@ -315,6 +344,8 @@ class ServerProvider with ChangeNotifier {
           await refreshFromCloudflare();
         } else {
           await _log.info('已加载 ${_servers.length} 个服务器', tag: _logTag);
+          // 修复：服务器加载完成后，尝试自动连接
+          _tryAutoConnect();
         }
         
         notifyListeners();
@@ -330,6 +361,16 @@ class ServerProvider with ChangeNotifier {
       await _log.info('首次运行，开始获取节点', tag: _logTag);
       // 不要在这里设置 _isInitializing
       await refreshFromCloudflare();
+    }
+  }
+  
+  // 新增：触发自动连接
+  void _tryAutoConnect() {
+    if (_connectionProvider != null && _servers.isNotEmpty) {
+      // 延迟执行，确保UI已经准备好
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _connectionProvider?.tryAutoConnect();
+      });
     }
   }
 
@@ -408,6 +449,9 @@ class ServerProvider with ChangeNotifier {
       _initMessage = '';  // 成功时清空消息
       _progress = 1.0;
       await _log.info('成功获取 ${_servers.length} 个节点', tag: _logTag);
+      
+      // 修复：获取节点成功后，尝试自动连接
+      _tryAutoConnect();
       
     } catch (e) {
       await _log.error('获取节点失败', tag: _logTag, error: e);

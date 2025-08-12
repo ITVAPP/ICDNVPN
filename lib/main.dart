@@ -106,7 +106,15 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ConnectionProvider()),
-        ChangeNotifierProvider(create: (_) => ServerProvider()),
+        // 修改：使用 ChangeNotifierProxyProvider 建立 ServerProvider 和 ConnectionProvider 的关联
+        ChangeNotifierProxyProvider<ConnectionProvider, ServerProvider>(
+          create: (_) => ServerProvider(),
+          update: (_, connectionProvider, serverProvider) {
+            // 建立 Provider 之间的关联，使自动连接功能能够正常工作
+            serverProvider?.setConnectionProvider(connectionProvider);
+            return serverProvider!;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
         ChangeNotifierProvider(create: (_) => AdService()..initialize()),

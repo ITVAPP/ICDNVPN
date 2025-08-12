@@ -464,8 +464,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (isConnected) {
               await provider.disconnect();
             } else {
-              // 连接前先检查Android权限（全局代理模式不需要VPN权限）
-              if (Platform.isAndroid && !provider.globalProxy) {  // 修改：proxyOnly改为globalProxy
+              // 连接前检查Android权限
+              // 修复：Android始终需要VPN权限，与globalProxy（路由策略）无关
+              if (Platform.isAndroid) {
                 final hasPermission = await V2RayService.requestPermission();
                 if (!hasPermission) {
                   // 显示权限说明对话框
@@ -1208,6 +1209,20 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
       if (results.isNotEmpty) {
         final result = results.first;
         final latency = result['latency'] ?? 999;
+        
+        // 修复：更新服务器的延迟值
+        await serverProvider.updatePing(testServer.id, latency);
+        
+        // 如果这是当前选中的服务器，也更新ConnectionProvider中的引用
+        final connectionProvider = context.read<ConnectionProvider>();
+        if (connectionProvider.currentServer?.id == testServer.id) {
+          // 重新设置当前服务器以触发UI更新
+          final updatedServer = serverProvider.servers.firstWhere(
+            (s) => s.id == testServer.id,
+            orElse: () => testServer,
+          );
+          connectionProvider.setCurrentServer(updatedServer);
+        }
         
         if (mounted) {
           setState(() {
