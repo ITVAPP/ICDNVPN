@@ -34,11 +34,12 @@ import libv2ray.CoreCallbackHandler
 /**
  * V2Ray VPN服务实现 - 优化版
  * 
- * 主要优化：
- * 1. 流量统计改为按需查询，避免性能问题
- * 2. 提供手动和自动两种统计模式
- * 3. 修正CoreCallbackHandler实现
- * 4. 增强错误处理和容错能力
+ * 主要修复：
+ * 1. 修正流量统计queryStats参数格式
+ * 2. 流量统计改为按需查询，避免性能问题
+ * 3. 提供手动和自动两种统计模式
+ * 4. 修正CoreCallbackHandler实现
+ * 5. 增强错误处理和容错能力
  * 
  * 功能特性：
  * - 完善的流量统计（可配置更新频率）
@@ -1184,27 +1185,37 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 更新流量统计
-     * 使用正确的queryStats参数（参考开源项目）
+     * 修复：使用正确的queryStats参数格式
      */
     private fun updateTrafficStats() {
         try {
             val controller = coreController ?: return
             
-            // 根据method_summary.md: queryStats(String, String)返回long
-            // 参考开源项目的查询方式
-            val blockUplink = controller.queryStats("block", "uplink")
-            val blockDownlink = controller.queryStats("block", "downlink")
-            val proxyUplink = controller.queryStats("proxy", "uplink")
-            val proxyDownlink = controller.queryStats("proxy", "downlink")
+            // 修复：使用正确的查询格式（参考V2Ray开源项目）
+            // 格式：outbound>>>标签>>>traffic>>>方向
+            val proxyUplink = controller.queryStats("outbound>>>proxy>>>traffic>>>uplink", "")
+            val proxyDownlink = controller.queryStats("outbound>>>proxy>>>traffic>>>downlink", "")
             
-            // 合并统计
-            var currentUpload = blockUplink + proxyUplink
-            var currentDownload = blockDownlink + proxyDownlink
+            // 可选：也查询其他出站的流量
+            val directUplink = controller.queryStats("outbound>>>direct>>>traffic>>>uplink", "")
+            val directDownlink = controller.queryStats("outbound>>>direct>>>traffic>>>downlink", "")
+            val blockUplink = controller.queryStats("outbound>>>block>>>traffic>>>uplink", "")
+            val blockDownlink = controller.queryStats("outbound>>>block>>>traffic>>>downlink", "")
             
-            // 如果为0，尝试其他查询方式
-            if (currentUpload == 0L && currentDownload == 0L) {
-                currentUpload = controller.queryStats("", "uplink")
-                currentDownload = controller.queryStats("", "downlink")
+            // 合并所有流量统计
+            var currentUpload = proxyUplink + directUplink + blockUplink
+            var currentDownload = proxyDownlink + directDownlink + blockDownlink
+            
+            // 如果proxy出站没有数据，尝试查询总量
+            if (proxyUplink == 0L && proxyDownlink == 0L) {
+                // 尝试查询所有出站的总量
+                val totalUplink = controller.queryStats("outbound>>>traffic>>>uplink", "")
+                val totalDownlink = controller.queryStats("outbound>>>traffic>>>downlink", "")
+                
+                if (totalUplink > 0 || totalDownlink > 0) {
+                    currentUpload = totalUplink
+                    currentDownload = totalDownlink
+                }
             }
             
             // 更新总量
