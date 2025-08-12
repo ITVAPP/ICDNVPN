@@ -96,8 +96,7 @@
         ]
       },
       "1.1.1.1",
-      "8.8.8.8",
-      "https://dns.google/dns-query"
+      "8.8.8.8"
     ]
   },
   "routing": {
