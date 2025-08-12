@@ -426,7 +426,7 @@ class _ServersPageState extends State<ServersPage> {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(5),
             itemCount: mixedItems.length,
             itemBuilder: (context, index) {
               final item = mixedItems[index];
@@ -438,7 +438,7 @@ class _ServersPageState extends State<ServersPage> {
                 final isConnected = connectionProvider.isConnected && isSelected;
                 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   child: ServerListItem(
                     server: server,
                     isSelected: isSelected,
@@ -591,7 +591,7 @@ class _ServersPageState extends State<ServersPage> {
               } else {
                 // 显示广告卡片
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5), 
+                  padding: const EdgeInsets.symmetric(vertical: 6), 
                   child: TextAdCard(ad: item),
                 );
               }
@@ -673,14 +673,12 @@ class _ServerListItemState extends State<ServerListItem>
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: widget.isSelected
-                ? (theme.brightness == Brightness.dark 
-                    ? theme.colorScheme.primary.withOpacity(0.1)  // 深色主题使用更浅的透明度
-                    : theme.primaryColor.withOpacity(0.15))       // 浅色主题保持原样
-                : (theme.brightness == Brightness.dark 
-                    ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
-                    : theme.cardColor),
+              // 修改：选中节点的背景色与普通节点一样，不使用透明主题色
+              color: theme.brightness == Brightness.dark 
+                  ? const Color(0xFF1E1E1E)  // 深色主题使用固定背景色
+                  : theme.cardColor,  // 浅色主题统一使用cardColor
               borderRadius: BorderRadius.circular(16),
+              // 保留外部描边
               border: Border.all(
                 color: widget.isSelected
                   ? (theme.brightness == Brightness.dark 
@@ -766,7 +764,7 @@ class _ServerListItemState extends State<ServerListItem>
                     ),
                     const SizedBox(width: 16),
                     
-                    // 服务器信息
+                    // 服务器信息 - 移除白色描边效果
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -774,52 +772,20 @@ class _ServerListItemState extends State<ServerListItem>
                           Row(
                             children: [
                               Expanded(
-                                child: (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
-                                  ? Stack(
-                                      children: [
-                                        // 淡白色描边
-                                        Text(
-                                          widget.server.name,
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: widget.isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                            foreground: Paint()
-                                              ..style = PaintingStyle.stroke
-                                              ..strokeWidth = 1
-                                              ..color = Colors.white.withOpacity(0.7), // 淡白色
-                                          ),
-                                        ),
-                                        // 实际文字
-                                        Text(
-                                          widget.server.name,
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: widget.isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                            color: widget.isSelected
-                                              ? theme.primaryColor
-                                              : theme.textTheme.bodyLarge?.color,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : Text(
-                                      widget.server.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: widget.isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.w600,
-                                        color: widget.isSelected
-                                          ? (theme.brightness == Brightness.dark 
-                                              ? theme.colorScheme.primary
-                                              : theme.primaryColor)
-                                          : theme.textTheme.bodyLarge?.color,
-                                      ),
-                                    ),
+                                child: Text(
+                                  widget.server.name,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: widget.isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
+                                    color: widget.isSelected
+                                      ? (theme.brightness == Brightness.dark 
+                                          ? theme.colorScheme.primary
+                                          : theme.primaryColor)
+                                      : theme.textTheme.bodyLarge?.color,
+                                  ),
+                                ),
                               ),
                               if (widget.isConnected)
                                 Container(
@@ -835,174 +801,60 @@ class _ServerListItemState extends State<ServerListItem>
                                       width: 1,
                                     ),
                                   ),
-                                  child: theme.brightness == Brightness.light
-                                    ? Stack(
-                                        children: [
-                                          // 白色描边效果 - 使用多个阴影实现
-                                          Text(
-                                            l10n.connected,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              foreground: Paint()
-                                                ..style = PaintingStyle.stroke
-                                                ..strokeWidth = 1
-                                                ..color = Colors.white,
-                                            ),
-                                          ),
-                                          // 深绿色文字
-                                          Text(
-                                            l10n.connected,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.green[800], // 深绿色
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      )
-                                    : Text(
-                                        l10n.connected,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.green[800], // 深绿色
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
+                                  child: Text(
+                                    l10n.connected,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green[800], // 深绿色
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
                             ],
                           ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              // 位置图标
-                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
-                                ? Stack(
-                                    children: [
-                                      // 淡白色描边
-                                      Icon(
-                                        Icons.location_on,
-                                        size: 15,
-                                        color: Colors.white.withOpacity(0.7),
-                                      ),
-                                      // 实际图标
-                                      Icon(
-                                        Icons.location_on,
-                                        size: 14,
-                                        color: widget.isSelected
-                                          ? theme.primaryColor
-                                          : Colors.grey[600],
-                                      ),
-                                    ],
-                                  )
-                                : Icon(
-                                    Icons.location_on,
-                                    size: 14,
-                                    color: widget.isSelected
-                                      ? (theme.brightness == Brightness.dark 
-                                          ? theme.colorScheme.primary
-                                          : theme.primaryColor)
-                                      : Colors.grey[600],
-                                  ),
+                              // 位置图标 - 移除白色描边
+                              Icon(
+                                Icons.location_on,
+                                size: 14,
+                                color: widget.isSelected
+                                  ? (theme.brightness == Brightness.dark 
+                                      ? theme.colorScheme.primary
+                                      : theme.primaryColor)
+                                  : Colors.grey[600],
+                              ),
                               const SizedBox(width: 4),
-                              // 位置文字
-                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
-                                ? Stack(
-                                    children: [
-                                      // 淡白色描边
-                                      Text(
-                                        locationInfo['country'] ?? widget.server.location,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          foreground: Paint()
-                                            ..style = PaintingStyle.stroke
-                                            ..strokeWidth = 1
-                                            ..color = Colors.white.withOpacity(0.7),
-                                        ),
-                                      ),
-                                      // 实际文字
-                                      Text(
-                                        locationInfo['country'] ?? widget.server.location,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: widget.isSelected
-                                            ? theme.primaryColor.withOpacity(0.8)
-                                            : Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Text(
-                                    locationInfo['country'] ?? widget.server.location,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: widget.isSelected
-                                        ? (theme.brightness == Brightness.dark 
-                                            ? theme.colorScheme.primary.withOpacity(0.8)
-                                            : theme.primaryColor.withOpacity(0.8))
-                                        : Colors.grey[600],
-                                    ),
-                                  ),
+                              // 位置文字 - 移除白色描边
+                              Text(
+                                locationInfo['country'] ?? widget.server.location,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: widget.isSelected
+                                    ? (theme.brightness == Brightness.dark 
+                                        ? theme.colorScheme.primary.withOpacity(0.8)
+                                        : theme.primaryColor.withOpacity(0.8))
+                                    : Colors.grey[600],
+                                ),
+                              ),
                               const SizedBox(width: 16),
-                              // 延迟图标
-                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
-                                ? Stack(
-                                    children: [
-                                      // 淡白色描边
-                                      Icon(
-                                        Icons.network_ping,
-                                        size: 15,
-                                        color: Colors.white.withOpacity(0.7),
-                                      ),
-                                      // 实际图标
-                                      Icon(
-                                        Icons.network_ping,
-                                        size: 14,
-                                        color: UIUtils.getPingColor(widget.server.ping),
-                                      ),
-                                    ],
-                                  )
-                                : Icon(
-                                    Icons.network_ping,
-                                    size: 14,
-                                    color: UIUtils.getPingColor(widget.server.ping),
-                                  ),
+                              // 延迟图标 - 移除白色描边
+                              Icon(
+                                Icons.network_ping,
+                                size: 14,
+                                color: UIUtils.getPingColor(widget.server.ping),
+                              ),
                               const SizedBox(width: 4),
-                              // 延迟文字
-                              (widget.isSelected || widget.isConnected) && theme.brightness == Brightness.light
-                                ? Stack(
-                                    children: [
-                                      // 淡白色描边
-                                      Text(
-                                        '${widget.server.ping}ms',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          foreground: Paint()
-                                            ..style = PaintingStyle.stroke
-                                            ..strokeWidth = 1
-                                            ..color = Colors.white.withOpacity(0.7),
-                                        ),
-                                      ),
-                                      // 实际文字
-                                      Text(
-                                        '${widget.server.ping}ms',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: UIUtils.getPingColor(widget.server.ping),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Text(
-                                    '${widget.server.ping}ms',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: UIUtils.getPingColor(widget.server.ping),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                              // 延迟文字 - 移除白色描边
+                              Text(
+                                '${widget.server.ping}ms',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: UIUtils.getPingColor(widget.server.ping),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -1022,58 +874,29 @@ class _ServerListItemState extends State<ServerListItem>
   }
 
   Widget _buildSignalIndicator(int ping) {
-    final theme = Theme.of(context);
     final strength = ping < 50 ? 5 : 
                     ping < 100 ? 4 : 
                     ping < 150 ? 3 : 
                     ping < 200 ? 2 : 1;
     
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(5),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: List.generate(5, (index) {
           final isActive = index < strength;
           final color = isActive ? UIUtils.getPingColor(ping) : Colors.grey.withOpacity(0.2);
           
-          // 如果是选中或已连接状态且是浅色主题，添加描边效果
-          if ((widget.isSelected || widget.isConnected) && isActive && theme.brightness == Brightness.light) {
-            return Stack(
-              children: [
-                // 淡白色描边 - 稍微放大一点
-                Container(
-                  width: 5,
-                  height: 9 + (index * 3),
-                  margin: const EdgeInsets.symmetric(horizontal: 0.5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(2.5),
-                  ),
-                ),
-                // 实际的信号条
-                Container(
-                  width: 4,
-                  height: 8 + (index * 3),
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ],
-            );
-          } else {
-            // 普通状态
-            return Container(
-              width: 4,
-              height: 8 + (index * 3),
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            );
-          }
+          // 移除白色描边效果，直接显示信号条
+          return Container(
+            width: 4,
+            height: 8 + (index * 3),
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          );
         }),
       ),
     );

@@ -344,7 +344,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             
             const SizedBox(height: 20),
-            // 清除缓存按钮
+            // 清除缓存按钮 - 修改：优化样式
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ElevatedButton.icon(
@@ -539,10 +539,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: const Icon(Icons.delete_outline),
                 label: Text(
                   l10n.clearCache,
-                  style: const TextStyle(fontSize: FontSizes.description),
+                  style: const TextStyle(
+                    fontSize: FontSizes.description,
+                    fontWeight: FontWeight.bold,  // 修改：文字加粗
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 48),
+                  // 修改：优化浅色主题下的背景色
+                  backgroundColor: theme.brightness == Brightness.light
+                      ? theme.primaryColor  // 浅色主题使用主题色
+                      : null,  // 深色主题使用默认背景色
+                  foregroundColor: theme.brightness == Brightness.light
+                      ? Colors.white  // 浅色主题使用白色文字
+                      : null,  // 深色主题使用默认文字色
                 ),
               ),
             ),

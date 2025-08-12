@@ -331,7 +331,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.only(
                     left: 20.0,
                     right: 20.0,
-                    top: 50.0, // 距离屏幕顶部
+                    top: 52.0, // 距离屏幕顶部
                     bottom: 20.0,
                   ),
                   child: Column(
@@ -362,7 +362,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ],
                       
                       // 快速操作按钮
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       _buildQuickActions(serverProvider, connectionProvider, l10n),
                       
                       // 新增：文字广告轮播
@@ -464,51 +464,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (isConnected) {
               await provider.disconnect();
             } else {
-              // 连接前检查Android权限
-              // 修复：Android始终需要VPN权限，与globalProxy（路由策略）无关
-              if (Platform.isAndroid) {
-                final hasPermission = await V2RayService.requestPermission();
-                if (!hasPermission) {
-                  // 显示权限说明对话框
-                  if (mounted) {
-                    final shouldRetry = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: Text(l10n.permissionRequired),
-                        content: Text(l10n.permissionReason),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: Text(l10n.cancel),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: Text(l10n.retry),
-                          ),
-                        ],
-                      ),
-                    ) ?? false;
-                    
-                    if (!shouldRetry) {
-                      // 用户取消，重置状态
-                      setState(() {
-                        _isProcessing = false;
-                        _isDisconnecting = false;
-                      });
-                      _loadingController.stop();
-                      _loadingController.reset();
-                      return;  
-                    }
-                    
-                    // 再次请求权限
-                    final retryPermission = await V2RayService.requestPermission();
-                    if (!retryPermission) {
-                      throw Exception('VPN permission denied');
-                    }
-                  }
-                }
-              }
-              
+              // 修复：移除阻断性的权限检查，让原生端自动处理权限请求
+              // Android平台的VPN权限会在调用provider.connect()时由原生端自动处理
               await provider.connect();
             }
           } catch (e) {
@@ -1270,7 +1227,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const CircularProgressIndicator(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Text(l10n.testingLatency),
                 const SizedBox(height: 8),
                 const Text(
@@ -1289,7 +1246,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       size: 48,
                       color: Colors.green[400],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Text(
                       _testResults!['serverName'] ?? l10n.currentServer,
                       style: const TextStyle(
@@ -1305,7 +1262,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                         color: Colors.grey[600],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     _buildResultItem(
                       icon: Icons.network_ping,
                       label: l10n.latency,
@@ -1318,7 +1275,7 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
                       size: 48,
                       color: Colors.red[400],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Text(
                       l10n.testFailed,
                       style: TextStyle(
