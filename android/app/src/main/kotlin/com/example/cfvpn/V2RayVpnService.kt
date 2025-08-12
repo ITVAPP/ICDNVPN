@@ -471,161 +471,169 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return START_STICKY
     }
     
-    /**
-     * 解析和增强V2Ray配置
-     * 增强容错:解析失败时使用原始配置
-     */
-    private fun parseAndEnhanceConfig(originalConfig: String): V2rayConfig {
-        VpnFileLogger.d(TAG, "开始解析和增强配置")
+/**
+ * 解析和增强V2Ray配置
+ * 增强容错:解析失败时使用原始配置
+ */
+private fun parseAndEnhanceConfig(originalConfig: String): V2rayConfig {
+    VpnFileLogger.d(TAG, "开始解析和增强配置")
+    
+    return try {
+        val configJson = JSONObject(originalConfig)
         
-        return try {
-            val configJson = JSONObject(originalConfig)
+        // 提取服务器信息(容错处理)
+        var serverAddress = ""
+        var serverPort = 0
+        
+        try {
+            // 尝试从vnext提取(VMess等协议)
+            val vnext = configJson.getJSONArray("outbounds")
+                .getJSONObject(0)
+                .getJSONObject("settings")
+                .getJSONArray("vnext")
+                .getJSONObject(0)
             
-            // 提取服务器信息(容错处理)
-            var serverAddress = ""
-            var serverPort = 0
-            
+            serverAddress = vnext.getString("address")
+            serverPort = vnext.getInt("port")
+        } catch (e: Exception) {
+            // 尝试从servers提取(Shadowsocks等协议)
             try {
-                // 尝试从vnext提取(VMess等协议)
-                val vnext = configJson.getJSONArray("outbounds")
+                val servers = configJson.getJSONArray("outbounds")
                     .getJSONObject(0)
                     .getJSONObject("settings")
-                    .getJSONArray("vnext")
+                    .getJSONArray("servers")
                     .getJSONObject(0)
                 
-                serverAddress = vnext.getString("address")
-                serverPort = vnext.getInt("port")
-            } catch (e: Exception) {
-                // 尝试从servers提取(Shadowsocks等协议)
-                try {
-                    val servers = configJson.getJSONArray("outbounds")
-                        .getJSONObject(0)
-                        .getJSONObject("settings")
-                        .getJSONArray("servers")
-                        .getJSONObject(0)
-                    
-                    serverAddress = servers.getString("address")
-                    serverPort = servers.getInt("port")
-                } catch (e2: Exception) {
-                    VpnFileLogger.w(TAG, "无法提取服务器信息,使用默认值", e2)
+                serverAddress = servers.getString("address")
+                serverPort = servers.getInt("port")
+            } catch (e2: Exception) {
+                VpnFileLogger.w(TAG, "无法提取服务器信息,使用默认值", e2)
+            }
+        }
+        
+        // 提取端口信息(容错处理)
+        var socksPort = DEFAULT_SOCKS_PORT
+        var httpPort = DEFAULT_HTTP_PORT
+        
+        try {
+            val inbounds = configJson.getJSONArray("inbounds")
+            for (i in 0 until inbounds.length()) {
+                val inbound = inbounds.getJSONObject(i)
+                when (inbound.optString("protocol", "")) {
+                    "socks" -> socksPort = inbound.optInt("port", DEFAULT_SOCKS_PORT)
+                    "http" -> httpPort = inbound.optInt("port", DEFAULT_HTTP_PORT)
                 }
             }
-            
-            // 提取端口信息(容错处理)
-            var socksPort = DEFAULT_SOCKS_PORT
-            var httpPort = DEFAULT_HTTP_PORT
-            
-            try {
-                val inbounds = configJson.getJSONArray("inbounds")
-                for (i in 0 until inbounds.length()) {
-                    val inbound = inbounds.getJSONObject(i)
-                    when (inbound.optString("protocol", "")) {
-                        "socks" -> socksPort = inbound.optInt("port", DEFAULT_SOCKS_PORT)
-                        "http" -> httpPort = inbound.optInt("port", DEFAULT_HTTP_PORT)
-                    }
-                }
-            } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "提取端口失败,使用默认值", e)
-            }
-            
-            // 提取DNS服务器(容错处理) - 修复:过滤掉非IP格式的DNS
-            val dnsServers = mutableListOf<String>()
-            try {
-                val dns = configJson.optJSONObject("dns")
-                val serversArray = dns?.optJSONArray("servers")
-                if (serversArray != null) {
-                    for (i in 0 until serversArray.length()) {
-                        when (val server = serversArray.get(i)) {
-                            is String -> {
-                                // 检查是否为IP格式
-                                if (isValidIpAddress(server)) {
-                                    dnsServers.add(server)
-                                } else {
-                                    VpnFileLogger.d(TAG, "跳过非IP格式DNS: $server")
-                                }
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "提取端口失败,使用默认值", e)
+        }
+        
+        // 提取DNS服务器(容错处理) - 修复:过滤掉非IP格式的DNS
+        val dnsServers = mutableListOf<String>()
+        try {
+            val dns = configJson.optJSONObject("dns")
+            val serversArray = dns?.optJSONArray("servers")
+            if (serversArray != null) {
+                for (i in 0 until serversArray.length()) {
+                    when (val server = serversArray.get(i)) {
+                        is String -> {
+                            // 检查是否为IP格式
+                            if (isValidIpAddress(server)) {
+                                dnsServers.add(server)
+                            } else {
+                                VpnFileLogger.d(TAG, "跳过非IP格式DNS: $server")
                             }
-                            is JSONObject -> {
-                                server.optString("address")?.let { addr ->
-                                    if (addr.isNotEmpty() && isValidIpAddress(addr)) {
-                                        dnsServers.add(addr)
-                                    } else if (addr.isNotEmpty()) {
-                                        VpnFileLogger.d(TAG, "跳过非IP格式DNS: $addr")
-                                    }
+                        }
+                        is JSONObject -> {
+                            server.optString("address")?.let { addr ->
+                                if (addr.isNotEmpty() && isValidIpAddress(addr)) {
+                                    dnsServers.add(addr)
+                                } else if (addr.isNotEmpty()) {
+                                    VpnFileLogger.d(TAG, "跳过非IP格式DNS: $addr")
                                 }
                             }
                         }
                     }
                 }
-            } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "提取DNS失败,使用默认值", e)
             }
-            
-            // 如果没有DNS,使用默认值
-            if (dnsServers.isEmpty()) {
-                dnsServers.addAll(listOf("8.8.8.8", "8.8.4.4", "1.1.1.1"))
-            }
-            
-            // 添加流量统计配置(参考开源项目)
-            val enableTrafficStats = true
-            if (enableTrafficStats) {
-                try {
-                    // 移除旧的配置
-                    configJson.remove("policy")
-                    configJson.remove("stats")
-                    
-                    // 添加新的policy配置
-                    val policy = JSONObject().apply {
-                        put("levels", JSONObject().apply {
-                            put("8", JSONObject().apply {
-                                put("connIdle", 300)
-                                put("downlinkOnly", 1)
-                                put("handshake", 4)
-                                put("uplinkOnly", 1)
-                            })
-                        })
-                        put("system", JSONObject().apply {
-                            put("statsOutboundUplink", true)
-                            put("statsOutboundDownlink", true)
-                        })
-                    }
-                    
-                    configJson.put("policy", policy)
-                    configJson.put("stats", JSONObject())
-                    
-                    VpnFileLogger.d(TAG, "已添加流量统计配置")
-                } catch (e: Exception) {
-                    VpnFileLogger.w(TAG, "添加流量统计配置失败", e)
-                }
-            }
-            
-            V2rayConfig(
-                originalConfig = originalConfig,
-                enhancedConfig = configJson.toString(),
-                serverAddress = serverAddress,
-                serverPort = serverPort,
-                localSocks5Port = socksPort,
-                localHttpPort = httpPort,
-                enableTrafficStats = enableTrafficStats,
-                dnsServers = dnsServers,
-                remark = instanceLocalizedStrings["appName"] ?: "CFVPN"
-            )
-            
         } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "解析配置失败,使用原始配置", e)
-            // 返回最小配置,使用原始JSON
-            V2rayConfig(
-                originalConfig = originalConfig,
-                enhancedConfig = originalConfig,  // 使用原始配置
-                serverAddress = "",
-                serverPort = 0,
-                localSocks5Port = DEFAULT_SOCKS_PORT,
-                localHttpPort = DEFAULT_HTTP_PORT,
-                enableTrafficStats = false,
-                dnsServers = listOf("8.8.8.8", "8.8.4.4"),
-                remark = instanceLocalizedStrings["appName"] ?: "CFVPN"
-            )
+            VpnFileLogger.w(TAG, "提取DNS失败,使用默认值", e)
         }
+        
+        // 如果没有DNS,使用默认值
+        if (dnsServers.isEmpty()) {
+            dnsServers.addAll(listOf("8.8.8.8", "8.8.4.4", "1.1.1.1"))
+        }
+        
+        // 添加流量统计配置(参考开源项目)
+        val enableTrafficStats = true
+        if (enableTrafficStats) {
+            try {
+                // 移除旧的配置
+                configJson.remove("policy")
+                configJson.remove("stats")
+                
+                // 添加新的policy配置
+                val policy = JSONObject().apply {
+                    put("levels", JSONObject().apply {
+                        put("8", JSONObject().apply {
+                            put("connIdle", 300)
+                            put("downlinkOnly", 1)
+                            put("handshake", 4)
+                            put("uplinkOnly", 1)
+                        })
+                    })
+                    put("system", JSONObject().apply {
+                        put("statsOutboundUplink", true)
+                        put("statsOutboundDownlink", true)
+                    })
+                }
+                
+                configJson.put("policy", policy)
+                configJson.put("stats", JSONObject())
+                
+                VpnFileLogger.d(TAG, "已添加流量统计配置")
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "添加流量统计配置失败", e)
+            }
+        }
+        
+        // 修复：确保 remark 的构建有完整的 if-else 分支
+        val remarkText = if (serverAddress.isNotEmpty()) {
+            "${instanceLocalizedStrings["appName"] ?: "CFVPN"} - $serverAddress"
+        } else {
+            instanceLocalizedStrings["appName"] ?: "CFVPN"
+        }
+        
+        V2rayConfig(
+            originalConfig = originalConfig,
+            enhancedConfig = configJson.toString(),
+            serverAddress = serverAddress,
+            serverPort = serverPort,
+            localSocks5Port = socksPort,
+            localHttpPort = httpPort,
+            enableTrafficStats = enableTrafficStats,
+            dnsServers = dnsServers,
+            remark = remarkText  // 使用计算好的 remarkText
+        )
+        
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "解析配置失败,使用原始配置", e)
+        // 返回最小配置,使用原始JSON
+        val defaultRemark = instanceLocalizedStrings["appName"] ?: "CFVPN"
+        V2rayConfig(
+            originalConfig = originalConfig,
+            enhancedConfig = originalConfig,  // 使用原始配置
+            serverAddress = "",
+            serverPort = 0,
+            localSocks5Port = DEFAULT_SOCKS_PORT,
+            localHttpPort = DEFAULT_HTTP_PORT,
+            enableTrafficStats = false,
+            dnsServers = listOf("8.8.8.8", "8.8.4.4"),
+            remark = defaultRemark  // 确保有默认值
+        )
     }
+}
     
     /**
      * 检查是否为有效的IP地址
@@ -1598,18 +1606,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    /**
-     * 获取应用图标资源ID
-     */
-    private fun getAppIconResource(): Int {
-        return try {
-            // 尝试使用应用的launcher图标
-            packageManager.getApplicationInfo(packageName, 0).icon
-        } catch (e: Exception) {
-            // 如果失败，使用默认图标
+/**
+ * 获取应用图标资源ID
+ * 修复：确保返回类型正确
+ */
+private fun getAppIconResource(): Int {
+    return try {
+        // 尝试使用应用的launcher图标
+        val appInfo = packageManager.getApplicationInfo(packageName, 0)
+        if (appInfo.icon != 0) {
+            appInfo.icon
+        } else {
+            // 如果图标ID为0，使用默认图标
             android.R.drawable.ic_dialog_info
         }
+    } catch (e: Exception) {
+        // 如果失败，使用默认图标
+        android.R.drawable.ic_dialog_info
     }
+}
     
     /**
      * 格式化流量统计用于通知显示
