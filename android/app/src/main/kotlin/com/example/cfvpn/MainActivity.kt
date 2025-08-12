@@ -31,6 +31,7 @@ class MainActivity: FlutterActivity() {
         
         // 新增：VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
         private const val VPN_START_TIMEOUT = 10000L  // 10秒超时
     }
     
@@ -51,7 +52,8 @@ class MainActivity: FlutterActivity() {
     )
     private var pendingRequest: PendingVpnRequest? = null
     
-    // 新增：保存待处理的启动结果
+    // 修复：添加同步锁保护并发访问
+    private val pendingResultLock = Any()
     private var pendingStartResult: MethodChannel.Result? = null
     private var startTimeoutJob: Job? = null
     
@@ -64,20 +66,34 @@ class MainActivity: FlutterActivity() {
                 
                 VpnFileLogger.d(TAG, "收到VPN启动结果广播: success=$success, error=$error")
                 
-                // 取消超时任务
-                startTimeoutJob?.cancel()
-                startTimeoutJob = null
-                
-                // 返回结果给Flutter
-                pendingStartResult?.let { result ->
-                    if (success) {
-                        result.success(true)
-                        channel.invokeMethod("onVpnConnected", null)
-                    } else {
-                        result.error("START_FAILED", error ?: "VPN服务启动失败", null)
+                // 修复：使用同步锁保护并发访问
+                synchronized(pendingResultLock) {
+                    // 取消超时任务
+                    startTimeoutJob?.cancel()
+                    startTimeoutJob = null
+                    
+                    // 返回结果给Flutter
+                    pendingStartResult?.let { result ->
+                        if (success) {
+                            result.success(true)
+                            channel.invokeMethod("onVpnConnected", null)
+                        } else {
+                            result.error("START_FAILED", error ?: "VPN服务启动失败", null)
+                        }
+                        pendingStartResult = null
                     }
-                    pendingStartResult = null
                 }
+            }
+        }
+    }
+    
+    // 新增：VPN停止广播接收器（用于通知栏停止按钮）
+    private val vpnStoppedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_VPN_STOPPED) {
+                VpnFileLogger.d(TAG, "收到VPN停止广播（来自通知栏）")
+                // 通知Flutter端VPN已断开
+                channel.invokeMethod("onVpnDisconnected", null)
             }
         }
     }
@@ -91,16 +107,21 @@ class MainActivity: FlutterActivity() {
         // 注册VPN启动结果广播接收器
         registerReceiver(vpnStartResultReceiver, IntentFilter(ACTION_VPN_START_RESULT))
         
+        // 注册VPN停止广播接收器（用于通知栏停止按钮）
+        registerReceiver(vpnStoppedReceiver, IntentFilter(ACTION_VPN_STOPPED))
+        
         // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startVpn" -> {
-                    // 防止重复调用
-                    if (pendingStartResult != null) {
-                        VpnFileLogger.w(TAG, "正在处理上一个VPN启动请求")
-                        result.error("BUSY", "正在处理上一个连接请求", null)
-                        return@setMethodCallHandler
+                    // 修复：使用同步锁检查重复调用
+                    synchronized(pendingResultLock) {
+                        if (pendingStartResult != null) {
+                            VpnFileLogger.w(TAG, "正在处理上一个VPN启动请求")
+                            result.error("BUSY", "正在处理上一个连接请求", null)
+                            return@setMethodCallHandler
+                        }
                     }
                     
                     // 启动VPN（增强版：支持国际化文字）
@@ -347,16 +368,20 @@ class MainActivity: FlutterActivity() {
                 if (mode == "PROXY_ONLY") {
                     VpnFileLogger.d(TAG, "仅代理模式，无需VPN权限")
                     
-                    // 保存待处理的结果
-                    pendingStartResult = result
-                    
-                    // 设置超时保护
-                    startTimeoutJob = mainScope.launch {
-                        delay(VPN_START_TIMEOUT)
-                        pendingStartResult?.let {
-                            VpnFileLogger.e(TAG, "VPN启动超时")
-                            it.error("TIMEOUT", "VPN启动超时", null)
-                            pendingStartResult = null
+                    // 修复：使用同步锁保护设置pendingStartResult
+                    synchronized(pendingResultLock) {
+                        pendingStartResult = result
+                        
+                        // 设置超时保护
+                        startTimeoutJob = mainScope.launch {
+                            delay(VPN_START_TIMEOUT)
+                            synchronized(pendingResultLock) {
+                                pendingStartResult?.let {
+                                    VpnFileLogger.e(TAG, "VPN启动超时")
+                                    it.error("TIMEOUT", "VPN启动超时", null)
+                                    pendingStartResult = null
+                                }
+                            }
                         }
                     }
                     
@@ -399,16 +424,20 @@ class MainActivity: FlutterActivity() {
                 } else {
                     VpnFileLogger.d(TAG, "已有VPN权限，直接启动服务")
                     
-                    // 保存待处理的结果
-                    pendingStartResult = result
-                    
-                    // 设置超时保护
-                    startTimeoutJob = mainScope.launch {
-                        delay(VPN_START_TIMEOUT)
-                        pendingStartResult?.let {
-                            VpnFileLogger.e(TAG, "VPN启动超时")
-                            it.error("TIMEOUT", "VPN启动超时", null)
-                            pendingStartResult = null
+                    // 修复：使用同步锁保护设置pendingStartResult
+                    synchronized(pendingResultLock) {
+                        pendingStartResult = result
+                        
+                        // 设置超时保护
+                        startTimeoutJob = mainScope.launch {
+                            delay(VPN_START_TIMEOUT)
+                            synchronized(pendingResultLock) {
+                                pendingStartResult?.let {
+                                    VpnFileLogger.e(TAG, "VPN启动超时")
+                                    it.error("TIMEOUT", "VPN启动超时", null)
+                                    pendingStartResult = null
+                                }
+                            }
                         }
                     }
                     
@@ -436,7 +465,7 @@ class MainActivity: FlutterActivity() {
     
     /**
      * 停止VPN
-     * 修复：清理pending状态
+     * 修复：清理pending状态，不再主动通知Flutter（由Service广播通知）
      */
     private fun stopVpn() {
         VpnFileLogger.d(TAG, "停止VPN服务")
@@ -446,24 +475,24 @@ class MainActivity: FlutterActivity() {
         
         V2RayVpnService.stopVpnService(this)
         
-        // 通知Flutter端断开连接
-        mainScope.launch {
-            delay(500) // 等待服务停止
-            channel.invokeMethod("onVpnDisconnected", null)
-        }
+        // 移除：不再这里通知Flutter，改由Service广播通知
+        // 这样避免重复通知，且通知栏停止也能正确通知Flutter
     }
     
     /**
      * 取消待处理的启动请求
+     * 修复：使用同步锁保护并发访问
      */
     private fun cancelPendingStart(reason: String) {
-        pendingStartResult?.let {
-            VpnFileLogger.d(TAG, "取消待处理的启动请求: $reason")
-            it.error("CANCELLED", reason, null)
-            pendingStartResult = null
+        synchronized(pendingResultLock) {
+            pendingStartResult?.let {
+                VpnFileLogger.d(TAG, "取消待处理的启动请求: $reason")
+                it.error("CANCELLED", reason, null)
+                pendingStartResult = null
+            }
+            startTimeoutJob?.cancel()
+            startTimeoutJob = null
         }
-        startTimeoutJob?.cancel()
-        startTimeoutJob = null
     }
     
     /**
@@ -579,16 +608,20 @@ class MainActivity: FlutterActivity() {
                     
                     mainScope.launch {
                         try {
-                            // 保存待处理的结果
-                            pendingStartResult = request.result
-                            
-                            // 设置超时保护
-                            startTimeoutJob = mainScope.launch {
-                                delay(VPN_START_TIMEOUT)
-                                pendingStartResult?.let {
-                                    VpnFileLogger.e(TAG, "VPN启动超时")
-                                    it.error("TIMEOUT", "VPN启动超时", null)
-                                    pendingStartResult = null
+                            // 修复：使用同步锁保护设置pendingStartResult
+                            synchronized(pendingResultLock) {
+                                pendingStartResult = request.result
+                                
+                                // 设置超时保护
+                                startTimeoutJob = mainScope.launch {
+                                    delay(VPN_START_TIMEOUT)
+                                    synchronized(pendingResultLock) {
+                                        pendingStartResult?.let {
+                                            VpnFileLogger.e(TAG, "VPN启动超时")
+                                            it.error("TIMEOUT", "VPN启动超时", null)
+                                            pendingStartResult = null
+                                        }
+                                    }
                                 }
                             }
                             
@@ -609,8 +642,10 @@ class MainActivity: FlutterActivity() {
                         } catch (e: Exception) {
                             VpnFileLogger.e(TAG, "启动VPN服务失败", e)
                             request.result.error("START_FAILED", e.message, null)
-                            pendingStartResult = null
-                            startTimeoutJob?.cancel()
+                            synchronized(pendingResultLock) {
+                                pendingStartResult = null
+                                startTimeoutJob?.cancel()
+                            }
                         }
                     }
                 } else {
@@ -654,6 +689,12 @@ class MainActivity: FlutterActivity() {
         // 注销广播接收器
         try {
             unregisterReceiver(vpnStartResultReceiver)
+        } catch (e: Exception) {
+            // 可能已经注销
+        }
+        
+        try {
+            unregisterReceiver(vpnStoppedReceiver)
         } catch (e: Exception) {
             // 可能已经注销
         }

@@ -24,6 +24,7 @@ import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URL
+import java.lang.ref.WeakReference
 
 // 正确的导入(基于method_summary.md)
 import go.Seq
@@ -40,6 +41,8 @@ import libv2ray.CoreCallbackHandler
  * 3. 提供手动和自动两种统计模式
  * 4. 修正CoreCallbackHandler实现
  * 5. 增强错误处理和容错能力
+ * 6. 修复：使用WeakReference避免内存泄漏
+ * 7. 修复：添加tun2socks重启次数限制
  * 
  * 功能特性:
  * - 完善的流量统计(可配置更新频率)
@@ -47,7 +50,7 @@ import libv2ray.CoreCallbackHandler
  * - 分应用代理支持
  * - 子网绕过功能
  * - 服务器延迟测试
- * - 自动重启tun2socks
+ * - 自动重启tun2socks(带限制)
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -79,6 +82,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 新增:VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
         
+        // 新增：VPN停止通知广播（通知MainActivity）
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"
+        
         // VPN配置常量
         private const val VPN_MTU = 1500
         private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"    // VPN接口地址
@@ -93,23 +99,29 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val STATS_UPDATE_INTERVAL = 10000L  // 10秒更新一次
         private const val ENABLE_AUTO_STATS = true       // 默认开启自动统计
         
+        // 修复：tun2socks重启限制
+        private const val MAX_TUN2SOCKS_RESTART_COUNT = 3  // 最大重启次数
+        private const val TUN2SOCKS_RESTART_RESET_INTERVAL = 60000L  // 重启计数重置间隔(1分钟)
+        
         // 服务状态
         @Volatile
         private var currentState: V2RayState = V2RayState.DISCONNECTED
         
-        // 服务运行状态 - 移除重复定义,只保留一个
+        // 修复：使用WeakReference避免内存泄漏
         @Volatile
-        private var isRunning: Boolean = false
-        
-        // 单例服务引用
-        @Volatile
-        private var instance: V2RayVpnService? = null
+        private var instanceRef: WeakReference<V2RayVpnService>? = null
         
         // 通知按钮文本(可配置)
         private var notificationDisconnectButtonName = "停止"
         
         // 新增：国际化文字存储
         private var localizedStrings = mutableMapOf<String, String>()
+        
+        /**
+         * 获取服务实例（使用WeakReference避免泄漏）
+         */
+        private val instance: V2RayVpnService?
+            get() = instanceRef?.get()
         
         /**
          * 检查服务是否运行 - 只保留一个定义
@@ -270,6 +282,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // tun2socks进程
     private var tun2socksProcess: java.lang.Process? = null
     
+    // 修复：tun2socks重启控制
+    private var tun2socksRestartCount = 0  // 重启计数
+    private var tun2socksFirstRestartTime = 0L  // 第一次重启时间
+    
     // 配置信息
     private var v2rayConfig: V2rayConfig? = null
     private var mode: ConnectionMode = ConnectionMode.VPN_TUN
@@ -296,6 +312,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var downloadSpeed: Long = 0    // 当前下载速度
     private var lastQueryTime: Long = 0    // 上次查询时间
     private var startTime: Long = 0        // 连接开始时间
+    private var lastOnDemandUpdateTime: Long = 0  // 修复：上次按需更新时间，用于节流
     
     // 统计任务
     private var statsJob: Job? = null
@@ -320,7 +337,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.init(applicationContext)
         VpnFileLogger.d(TAG, "VPN服务onCreate开始")
         
-        instance = this
+        // 修复：使用WeakReference保存实例
+        instanceRef = WeakReference(this)
         
         // 步骤1:初始化Go运行时(必须)
         try {
@@ -379,7 +397,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 更新状态
         currentState = V2RayState.CONNECTING
-        isRunning = false
         
         // 获取配置
         val configContent = intent.getStringExtra("config") ?: ""
@@ -418,6 +435,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             stopSelf()
             return START_NOT_STICKY
         }
+        
+        // 记录完整配置（开发环境调试用，生产环境应关闭日志）
+        VpnFileLogger.d(TAG, "=====V2Ray完整配置开始=====")
+        VpnFileLogger.d(TAG, configContent)
+        VpnFileLogger.d(TAG, "=====V2Ray完整配置结束=====")
+        VpnFileLogger.d(TAG, "配置参数: 模式=$mode, 全局代理=$globalProxy, " +
+                "排除应用=$blockedApps, 包含应用=$allowedApps, " +
+                "代理模式=$appProxyMode, 绕过子网=$bypassSubnets")
         
         // 解析和增强配置
         try {
@@ -609,7 +634,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 enableTrafficStats = enableTrafficStats,
                 dnsServers = dnsServers,
                 remark = instanceLocalizedStrings["appName"] ?: "CFVPN"
-            )
+            ).also {
+                // 记录解析后的关键信息（方便排查问题）
+                VpnFileLogger.i(TAG, "配置解析成功: " +
+                    "服务器=$serverAddress:$serverPort, " +
+                    "SOCKS5端口=$socksPort, HTTP端口=$httpPort, " +
+                    "DNS=${dnsServers.joinToString(",")}, " +
+                    "流量统计=${if (enableTrafficStats) "启用" else "禁用"}")
+            }
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "解析配置失败,使用原始配置", e)
@@ -1017,12 +1049,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             when (appProxyMode) {
                 AppProxyMode.EXCLUDE -> {
                     // 排除模式:指定的应用不走代理
-                    VpnFileLogger.d(TAG, "使用排除模式,排除${blockedApps.size}个应用")
+                    VpnFileLogger.d(TAG, "使用排除模式,用户指定排除${blockedApps.size}个应用")
                     
-                    // 始终排除自身,避免VPN循环
+                    // 始终排除自身,避免VPN循环（这是必须的！）
                     try {
                         builder.addDisallowedApplication(packageName)
-                        VpnFileLogger.d(TAG, "排除自身应用: $packageName")
+                        VpnFileLogger.d(TAG, "自动排除自身应用(防止VPN循环): $packageName")
                     } catch (e: Exception) {
                         VpnFileLogger.w(TAG, "排除自身应用失败", e)
                     }
@@ -1157,10 +1189,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                         // 异常退出,记录警告
                         VpnFileLogger.w(TAG, "tun2socks进程异常退出,退出码: $exitCode")
                         
-                        if (mode == ConnectionMode.VPN_TUN) {
-                            VpnFileLogger.d(TAG, "自动重启tun2socks进程")
+                        // 修复：添加重启限制逻辑
+                        if (mode == ConnectionMode.VPN_TUN && shouldRestartTun2socks()) {
+                            VpnFileLogger.d(TAG, "自动重启tun2socks进程 (第${tun2socksRestartCount + 1}次)")
                             delay(1000)
                             restartTun2socks()
+                        } else if (tun2socksRestartCount >= MAX_TUN2SOCKS_RESTART_COUNT) {
+                            VpnFileLogger.e(TAG, "tun2socks重启次数已达上限，停止服务")
+                            stopV2Ray()
                         }
                     }
                 } catch (e: Exception) {
@@ -1185,10 +1221,34 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
+     * 修复：检查是否应该重启tun2socks
+     */
+    private fun shouldRestartTun2socks(): Boolean {
+        val now = System.currentTimeMillis()
+        
+        // 如果是第一次重启，记录时间
+        if (tun2socksRestartCount == 0) {
+            tun2socksFirstRestartTime = now
+        }
+        
+        // 检查是否超过重置间隔，如果是则重置计数
+        if (now - tun2socksFirstRestartTime > TUN2SOCKS_RESTART_RESET_INTERVAL) {
+            tun2socksRestartCount = 0
+            tun2socksFirstRestartTime = now
+            VpnFileLogger.d(TAG, "tun2socks重启计数已重置")
+        }
+        
+        // 检查是否还能重启
+        return tun2socksRestartCount < MAX_TUN2SOCKS_RESTART_COUNT
+    }
+    
+    /**
      * 重启tun2socks进程
+     * 修复：增加重启计数
      */
     private suspend fun restartTun2socks(): Unit = withContext(Dispatchers.IO) {
         try {
+            tun2socksRestartCount++  // 增加重启计数
             runTun2socks()
             val success = sendFileDescriptor()
             if (!success) {
@@ -1261,6 +1321,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private fun stopTun2socks() {
         VpnFileLogger.d(TAG, "停止tun2socks进程")
         
+        // 重置重启计数
+        tun2socksRestartCount = 0
+        tun2socksFirstRestartTime = 0L
+        
         try {
             val process = tun2socksProcess
             if (process != null) {
@@ -1283,7 +1347,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         statsJob?.cancel()
         
         statsJob = serviceScope.launch {
-            delay(2000) // 初始延迟
+            delay(5000) // 修复：初始延迟5秒（原来是2秒太快了）
             
             while (currentState == V2RayState.CONNECTED && isActive) {
                 try {
@@ -1292,16 +1356,24 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     VpnFileLogger.w(TAG, "更新流量统计异常", e)
                 }
                 
-                delay(STATS_UPDATE_INTERVAL) // 使用配置的间隔（5秒）
+                delay(STATS_UPDATE_INTERVAL) // 使用配置的间隔（10秒）
             }
         }
     }
     
     /**
      * 按需更新流量统计(供Flutter端查询时调用)
+     * 修复：添加节流机制，避免频繁更新
      */
     private fun updateTrafficStatsOnDemand() {
         if (currentState != V2RayState.CONNECTED) return
+        
+        // 节流：1秒内最多更新一次
+        val now = System.currentTimeMillis()
+        if (now - lastOnDemandUpdateTime < 1000) {
+            return  // 距离上次更新不足1秒，跳过
+        }
+        lastOnDemandUpdateTime = now
         
         try {
             updateTrafficStats()
@@ -1462,6 +1534,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             putExtra("DOWNLOAD_TRAFFIC", 0L)
         }
         sendBroadcast(intent)
+        
+        // 新增：通知MainActivity服务已停止（用于通知栏停止按钮）
+        sendBroadcast(Intent(ACTION_VPN_STOPPED))
+        VpnFileLogger.d(TAG, "已发送VPN停止广播")
         
         // 停止tun2socks进程(仅VPN模式)
         if (mode == ConnectionMode.VPN_TUN) {
@@ -1776,7 +1852,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         VpnFileLogger.d(TAG, "onDestroy开始")
         
-        instance = null
+        // 修复：清理WeakReference
+        instanceRef?.clear()
+        instanceRef = null
         
         // 取消所有协程
         serviceScope.cancel()
