@@ -81,8 +81,8 @@ class AppLocalizations {
   String get autoStartDesc => _get('autoStartDesc');
   String get autoConnect => _get('autoConnect');
   String get autoConnectDesc => _get('autoConnectDesc');
-  String get globalProxy => _get('globalProxy');  // 修改
-  String get globalProxyDesc => _get('globalProxyDesc');  // 修改
+  String get globalProxy => _get('globalProxy');
+  String get globalProxyDesc => _get('globalProxyDesc');
   String get currentVersion => _get('currentVersion');
   String get checkUpdate => _get('checkUpdate');
   String get officialWebsite => _get('officialWebsite');
@@ -215,6 +215,16 @@ class AppLocalizations {
   String get cacheDetails => _get('cacheDetails');
   String get reGetNodes => _get('reGetNodes');
   String get newVersion => _get('newVersion');
+  
+  // 代理模式（新增）
+  String get globalProxyMode => _get('globalProxyMode');
+  String get smartProxyMode => _get('smartProxyMode');
+  String get proxyOnlyMode => _get('proxyOnlyMode');
+  
+  // 通知栏（新增）
+  String get notificationChannelName => _get('notificationChannelName');
+  String get notificationChannelDesc => _get('notificationChannelDesc');
+  String get trafficStats => _get('trafficStats');
   
   // 国家/地区名称
   String get countryChina => _get('countryChina');
@@ -463,8 +473,8 @@ const Map<String, String> _zhCnTranslations = {
   'autoStartDesc': '系统启动时自动运行',
   'autoConnect': '自动连接',
   'autoConnectDesc': '启动应用时自动连接',
-  'globalProxy': '全局代理',  // 修改
-  'globalProxyDesc': '开启后所有流量都通过代理，关闭后智能分流',  // 修改
+  'globalProxy': '全局代理',
+  'globalProxyDesc': '开启后所有流量都通过代理，关闭后智能分流',
   'currentVersion': '当前版本',
   'checkUpdate': '检查更新',
   'officialWebsite': '官方网站',
@@ -598,6 +608,16 @@ const Map<String, String> _zhCnTranslations = {
   'reGetNodes': '重新获取节点',
   'newVersion': '新版 %s',
   
+  // 代理模式（新增）
+  'globalProxyMode': '全局代理模式',
+  'smartProxyMode': '智能代理模式',
+  'proxyOnlyMode': '仅代理模式',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'VPN服务',
+  'notificationChannelDesc': 'VPN连接状态通知',
+  'trafficStats': '流量: ↑%upload ↓%download',
+  
   // 国家/地区名称
   'countryChina': '中国',
   'countryHongKong': '香港',
@@ -717,8 +737,8 @@ const Map<String, String> _enTranslations = {
   'autoStartDesc': 'Start automatically when system boots',
   'autoConnect': 'Auto Connect',
   'autoConnectDesc': 'Connect automatically when app starts',
-  'globalProxy': 'Global Proxy',  // 修改
-  'globalProxyDesc': 'When enabled, all traffic goes through proxy. When disabled, smart routing is used',  // 修改
+  'globalProxy': 'Global Proxy',
+  'globalProxyDesc': 'When enabled, all traffic goes through proxy. When disabled, smart routing is used',
   'currentVersion': 'Current Version',
   'checkUpdate': 'Check Update',
   'officialWebsite': 'Official Website',
@@ -840,6 +860,16 @@ const Map<String, String> _enTranslations = {
   'reGetNodes': 'Re-get Nodes',
   'newVersion': 'New %s',
   
+  // 代理模式（新增）
+  'globalProxyMode': 'Global Proxy',
+  'smartProxyMode': 'Smart Proxy',
+  'proxyOnlyMode': 'Proxy Only',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'VPN Service',
+  'notificationChannelDesc': 'VPN connection status notification',
+  'trafficStats': 'Traffic: ↑%upload ↓%download',
+  
   // 国家/地区名称 (英文)
   'countryChina': 'China',
   'countryHongKong': 'Hong Kong',
@@ -911,10 +941,20 @@ const Map<String, String> _enTranslations = {
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
   'diagnosticNotSupported': '診斷工具暫不支持移動平台',
-  'globalProxy': '全局代理',  // 修改
-  'globalProxyDesc': '開啟後所有流量都通過代理，關閉後智能分流',  // 修改
+  'globalProxy': '全局代理',
+  'globalProxyDesc': '開啟後所有流量都通過代理，關閉後智能分流',
   'permissionRequired': 'VPN權限',
   'permissionReason': '需要VPN權限才能建立安全連接',
+  
+  // 代理模式（新增）
+  'globalProxyMode': '全局代理模式',
+  'smartProxyMode': '智能代理模式',
+  'proxyOnlyMode': '僅代理模式',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'VPN服務',
+  'notificationChannelDesc': 'VPN連接狀態通知',
+  'trafficStats': '流量: ↑%upload ↓%download',
   // 其他繁体中文翻译待完善
 };
 
@@ -922,10 +962,20 @@ const Map<String, String> _zhTwTranslations = {
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
   'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',
-  'globalProxy': 'Proxy Global',  // 修改
-  'globalProxyDesc': 'Cuando está habilitado, todo el tráfico pasa por el proxy. Cuando está deshabilitado, se usa el enrutamiento inteligente',  // 修改
+  'globalProxy': 'Proxy Global',
+  'globalProxyDesc': 'Cuando está habilitado, todo el tráfico pasa por el proxy. Cuando está deshabilitado, se usa el enrutamiento inteligente',
   'permissionRequired': 'Permiso VPN',
   'permissionReason': 'Se requiere permiso VPN para establecer una conexión segura',
+  
+  // 代理模式（新增）
+  'globalProxyMode': 'Proxy Global',
+  'smartProxyMode': 'Proxy Inteligente',
+  'proxyOnlyMode': 'Solo Proxy',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'Servicio VPN',
+  'notificationChannelDesc': 'Notificación de estado de conexión VPN',
+  'trafficStats': 'Tráfico: ↑%upload ↓%download',
   // 其他西班牙语翻译待完善
 };
 
@@ -933,10 +983,20 @@ const Map<String, String> _esTranslations = {
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
   'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',
-  'globalProxy': 'Глобальный прокси',  // 修改
-  'globalProxyDesc': 'При включении весь трафик проходит через прокси. При отключении используется умная маршрутизация',  // 修改
+  'globalProxy': 'Глобальный прокси',
+  'globalProxyDesc': 'При включении весь трафик проходит через прокси. При отключении используется умная маршрутизация',
   'permissionRequired': 'Разрешение VPN',
   'permissionReason': 'Для установления безопасного соединения требуется разрешение VPN',
+  
+  // 代理模式（新增）
+  'globalProxyMode': 'Глобальный прокси',
+  'smartProxyMode': 'Умный прокси',
+  'proxyOnlyMode': 'Только прокси',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'VPN сервис',
+  'notificationChannelDesc': 'Уведомление о состоянии VPN-соединения',
+  'trafficStats': 'Трафик: ↑%upload ↓%download',
   // 其他俄语翻译待完善
 };
 
@@ -944,9 +1004,19 @@ const Map<String, String> _ruTranslations = {
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
   'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',
-  'globalProxy': 'وكيل عالمي',  // 修改
-  'globalProxyDesc': 'عند التمكين، تمر جميع حركة المرور عبر الوكيل. عند التعطيل، يتم استخدام التوجيه الذكي',  // 修改
+  'globalProxy': 'وكيل عالمي',
+  'globalProxyDesc': 'عند التمكين، تمر جميع حركة المرور عبر الوكيل. عند التعطيل، يتم استخدام التوجيه الذكي',
   'permissionRequired': 'إذن VPN',
   'permissionReason': 'مطلوب إذن VPN لإنشاء اتصال آمن',
+  
+  // 代理模式（新增）
+  'globalProxyMode': 'وضع الوكيل العالمي',
+  'smartProxyMode': 'وضع الوكيل الذكي',
+  'proxyOnlyMode': 'وضع الوكيل فقط',
+  
+  // 通知栏（新增）
+  'notificationChannelName': 'خدمة VPN',
+  'notificationChannelDesc': 'إشعار حالة اتصال VPN',
+  'trafficStats': 'حركة المرور: ↑%upload ↓%download',
   // 其他阿拉伯语翻译待完善
 };

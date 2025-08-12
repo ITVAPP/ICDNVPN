@@ -725,6 +725,8 @@ class V2RayService {
     AppProxyMode appProxyMode = AppProxyMode.exclude,
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
+    // 新增：国际化文字
+    Map<String, String>? localizedStrings,
   }) async {
     // 并发控制
     if (_isStarting || _isStopping) {
@@ -758,6 +760,7 @@ class V2RayService {
           appProxyMode: appProxyMode,
           bypassSubnets: bypassSubnets,
           disconnectButtonName: disconnectButtonName,
+          localizedStrings: localizedStrings,
         );
       }
       
@@ -791,6 +794,7 @@ class V2RayService {
     AppProxyMode appProxyMode = AppProxyMode.exclude,
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
+    Map<String, String>? localizedStrings,
   }) async {
     await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy, 模式: $mode)', tag: _logTag);
     
@@ -841,8 +845,8 @@ class V2RayService {
         }
       }
       
-      // 3. 通过原生通道启动V2Ray（增强版）
-      final result = await _channel.invokeMethod<bool>('startVpn', {
+      // 3. 准备调用参数
+      final params = <String, dynamic>{
         'config': configJson,
         'mode': mode == V2RayConnectionMode.vpnTun ? 'VPN_TUN' : 'PROXY_ONLY',
         'globalProxy': globalProxy,
@@ -851,7 +855,15 @@ class V2RayService {
         'appProxyMode': appProxyMode == AppProxyMode.exclude ? 'EXCLUDE' : 'INCLUDE',
         'bypassSubnets': bypassSubnets,
         'disconnectButtonName': disconnectButtonName,
-      });
+      };
+      
+      // 添加国际化文字（如果提供）
+      if (localizedStrings != null) {
+        params.addAll(localizedStrings);
+      }
+      
+      // 3. 通过原生通道启动V2Ray（增强版）
+      final result = await _channel.invokeMethod<bool>('startVpn', params);
       
       if (result == true) {
         await _log.info('V2Ray启动命令已发送，等待连接建立', tag: _logTag);

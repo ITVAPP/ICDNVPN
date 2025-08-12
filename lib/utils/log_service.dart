@@ -187,8 +187,10 @@ class LogService {
           final exeDir = File(exePath).parent.path;
           logDir = Directory(path.join(exeDir, 'logs'));
         } else if (Platform.isAndroid || Platform.isIOS) {
-          // 移动平台使用应用文档目录
-          final appDir = await getApplicationDocumentsDirectory();
+          // 移动平台使用应用支持目录（修复：统一使用files目录）
+          // getApplicationSupportDirectory 在Android上返回 /data/data/packageName/files
+          // 这与Kotlin端的 context.filesDir 一致
+          final appDir = await getApplicationSupportDirectory();
           logDir = Directory(path.join(appDir.path, 'logs'));
         } else {
           // 其他桌面平台（macOS, Linux）

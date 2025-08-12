@@ -88,6 +88,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
       final serverProvider = Provider.of<ServerProvider>(context, listen: false);
       
+      // 新增：设置国际化文字
+      connectionProvider.setLocalizedStrings(context);
+      
       connectionProvider.addListener(_onConnectionChanged);
       serverProvider.addListener(_onServerListChanged);
       
@@ -102,6 +105,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // 新增：发送页面统计（异步，不阻塞）
       LocationService().sendAnalytics(context, 'home');
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 当语言改变时，更新国际化文字
+    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+    connectionProvider.setLocalizedStrings(context);
   }
 
   @override

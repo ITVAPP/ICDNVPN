@@ -15,6 +15,7 @@ import '../services/cloudflare_test_service.dart';
 import '../services/version_service.dart';  // 导入版本服务，使用其中的VersionInfo类
 import '../utils/log_service.dart';  // 导入日志服务
 import '../app_config.dart';
+import '../l10n/app_localizations.dart';  // 添加国际化导入
 
 // ===== 连接状态管理（原 connection_provider.dart） =====
 class ConnectionProvider with ChangeNotifier {
@@ -29,6 +30,9 @@ class ConnectionProvider with ChangeNotifier {
   DateTime? _connectStartTime; // 添加连接开始时间
   String? _disconnectReason; // 添加断开原因
   bool _globalProxy = false;  // 修改：proxyOnly改为globalProxy
+  
+  // 新增：存储国际化文字
+  Map<String, String>? _localizedStrings;
   
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
@@ -54,6 +58,21 @@ class ConnectionProvider with ChangeNotifier {
       });
     }
     super.dispose();
+  }
+  
+  // 新增：设置国际化文字
+  void setLocalizedStrings(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    _localizedStrings = {
+      'appName': AppConfig.appName,
+      'notificationChannelName': l10n.notificationChannelName,
+      'notificationChannelDesc': l10n.notificationChannelDesc,
+      'globalProxyMode': l10n.globalProxyMode,
+      'smartProxyMode': l10n.smartProxyMode,
+      'proxyOnlyMode': l10n.proxyOnlyMode,
+      'disconnectButtonName': l10n.disconnect,
+      'trafficStatsFormat': l10n.trafficStats,
+    };
   }
   
   // 处理V2Ray进程意外退出
@@ -231,6 +250,7 @@ class ConnectionProvider with ChangeNotifier {
           serverIp: serverToConnect.ip,
           serverPort: serverToConnect.port,
           globalProxy: _globalProxy,  // 修改：传递全局代理参数
+          localizedStrings: _localizedStrings,  // 传递国际化文字
         );
 
         if (success) {
