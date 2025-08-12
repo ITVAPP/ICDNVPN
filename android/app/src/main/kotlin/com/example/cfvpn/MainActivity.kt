@@ -95,10 +95,17 @@ class MainActivity: FlutterActivity() {
                     val stats = V2RayVpnService.getTrafficStats()
                     // 添加格式化的数据
                     val enhancedStats = stats.toMutableMap()
-                    enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] as? Long ?: 0L)
-                    enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] as? Long ?: 0L)
-                    enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] as? Long ?: 0L)}/s"
-                    enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] as? Long ?: 0L)}/s"
+                    
+                    // 安全地获取Long值
+                    val uploadTotal = stats["uploadTotal"] ?: 0L
+                    val downloadTotal = stats["downloadTotal"] ?: 0L
+                    val uploadSpeed = stats["uploadSpeed"] ?: 0L
+                    val downloadSpeed = stats["downloadSpeed"] ?: 0L
+                    
+                    enhancedStats["uploadFormatted"] = formatBytes(uploadTotal)
+                    enhancedStats["downloadFormatted"] = formatBytes(downloadTotal)
+                    enhancedStats["uploadSpeedFormatted"] = "${formatBytes(uploadSpeed)}/s"
+                    enhancedStats["downloadSpeedFormatted"] = "${formatBytes(downloadSpeed)}/s"
                     result.success(enhancedStats)
                 }
                 

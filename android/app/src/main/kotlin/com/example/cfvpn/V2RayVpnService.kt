@@ -700,9 +700,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 步骤8：保存配置用于开机自启动（如果启用）
             try {
-                if (AutoStartManager.isAutoStartEnabled(this)) {
+                if (AutoStartManager.isAutoStartEnabled(this@V2RayVpnService)) {
                     AutoStartManager.saveAutoStartConfig(
-                        this,
+                        this@V2RayVpnService,
                         config.originalConfig,
                         mode.name,
                         globalProxy
@@ -766,9 +766,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 步骤5：保存配置用于开机自启动（如果启用）
             try {
-                if (AutoStartManager.isAutoStartEnabled(this)) {
+                if (AutoStartManager.isAutoStartEnabled(this@V2RayVpnService)) {
                     AutoStartManager.saveAutoStartConfig(
-                        this,
+                        this@V2RayVpnService,
                         config.originalConfig,
                         mode.name,
                         globalProxy
