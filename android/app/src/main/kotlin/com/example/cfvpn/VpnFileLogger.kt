@@ -10,41 +10,28 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
-/**
- * VPN 文件日志记录器 - 性能优化版
- * 
- * 优化特性：
- * 1. 异步写入队列，避免I/O阻塞
- * 2. 批量flush策略，减少磁盘写入次数
- * 3. ThreadLocal解决SimpleDateFormat线程安全问题
- * 4. 优化日志开关检查逻辑
- * 
- * 设计原则：简单可靠，异步写入，内部控制开关
- */
+// 记录KT端日志
 object VpnFileLogger {
     
     private const val TAG = "VpnFileLogger"
     
-    // ========== 日志开关 - 只在这里修改！ ==========
-    // 开发环境：true
-    // 生产环境：false
-    private const val ENABLE_LOG = true  // <-- 生产环境改为 false
-    // ===============================================
+    // 日志开关，控制日志输出
+    private const val ENABLE_LOG = true  // 生产环境设为false
     
     // 批量写入配置
-    private const val FLUSH_INTERVAL_MS = 100L  // 100ms批量刷新一次
-    private const val FLUSH_BATCH_SIZE = 10     // 累积10条日志刷新一次
+    private const val FLUSH_INTERVAL_MS = 100L  // 每100ms刷新一次
+    private const val FLUSH_BATCH_SIZE = 10     // 累积10条日志刷新
     
     private var logFile: File? = null
     private var writer: FileWriter? = null
     
-    // 使用ThreadLocal解决SimpleDateFormat线程安全问题
+    // 线程安全的日期格式化
     private val dateFormatThreadLocal = ThreadLocal.withInitial {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     }
     
-    // 异步写入队列
-    private val logQueue = LinkedBlockingQueue<LogEntry>(1000)  // 最大缓存1000条日志
+    // 异步日志队列，容量1000
+    private val logQueue = LinkedBlockingQueue<LogEntry>(1000)
     private var writerThread: Thread? = null
     private val isRunning = AtomicBoolean(false)
     
@@ -57,60 +44,45 @@ object VpnFileLogger {
         val timestamp: Long = System.currentTimeMillis()
     )
     
-    /**
-     * 初始化日志系统
-     */
+    // 初始化日志系统，创建日志文件
     fun init(context: Context) {
-        // 提前检查日志开关，避免不必要的初始化
         if (!ENABLE_LOG) {
-            Log.d(TAG, "日志系统已禁用")
+            Log.d(TAG, "日志系统禁用")
             return
         }
         
         try {
-            // 如果已经初始化，先关闭
-            if (isRunning.get()) {
-                close()
-            }
+            // 关闭已有日志系统
+            if (isRunning.get()) close()
             
             // 创建日志目录
             val logDir = File(context.filesDir, "logs")
-            if (!logDir.exists()) {
-                logDir.mkdirs()
-            }
+            if (!logDir.exists()) logDir.mkdirs()
             
             // 创建日志文件
-            val fileName = "vpn_${SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())}.log"
+            val fileName = "KT_${SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())}.log"
             logFile = File(logDir, fileName)
             
-            // 打开文件写入器（追加模式）
+            // 初始化文件写入器
             writer = FileWriter(logFile, true)
-            
-            // 写入会话开始标记
             writer?.apply {
-                write("\n========== VPN日志开始 ${Date()} ==========\n")
-                flush() // 初始化时立即刷新一次
+                write("\n========== KT端日志开始 ${Date()} ==========\n")
+                flush()
             }
             
             // 启动异步写入线程
             startWriterThread()
             
-            Log.d(TAG, "日志系统初始化成功: ${logFile?.absolutePath}")
-            
+            Log.d(TAG, "日志系统初始化: ${logFile?.absolutePath}")
         } catch (e: Exception) {
-            Log.e(TAG, "初始化失败", e)
-            // 初始化失败时禁用日志，避免后续错误
+            Log.e(TAG, "日志初始化失败", e)
             isRunning.set(false)
         }
     }
     
-    /**
-     * 启动异步写入线程
-     */
+    // 启动异步写入线程
     private fun startWriterThread() {
-        if (!ENABLE_LOG || isRunning.get()) {
-            return
-        }
+        if (!ENABLE_LOG || isRunning.get()) return
         
         isRunning.set(true)
         
@@ -121,72 +93,61 @@ object VpnFileLogger {
             try {
                 while (isRunning.get()) {
                     try {
-                        // 从队列取日志（带超时）
+                        // 从队列获取日志
                         val log = logQueue.poll(FLUSH_INTERVAL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
                         
-                        if (log != null) {
-                            pendingLogs.add(log)
-                        }
+                        if (log != null) pendingLogs.add(log)
                         
                         val currentTime = System.currentTimeMillis()
                         val shouldFlush = pendingLogs.size >= FLUSH_BATCH_SIZE ||
                                 (pendingLogs.isNotEmpty() && currentTime - lastFlushTime >= FLUSH_INTERVAL_MS)
                         
+                        // 批量刷新日志
                         if (shouldFlush && pendingLogs.isNotEmpty()) {
                             flushPendingLogs(pendingLogs)
                             pendingLogs.clear()
                             lastFlushTime = currentTime
                         }
-                        
                     } catch (e: InterruptedException) {
-                        // 线程被中断，退出循环
                         break
                     } catch (e: Exception) {
                         Log.e(TAG, "写入线程异常", e)
                     }
                 }
                 
-                // 退出前刷新剩余日志
-                if (pendingLogs.isNotEmpty()) {
-                    flushPendingLogs(pendingLogs)
-                }
-                
+                // 刷新剩余日志
+                if (pendingLogs.isNotEmpty()) flushPendingLogs(pendingLogs)
             } catch (e: Exception) {
                 Log.e(TAG, "写入线程崩溃", e)
             }
         }
     }
     
-    /**
-     * 批量刷新待写入的日志
-     */
+    // 批量写入日志到文件
     private fun flushPendingLogs(logs: List<LogEntry>) {
         try {
             writer?.apply {
                 val dateFormat = dateFormatThreadLocal.get()
-                val sb = StringBuilder(logs.size * 100)  // 预分配缓冲区
+                val sb = StringBuilder(logs.size * 100)
                 
                 for (log in logs) {
                     val timestamp = dateFormat.format(Date(log.timestamp))
-                    sb.append("[").append(timestamp).append("] ")
-                      .append("[").append(log.level).append("] ")
-                      .append("[").append(log.tag).append("] ")
-                      .append(log.message).append("\n")
+                    sb.append("[$timestamp] [${log.level}] [${log.tag}] ${log.message}\n")
                     
-                    // 如果有异常，写入堆栈
+                    // 写入异常堆栈
                     if (log.error != null) {
-                        sb.append("  Exception: ").append(log.error.message).append("\n")
+                        sb.append("  Exception: ${log.error.message}\n")
                         log.error.stackTrace.take(5).forEach { 
-                            sb.append("    at ").append(it).append("\n")
+                            sb.append("    at $it\n")
                         }
                     }
                 }
                 
-                // 批量写入
+                // 批量写入并刷新
                 write(sb.toString())
-                flush()  // 批量刷新
+                flush()
                 
-                // 同时输出到Logcat（可选，调试用）
+                // 输出到Logcat
                 for (log in logs) {
                     when (log.level) {
                         "D" -> Log.d(log.tag, log.message, log.error)
@@ -197,16 +158,14 @@ object VpnFileLogger {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "批量刷新失败", e)
+            Log.e(TAG, "批量写入失败", e)
         }
     }
     
-    /**
-     * 写入日志（异步方式）
-     */
+    // 异步写入日志
     private fun writeLog(level: String, tag: String, message: String, error: Throwable? = null) {
-        // 如果日志系统未运行，只输出到Logcat
         if (!isRunning.get()) {
+            // 未运行时仅输出到Logcat
             when (level) {
                 "D" -> Log.d(tag, message, error)
                 "I" -> Log.i(tag, message, error)
@@ -216,80 +175,73 @@ object VpnFileLogger {
             return
         }
         
-        // 添加到队列（非阻塞）
+        // 添加日志到队列
         val entry = LogEntry(level, tag, message, error)
         if (!logQueue.offer(entry)) {
-            // 队列满了，直接输出到Logcat
-            Log.w(TAG, "日志队列已满，丢弃日志: $message")
-            when (level) {
-                "E" -> Log.e(tag, message, error)  // 错误日志始终输出
-                "W" -> Log.w(tag, message, error)  // 警告日志始终输出
+            Log.w(TAG, "日志队列已满: $message")
+            if (level == "E" || level == "W") {
+                when (level) {
+                    "E" -> Log.e(tag, message, error)
+                    "W" -> Log.w(tag, message, error)
+                }
             }
         }
     }
     
-    // 便捷方法（优化：在方法入口检查日志开关）
+    // 记录调试日志
     fun d(tag: String, message: String) {
         if (ENABLE_LOG) writeLog("D", tag, message)
     }
     
+    // 记录信息日志
     fun i(tag: String, message: String) {
         if (ENABLE_LOG) writeLog("I", tag, message)
     }
     
+    // 记录警告日志
     fun w(tag: String, message: String, error: Throwable? = null) {
         if (ENABLE_LOG) writeLog("W", tag, message, error)
     }
     
+    // 记录错误日志
     fun e(tag: String, message: String, error: Throwable? = null) {
         if (ENABLE_LOG) writeLog("E", tag, message, error)
     }
     
-    /**
-     * 立即刷新日志缓冲区
-     * 用于重要日志需要立即写入的场景
-     */
+    // 强制刷新日志缓冲区
     fun flushAll() {
         if (!ENABLE_LOG || !isRunning.get()) return
         
         try {
-            // 等待队列清空（最多等待1秒）
+            // 等待队列清空
             val startTime = System.currentTimeMillis()
             while (logQueue.isNotEmpty() && System.currentTimeMillis() - startTime < 1000) {
                 Thread.sleep(10)
             }
             
-            // 强制刷新文件
+            // 刷新文件
             writer?.flush()
         } catch (e: Exception) {
-            Log.e(TAG, "刷新失败", e)
+            Log.e(TAG, "强制刷新失败", e)
         }
     }
     
-    /**
-     * 关闭日志系统
-     */
+    // 关闭日志系统
     fun close() {
         try {
-            // 停止接收新日志
+            // 停止日志系统
             isRunning.set(false)
             
             // 中断写入线程
             writerThread?.interrupt()
             
-            // 等待线程结束（最多等待2秒）
-            try {
-                writerThread?.join(2000)
-            } catch (e: InterruptedException) {
-                // 忽略
-            }
+            // 等待线程结束
+            writerThread?.join(2000)
             
-            // 处理剩余的日志
+            // 处理剩余日志
             val remainingLogs = mutableListOf<LogEntry>()
             logQueue.drainTo(remainingLogs)
-            if (remainingLogs.isNotEmpty()) {
-                flushPendingLogs(remainingLogs)
-            }
+            if (remainingLogs.isNotEmpty()) flushPendingLogs(remainingLogs)
             
             // 关闭文件写入器
             writer?.close()
@@ -297,10 +249,9 @@ object VpnFileLogger {
             logFile = null
             writerThread = null
             
-            Log.d(TAG, "日志系统已关闭")
-            
+            Log.d(TAG, "日志系统关闭")
         } catch (e: Exception) {
-            Log.e(TAG, "关闭失败", e)
+            Log.e(TAG, "关闭日志失败", e)
         }
     }
 }
