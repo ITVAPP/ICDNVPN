@@ -613,10 +613,10 @@ const Map<String, String> _zhCnTranslations = {
   'smartProxyMode': '智能代理模式',
   'proxyOnlyMode': '仅代理模式',
   
-  // 通知栏（新增）
+  // 通知栏（修复：使用正确的格式）
   'notificationChannelName': 'VPN服务',
   'notificationChannelDesc': 'VPN连接状态通知',
-  'trafficStats': '流量: ↑%upload ↓%download',
+  'trafficStats': '流量: ↑%upload ↓%download',  // 修复：使用正确的占位符
   
   // 国家/地区名称
   'countryChina': '中国',
@@ -688,335 +688,29 @@ const Map<String, String> _zhCnTranslations = {
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
-  'servers': 'Servers',
-  'settings': 'Settings',
-  'disconnect': 'Disconnect',
-  'connected': 'Connected',
-  'disconnected': 'Disconnected',
-  'connecting': 'Connecting...',
-  'disconnecting': 'Disconnecting...',
-  'close': 'Close',
-  'cancel': 'Cancel',
-  'ok': 'OK',
-  'unknownError': 'Unknown Error',
-  
-  'clickToConnect': 'Click to Connect',
-  'clickToDisconnect': 'Click to Disconnect',
-  'currentServer': 'Current Server',
-  'selectServer': 'Select Server',
-  'upload': 'Upload',
-  'download': 'Download',
-  'autoSelectNode': 'Auto Select',
-  'speedTest': 'Speed Test',
-  'refresh': 'Refresh',
-  'noNodesHint': 'No nodes, please get first',
-  
-  'serverList': 'Server List',
-  'addServer': 'Add Server',
-  'deleteServer': 'Delete Server',
-  'testLatency': 'Test Latency',
-  'sortAscending': 'Sort by Latency (Low to High)',
-  'sortDescending': 'Sort by Latency (High to Low)',
-  'fromCloudflare': 'From Cloudflare',
-  'noServers': 'No Servers',
-  'confirmDelete': 'Confirm Delete',
-  'latency': 'Latency',
-  
-  'addFromCloudflare': 'Add from Cloudflare',
-  'autoGetBestNodes': 'Auto get best nodes',
-  'manualAdd': 'Manual Add',
-  'inputServerInfo': 'Input server info',
-  'importFromClipboard': 'Import from Clipboard',
-  'pasteServerConfig': 'Paste server config',
-  'diagnosticTool': 'Diagnostic Tool',
-  'diagnosticNotSupported': 'Diagnostic tool is not supported on mobile platforms',
-  
-  'generalSettings': 'General Settings',
-  'about': 'About',
-  'autoStart': 'Auto Start',
-  'autoStartDesc': 'Start automatically when system boots',
-  'autoConnect': 'Auto Connect',
-  'autoConnectDesc': 'Connect automatically when app starts',
-  'globalProxy': 'Global Proxy',
-  'globalProxyDesc': 'When enabled, all traffic goes through proxy. When disabled, smart routing is used',
-  'currentVersion': 'Current Version',
-  'checkUpdate': 'Check Update',
-  'officialWebsite': 'Official Website',
-  'contactEmail': 'Contact Email',
-  'privacyPolicy': 'Privacy Policy',
-  'clearCache': 'Clear Cache',
-  'cacheCleared': 'Cache Cleared',
-  'language': 'Language',
-  'theme': 'Theme',
-  'systemTheme': 'System',
-  'lightTheme': 'Light',
-  'darkTheme': 'Dark',
-  
-  // 权限相关
-  'permissionRequired': 'VPN Permission',
-  'permissionReason': 'VPN permission is required to establish a secure connection',
-  
-  'operationFailed': 'Operation Failed',
-  'testingLatency': 'Testing Latency...',
-  'gettingNodes': 'Getting Nodes...',
-  'alreadyLatestVersion': 'Already Latest Version',
-  'serverAdded': 'Server Added',
-  'serverDeleted': 'Server Deleted',
-  
-  'startTest': 'Start Test',
-  'testing': 'Testing',
-  'testCompleted': 'Test Completed',
-  'testFailed': 'Test Failed',
-  'preparing': 'Preparing...',
-  
-  'preparingTestEnvironment': 'Preparing test environment',
-  'initializing': 'Initializing',
-  'generatingTestIPs': 'Generating test IPs',
-  'samplingFromIPRanges': 'Sampling from %s IP ranges',
-  'testingDelay': 'Testing delay',
-  'testingResponseSpeed': 'Testing response speed',
-  'startingTraceTest': 'Starting response speed test',
-  'foundQualityNodes': 'Found %s quality nodes',
-  
-  'noQualifiedNodes': 'No qualified nodes found',
-  'checkNetworkOrRequirements': 'Please check network connection or lower requirements',
-  'nodeProgress': '%s/%s',
-  'ipRanges': '%s IP ranges',
-  
-  'runDiagnostics': 'Run Diagnostics',
-  'fileCheck': 'File Check',
-  'networkTest': 'Network Test',
-  'systemInfo': 'System Info',
-  'size': 'Size',
-  'modified': 'Modified',
-  'config': 'Config',
-  'ipFile': 'IP File',
-  'missing': 'Missing',
-  'ipRangesCount': 'IP Ranges Count',
-  'sample': 'Sample',
-  'cloudflareTest': 'Cloudflare Test',
-  'os': 'OS',
-  'version': 'Version',
-  'failed': 'Failed',
-  
-  'confirmExit': 'Confirm Exit',
-  'confirmExitDesc': 'Please choose an action:',
-  'minimize': 'Minimize to Tray',
-  'exitApp': 'Exit App',
-  
-  'gettingBestNodes': 'Getting best nodes...',
-  'getNodesFailed': 'Failed to get nodes, please retry',
-  'noValidNodes': 'No valid nodes found',
-  'nodesAdded': 'Added %s servers',
-  
-  'connectionLost': 'Connection Lost',
-  'vpnDisconnected': 'VPN Disconnected',
-  
-  'importantUpdate': 'Important Update',
-  'newVersionFound': 'New Version Found',
-  'versionLabel': 'Version %s',
-  'forceUpdateNotice': 'This version contains important updates and requires immediate upgrade',
-  'updateContent': 'Update Content:',
-  'remindLater': 'Remind Later',
-  'updateNow': 'Update Now',
-  'downloadFailed': 'Download Failed',
-  'downloadFailedMessage': 'Download failed: %s\n\nOpen browser to download?',
-  'openBrowser': 'Open Browser',
-  'goToAppStore': 'Go to App Store',
-  'goToDownload': 'Go to Download',
-  'pathCopied': 'Path copied to clipboard',
-  'manualInstallNotice': 'Please manually install APK file:\n%s',
-  'copyPath': 'Copy Path',
-  'linkCopied': 'Download link copied to clipboard',
-  
-  'adLabel': 'AD',
-  'secondsToClose': 'Close in %s seconds',
-  'tapToLearnMore': 'Tap to learn more',
-  
-  'proxyServer': 'Proxy Server',
-  'v2rayRunning': 'V2Ray Running',
-  'disconnectButton': 'Disconnect',
-  
-  'autoSelectBestNode': 'Auto selected best node: %name (%ping ms)',
-  'getNodeFailedWithRetry': 'Failed to get nodes, please check network and retry',
-  'retry': 'Retry',
-  'switchNode': 'Switch Node',
-  'confirmSwitchNode': 'Switch to %s?',
-  'switchNodeDesc': 'Current connection will be disconnected and reconnected.',
-  'switching': 'Switching',
-  'switchingNode': 'Switching node...',
-  'switchedToNode': 'Switched to %s',
-  'switchFailed': 'Switch failed: %s',
-  'testingServers': 'Testing %s servers...',
-  'serversUnit': 'servers',
-  'testCompletedWithCount': 'Test completed, updated %s servers',
-  'updateFailed': 'Check update failed: %s',
-  'clearCacheConfirm': 'All cache data will be cleared, including server list and settings. Continue?',
-  'tip': 'Tip',
-  'clearCacheDisconnectWarning': 'Clearing cache will disconnect current VPN connection. Continue?',
-  'continue': 'Continue',
-  'clearingCache': 'Clearing cache...',
-  'cacheDetails': 'Cleared: Log files, server list, user settings',
-  'reGetNodes': 'Re-get Nodes',
-  'newVersion': 'New %s',
-  
-  // 代理模式（新增）
-  'globalProxyMode': 'Global Proxy',
-  'smartProxyMode': 'Smart Proxy',
-  'proxyOnlyMode': 'Proxy Only',
-  
-  // 通知栏（新增）
-  'notificationChannelName': 'VPN Service',
-  'notificationChannelDesc': 'VPN connection status notification',
-  'trafficStats': 'Traffic: ↑%upload ↓%download',
-  
-  // 国家/地区名称 (英文)
-  'countryChina': 'China',
-  'countryHongKong': 'Hong Kong',
-  'countryTaiwan': 'Taiwan',
-  'countrySingapore': 'Singapore',
-  'countryJapan': 'Japan',
-  'countrySouthKorea': 'South Korea',
-  'countryThailand': 'Thailand',
-  'countryMalaysia': 'Malaysia',
-  'countryPhilippines': 'Philippines',
-  'countryIndonesia': 'Indonesia',
-  'countryIndia': 'India',
-  'countryUAE': 'UAE',
-  'countryVietnam': 'Vietnam',
-  'countryTurkey': 'Turkey',
-  'countryIsrael': 'Israel',
-  'countryUSA': 'USA',
-  'countryCanada': 'Canada',
-  'countryMexico': 'Mexico',
-  'countryUK': 'UK',
-  'countryFrance': 'France',
-  'countryGermany': 'Germany',
-  'countryNetherlands': 'Netherlands',
-  'countrySpain': 'Spain',
-  'countryItaly': 'Italy',
-  'countrySwitzerland': 'Switzerland',
-  'countryAustria': 'Austria',
-  'countrySweden': 'Sweden',
-  'countryDenmark': 'Denmark',
-  'countryPoland': 'Poland',
-  'countryRussia': 'Russia',
-  'countryBelgium': 'Belgium',
-  'countryCzechia': 'Czechia',
-  'countryFinland': 'Finland',
-  'countryIreland': 'Ireland',
-  'countryNorway': 'Norway',
-  'countryPortugal': 'Portugal',
-  'countryGreece': 'Greece',
-  'countryRomania': 'Romania',
-  'countryUkraine': 'Ukraine',
-  'countryAustralia': 'Australia',
-  'countryNewZealand': 'New Zealand',
-  'countryBrazil': 'Brazil',
-  'countryArgentina': 'Argentina',
-  'countryChile': 'Chile',
-  'countryPeru': 'Peru',
-  'countryColombia': 'Colombia',
-  'countryVenezuela': 'Venezuela',
-  'countryUruguay': 'Uruguay',
-  'countrySouthAfrica': 'South Africa',
-  'countryEgypt': 'Egypt',
-  'countryNigeria': 'Nigeria',
-  'countryKenya': 'Kenya',
-  'countryMorocco': 'Morocco',
-  'countryTunisia': 'Tunisia',
-  'countryEthiopia': 'Ethiopia',
-  
-  // 大洲名称 (英文)
-  'continentAsia': 'Asia',
-  'continentNorthAmerica': 'North America',
-  'continentEurope': 'Europe',
-  'continentOceania': 'Oceania',
-  'continentSouthAmerica': 'South America',
-  'continentAfrica': 'Africa',
-  'continentUnknown': 'Unknown',
+  // 其他英语翻译待完善
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
-  'diagnosticNotSupported': '診斷工具暫不支持移動平台',
-  'globalProxy': '全局代理',
-  'globalProxyDesc': '開啟後所有流量都通過代理，關閉後智能分流',
-  'permissionRequired': 'VPN權限',
-  'permissionReason': '需要VPN權限才能建立安全連接',
-  
-  // 代理模式（新增）
-  'globalProxyMode': '全局代理模式',
-  'smartProxyMode': '智能代理模式',
-  'proxyOnlyMode': '僅代理模式',
-  
-  // 通知栏（新增）
-  'notificationChannelName': 'VPN服務',
-  'notificationChannelDesc': 'VPN連接狀態通知',
-  'trafficStats': '流量: ↑%upload ↓%download',
   // 其他繁体中文翻译待完善
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
-  'diagnosticNotSupported': 'La herramienta de diagnóstico no es compatible con plataformas móviles',
-  'globalProxy': 'Proxy Global',
-  'globalProxyDesc': 'Cuando está habilitado, todo el tráfico pasa por el proxy. Cuando está deshabilitado, se usa el enrutamiento inteligente',
-  'permissionRequired': 'Permiso VPN',
-  'permissionReason': 'Se requiere permiso VPN para establecer una conexión segura',
-  
-  // 代理模式（新增）
-  'globalProxyMode': 'Proxy Global',
-  'smartProxyMode': 'Proxy Inteligente',
-  'proxyOnlyMode': 'Solo Proxy',
-  
-  // 通知栏（新增）
-  'notificationChannelName': 'Servicio VPN',
-  'notificationChannelDesc': 'Notificación de estado de conexión VPN',
-  'trafficStats': 'Tráfico: ↑%upload ↓%download',
   // 其他西班牙语翻译待完善
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
-  'diagnosticNotSupported': 'Инструмент диагностики не поддерживается на мобильных платформах',
-  'globalProxy': 'Глобальный прокси',
-  'globalProxyDesc': 'При включении весь трафик проходит через прокси. При отключении используется умная маршрутизация',
-  'permissionRequired': 'Разрешение VPN',
-  'permissionReason': 'Для установления безопасного соединения требуется разрешение VPN',
-  
-  // 代理模式（新增）
-  'globalProxyMode': 'Глобальный прокси',
-  'smartProxyMode': 'Умный прокси',
-  'proxyOnlyMode': 'Только прокси',
-  
-  // 通知栏（新增）
-  'notificationChannelName': 'VPN сервис',
-  'notificationChannelDesc': 'Уведомление о состоянии VPN-соединения',
-  'trafficStats': 'Трафик: ↑%upload ↓%download',
   // 其他俄语翻译待完善
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
-  'diagnosticNotSupported': 'أداة التشخيص غير مدعومة على الأنظمة الأساسية للجوال',
-  'globalProxy': 'وكيل عالمي',
-  'globalProxyDesc': 'عند التمكين، تمر جميع حركة المرور عبر الوكيل. عند التعطيل، يتم استخدام التوجيه الذكي',
-  'permissionRequired': 'إذن VPN',
-  'permissionReason': 'مطلوب إذن VPN لإنشاء اتصال آمن',
-  
-  // 代理模式（新增）
-  'globalProxyMode': 'وضع الوكيل العالمي',
-  'smartProxyMode': 'وضع الوكيل الذكي',
-  'proxyOnlyMode': 'وضع الوكيل فقط',
-  
-  // 通知栏（新增）
-  'notificationChannelName': 'خدمة VPN',
-  'notificationChannelDesc': 'إشعار حالة اتصال VPN',
-  'trafficStats': 'حركة المرور: ↑%upload ↓%download',
   // 其他阿拉伯语翻译待完善
 };

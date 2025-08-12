@@ -105,13 +105,107 @@ class AdService extends ChangeNotifier {
   DateTime? _lastLoadTime;
   final Map<String, List<DateTime>> _imageAdShowHistory = {};
   final Random _random = Random();
-
+  
+  // 新增：存储当前语言
+  Locale? _currentLocale;
+  
   /// 获取所有广告
   List<AdModel> get ads => _ads;
 
   /// 初始化广告服务
   Future<void> initialize() async {
     await loadAds();
+  }
+  
+  /// 新增：根据语言设置更新广告配置
+  Future<void> updateLocale(Locale? locale) async {
+    // 判断语言是否发生变化
+    if (_currentLocale?.languageCode == locale?.languageCode &&
+        _currentLocale?.countryCode == locale?.countryCode) {
+      return; // 语言没有变化，不需要重新加载
+    }
+    
+    await _log.info('语言变化：${_currentLocale?.toString()} -> ${locale?.toString()}', tag: _logTag);
+    
+    _currentLocale = locale;
+    _lastLoadTime = null; // 清除缓存时间，强制重新加载
+    await loadAds();
+  }
+  
+  /// 判断是否应该使用默认配置（只有中文简体和繁体）
+  bool _shouldUseDefaultConfig(Locale? locale) {
+    if (locale == null) return true;
+    
+    // 只有中文（不管是简体还是繁体）使用默认配置
+    if (locale.languageCode == 'zh') {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /// 根据语言获取配置URL
+  String _getLocalizedConfigUrl(Locale? locale) {
+    // 中文使用默认配置
+    if (_shouldUseDefaultConfig(locale)) {
+      return AppConfig.adConfigUrl;
+    }
+    
+    // 其他语言（包括英文）添加语言后缀
+    final languageCode = locale?.languageCode ?? 'en';
+    final baseUrl = AppConfig.adConfigUrl;
+    
+    // 处理文件扩展名，在扩展名前添加语言后缀
+    final lastDotIndex = baseUrl.lastIndexOf('.');
+    if (lastDotIndex != -1) {
+      // 例如：ad.json -> ad-en.json
+      return '${baseUrl.substring(0, lastDotIndex)}-$languageCode${baseUrl.substring(lastDotIndex)}';
+    }
+    
+    // 如果没有扩展名，直接添加后缀
+    return '$baseUrl-$languageCode';
+  }
+  
+  /// 尝试加载指定URL的配置
+  Future<String?> _tryLoadConfig(String url) async {
+    try {
+      if (url.startsWith('assets/')) {
+        // 本地文件
+        try {
+          final content = await rootBundle.loadString(url);
+          await _log.info('成功加载本地配置：$url', tag: _logTag);
+          return content;
+        } catch (e) {
+          // 本地文件不存在，这是正常的，静默处理
+          await _log.info('本地配置文件不存在：$url', tag: _logTag);
+          return null;
+        }
+      } else {
+        // 网络地址
+        try {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 5));
+          
+          if (response.statusCode == 200) {
+            await _log.info('成功加载网络配置：$url', tag: _logTag);
+            return response.body;
+          } else {
+            await _log.info('网络配置请求失败：$url, 状态码：${response.statusCode}', tag: _logTag);
+            return null;
+          }
+        } catch (e) {
+          // 网络请求失败，静默处理
+          await _log.info('网络配置加载失败：$url, 错误：$e', tag: _logTag);
+          return null;
+        }
+      }
+    } catch (e) {
+      // 任何其他错误，静默处理
+      await _log.info('加载配置时发生错误：$url, 错误：$e', tag: _logTag);
+      return null;
+    }
   }
 
   /// 加载广告配置
@@ -120,37 +214,34 @@ class AdService extends ChangeNotifier {
       // 检查缓存是否过期
       if (_lastLoadTime != null &&
           DateTime.now().difference(_lastLoadTime!) < AppConfig.adCacheExpiry) {
+        await _log.info('使用缓存的广告配置', tag: _logTag);
         return; // 使用缓存
       }
 
-      String jsonString;
-
-      if (AppConfig.adConfigUrl.startsWith('assets/')) {
-        // 加载本地文件
-        try {
-          jsonString = await rootBundle.loadString(AppConfig.adConfigUrl);
-        } catch (e) {
-          await _log.error('加载本地广告配置失败', tag: _logTag, error: e);
-          return;
-        }
-      } else {
-        // 加载网络文件
-        try {
-          final response = await http.get(
-            Uri.parse(AppConfig.adConfigUrl),
-            headers: {'Accept': 'application/json'},
-          ).timeout(const Duration(seconds: 5));
-
-          if (response.statusCode != 200) {
-            await _log.warn('广告配置请求失败: ${response.statusCode}', tag: _logTag);
-            return;
-          }
-
-          jsonString = response.body;
-        } catch (e) {
-          await _log.error('加载网络广告配置失败', tag: _logTag, error: e);
-          return;
-        }
+      String? jsonString;
+      
+      // 获取语言特定的配置URL
+      final localizedUrl = _getLocalizedConfigUrl(_currentLocale);
+      final defaultUrl = AppConfig.adConfigUrl;
+      
+      // 如果不是默认配置，先尝试加载语言特定配置
+      if (localizedUrl != defaultUrl) {
+        await _log.info('尝试加载语言特定配置：$localizedUrl', tag: _logTag);
+        jsonString = await _tryLoadConfig(localizedUrl);
+      }
+      
+      // 如果语言特定配置加载失败，或者本身就是默认配置，加载默认配置
+      if (jsonString == null) {
+        await _log.info('加载默认配置：$defaultUrl', tag: _logTag);
+        jsonString = await _tryLoadConfig(defaultUrl);
+      }
+      
+      // 如果都失败了，清空广告列表
+      if (jsonString == null) {
+        await _log.warn('所有配置加载失败，清空广告列表', tag: _logTag);
+        _ads = [];
+        notifyListeners();
+        return;
       }
 
       // 解析JSON
@@ -161,18 +252,22 @@ class AdService extends ChangeNotifier {
         if (adConfig.enabled) {
           _ads = adConfig.ads;
           _lastLoadTime = DateTime.now();
+          await _log.info('成功加载 ${_ads.length} 个广告', tag: _logTag);
           notifyListeners();
         } else {
           _ads = [];
+          await _log.info('广告配置已禁用', tag: _logTag);
           notifyListeners();
         }
       } catch (e) {
         await _log.error('解析广告配置失败', tag: _logTag, error: e);
         _ads = [];
+        notifyListeners();
       }
     } catch (e) {
       await _log.error('加载广告时发生未知错误', tag: _logTag, error: e);
       _ads = [];
+      notifyListeners();
     }
   }
 

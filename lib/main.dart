@@ -117,7 +117,32 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
-        ChangeNotifierProvider(create: (_) => AdService()..initialize()),
+        // 修改：让 AdService 监听 LocaleProvider 的变化
+        ChangeNotifierProxyProvider<LocaleProvider, AdService>(
+          create: (context) {
+            final adService = AdService();
+            // 初始化时获取当前语言
+            final localeProvider = context.read<LocaleProvider>();
+            final locale = localeProvider.locale;
+            // 初始化广告服务
+            adService.updateLocale(locale).then((_) {
+              // 语言设置完成后初始化广告
+              adService.initialize();
+            });
+            return adService;
+          },
+          update: (context, localeProvider, adService) {
+            if (adService != null) {
+              // 当语言变化时，更新广告服务
+              final locale = localeProvider.locale ?? 
+                          Localizations.maybeLocaleOf(context);
+              
+              // 异步更新语言设置（不阻塞UI）
+              adService.updateLocale(locale);
+            }
+            return adService ?? AdService();
+          },
+        ),
         ChangeNotifierProvider(create: (_) => DownloadProvider()), // 新增：下载服务
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
@@ -315,6 +340,17 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     
     // 修改：使用版本服务进行检查
     Future.delayed(const Duration(seconds: 2), _checkVersion);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // 设置国际化文字给 ConnectionProvider
+    final connectionProvider = context.read<ConnectionProvider>();
+    connectionProvider.setLocalizedStrings(context);
+    
+    // 注意：不需要给 ServerProvider 设置 context，让 UI 层处理国际化
   }
 
   @override

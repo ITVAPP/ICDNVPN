@@ -210,6 +210,21 @@ class ConnectionProvider with ChangeNotifier {
     // 清除之前的断开原因
     _disconnectReason = null;
     
+    // 确保有国际化文字（防止自动连接时为 null）
+    if (_localizedStrings == null || _localizedStrings!.isEmpty) {
+      _localizedStrings = {
+        'appName': AppConfig.appName,
+        'notificationChannelName': 'VPN Service',
+        'notificationChannelDesc': 'VPN connection status',
+        'globalProxyMode': 'Global Proxy',
+        'smartProxyMode': 'Smart Proxy',
+        'proxyOnlyMode': 'Proxy Only',
+        'disconnectButtonName': 'Disconnect',
+        'trafficStatsFormat': 'Traffic: ↑%upload ↓%download',
+      };
+      await _log.info('使用默认国际化文字（自动连接时可能还未设置）', tag: _logTag);
+    }
+    
     ServerModel? serverToConnect;
     
     // 获取所有可用服务器
@@ -423,10 +438,10 @@ class ServerProvider with ChangeNotifier {
       final completer = Completer<List<ServerModel>>();
       final subscription = controller.stream.listen(
         (progress) {
-          // 更新进度消息 - 使用本地化消息
+          // 更新进度消息 - 直接使用键值，让UI层处理国际化
           if (!progress.hasError) {
-            _initMessage = _getLocalizedMessage(progress);
-            _initDetail = _getLocalizedDetail(progress);
+            _initMessage = progress.messageKey;
+            _initDetail = progress.detailKey ?? '';
             _progress = progress.progress;
             notifyListeners();
           }
@@ -492,49 +507,6 @@ class ServerProvider with ChangeNotifier {
       _initDetail = '';
       _progress = 0.0;
       notifyListeners();
-    }
-  }
-
-  // 获取本地化的消息 - 需要修改以支持新的键
-  String _getLocalizedMessage(TestProgress progress) {
-    // 这里简化处理，实际使用时需要通过context获取本地化
-    switch (progress.messageKey) {
-      case 'preparingTestEnvironment':
-        return '准备测试环境';
-      case 'generatingTestIPs':
-        return '生成测试IP';
-      case 'testingDelay':
-        return '测试延迟';
-      case 'testingResponseSpeed':  // 新增
-        return '测试响应速度';
-      case 'testCompleted':
-        return '测试完成';
-      default:
-        return progress.messageKey;
-    }
-  }
-
-  // 获取本地化的详情 - 需要修改以支持新的键
-  String _getLocalizedDetail(TestProgress progress) {
-    if (progress.detailKey == null) return '';
-    
-    switch (progress.detailKey!) {
-      case 'initializing':
-        return '正在初始化';
-      case 'startingTraceTest':  // 新增
-        return '开始Trace测试';
-      case 'ipRanges':
-        final count = progress.detailParams?['count'] ?? 0;
-        return '从 $count 个IP段采样';
-      case 'nodeProgress':
-        final current = progress.detailParams?['current'] ?? 0;
-        final total = progress.detailParams?['total'] ?? 0;
-        return '$current/$total';
-      case 'foundQualityNodes':
-        final count = progress.detailParams?['count'] ?? 0;
-        return '找到 $count 个优质节点';
-      default:
-        return progress.detailKey!;
     }
   }
 

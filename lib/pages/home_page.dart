@@ -88,8 +88,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
       final serverProvider = Provider.of<ServerProvider>(context, listen: false);
       
-      // 新增：设置国际化文字
-      connectionProvider.setLocalizedStrings(context);
+      // 删除：不再在这里设置国际化文字，已移到 MainScreen 的 didChangeDependencies
       
       connectionProvider.addListener(_onConnectionChanged);
       serverProvider.addListener(_onServerListChanged);
@@ -105,14 +104,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // 新增：发送页面统计（异步，不阻塞）
       LocationService().sendAnalytics(context, 'home');
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 当语言改变时，更新国际化文字
-    final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
-    connectionProvider.setLocalizedStrings(context);
   }
 
   @override
@@ -653,7 +644,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // 修改：添加serverProvider参数以获取状态
+  // 修改：处理 ServerProvider 的国际化显示
   Widget _buildEmptyServerCard(AppLocalizations l10n, ServerProvider serverProvider) {
     final theme = Theme.of(context);
     
@@ -663,27 +654,86 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     if (serverProvider.isInitializing) {
       // 正在初始化/获取节点
-      content = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      // 获取本地化的消息
+      String message = l10n.gettingNodes;
+      String detail = '';
+      
+      // 根据 messageKey 显示本地化文字
+      if (serverProvider.initMessage.isNotEmpty) {
+        switch (serverProvider.initMessage) {
+          case 'gettingBestNodes':
+            message = l10n.gettingBestNodes;
+            break;
+          case 'preparingTestEnvironment':
+            message = l10n.preparingTestEnvironment;
+            break;
+          case 'generatingTestIPs':
+            message = l10n.generatingTestIPs;
+            break;
+          case 'testingDelay':
+            message = l10n.testingDelay;
+            break;
+          case 'testingResponseSpeed':
+            message = l10n.testingResponseSpeed;
+            break;
+          case 'testCompleted':
+            message = l10n.testCompleted;
+            break;
+          default:
+            message = serverProvider.initMessage;
+        }
+      }
+      
+      // 根据 detailKey 显示本地化详情
+      if (serverProvider.initDetail.isNotEmpty) {
+        switch (serverProvider.initDetail) {
+          case 'initializing':
+            detail = l10n.initializing;
+            break;
+          case 'startingTraceTest':
+            detail = l10n.startingTraceTest;
+            break;
+          default:
+            detail = serverProvider.initDetail;
+        }
+      }
+      
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                theme.primaryColor,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    theme.primaryColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                message,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: theme.hintColor,
+                ),
+              ),
+            ],
+          ),
+          if (detail.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.hintColor.withOpacity(0.7),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            l10n.gettingNodes,
-            style: TextStyle(
-              fontSize: 16,
-              color: theme.hintColor,
-            ),
-          ),
+          ],
         ],
       );
     } else if (serverProvider.servers.isEmpty && serverProvider.initMessage.isNotEmpty) {
