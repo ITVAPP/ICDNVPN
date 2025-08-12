@@ -157,6 +157,8 @@ class BootReceiver : BroadcastReceiver() {
     /**
      * 等待系统完全就绪
      * 某些设备需要更长时间才能完全启动
+     * 
+     * 优化：使用指数退避检查间隔，减少CPU唤醒次数
      */
     private suspend fun waitForSystemReady(context: Context) {
         VpnFileLogger.d(TAG, "等待系统就绪...")
@@ -167,11 +169,18 @@ class BootReceiver : BroadcastReceiver() {
         // 检查系统是否已经完全启动
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
         if (powerManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // 等待设备进入交互状态
+            // 使用指数退避策略等待设备进入交互状态
             var waitTime = 0L
+            var checkInterval = 1000L  // 初始检查间隔1秒
+            
             while (!powerManager.isInteractive && waitTime < 30000) {
-                delay(1000)
-                waitTime += 1000
+                delay(checkInterval)
+                waitTime += checkInterval
+                
+                // 指数退避：1秒 -> 2秒 -> 4秒 -> 最大4秒
+                checkInterval = minOf(checkInterval * 2, 4000L)
+                
+                VpnFileLogger.d(TAG, "等待系统交互状态... (已等待${waitTime}ms)")
             }
         }
         
