@@ -597,7 +597,12 @@ class V2RayService {
             if (rule['inboundTag'] != null && 
                 (rule['inboundTag'] is List) &&
                 (rule['inboundTag'] as List).contains('api')) {
-              newRules.add(rule);
+              // 将Map<dynamic, dynamic>转换为Map<String, dynamic>
+              final convertedRule = <String, dynamic>{};
+              rule.forEach((key, value) {
+                convertedRule[key.toString()] = value;
+              });
+              newRules.add(convertedRule);
               await _log.debug('保留API路由规则', tag: _logTag);
             }
           }
