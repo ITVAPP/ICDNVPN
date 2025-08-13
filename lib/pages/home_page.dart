@@ -340,14 +340,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     children: [
                       // 顶部状态栏
                       _buildStatusBar(isConnected, l10n),
-                      const SizedBox(height: 25), // 修改：从28改为25，距离下方连接按钮20像素
+                      const SizedBox(height: 30), // 距离下方连接按钮像素
                       
                       // 主连接按钮
                       SlideTransition(
                         position: _slideAnimation,
                         child: _buildConnectionButton(isConnected, connectionProvider, l10n),
                       ),
-                      const SizedBox(height: 25), // 减少间距
+                      const SizedBox(height: 30), // 减少间距
                       
                       // 服务器信息卡片 - 修改：传递serverProvider以获取状态
                       SlideTransition(

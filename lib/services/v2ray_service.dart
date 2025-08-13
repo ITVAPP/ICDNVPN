@@ -131,7 +131,8 @@ class V2RayService {
   // 配置文件路径 - 根据平台选择
   static String get _CONFIG_PATH {
     if (Platform.isAndroid || Platform.isIOS) {
-      return 'assets/js/v2ray_config_mobile.json';  // 移动端配置
+      // return 'assets/js/v2ray_config_mobile.json';  // 移动端配置
+      return 'assets/js/v2ray_config.json';  // 桌面端配置
     } else {
       return 'assets/js/v2ray_config.json';  // 桌面端配置
     }
