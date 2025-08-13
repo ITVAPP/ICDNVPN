@@ -1521,13 +1521,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     // ===== CoreCallbackHandler 接口实现 =====
     
-    override fun startup(): Int {
+    override fun startup(): Long {
         VpnFileLogger.d(TAG, "CoreCallbackHandler.startup() 被调用")
         VpnFileLogger.d(TAG, "V2Ray核心启动完成通知")
-        return 0
+        return 0L
     }
     
-    override fun shutdown(): Int {
+    override fun shutdown(): Long {
         VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
         
         serviceScope.launch {
@@ -1538,12 +1538,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        return 0
+        return 0L
     }
     
-    override fun onEmitStatus(level: Int, status: String?): Int {
+    override fun onEmitStatus(level: Long, status: String?): Long {
         try {
-            val levelName = when (level) {
+            val levelName = when (level.toInt()) {
                 0 -> "DEBUG"
                 1 -> "INFO"
                 2 -> "WARNING"
@@ -1582,10 +1582,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }
             
-            return 0
+            return 0L
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "处理V2Ray状态回调异常", e)
-            return -1
+            return -1L
         }
     }
     
