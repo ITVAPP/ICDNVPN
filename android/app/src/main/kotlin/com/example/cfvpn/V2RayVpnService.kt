@@ -937,7 +937,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 启动日志读取线程 - 关键修复！读取tun2socks的输出
             Thread {
                 try {
-                    VpnFileLogger.d(TAG, "开始读取$TUN2SOCKS输出...")
+                    VpnFileLogger.d(TAG, "开始读取${TUN2SOCKS}输出...")
                     process?.inputStream?.bufferedReader()?.use { reader ->
                         var line: String?
                         while (reader.readLine().also { line = it } != null) {
@@ -966,10 +966,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                             }
                         }
                     }
-                    VpnFileLogger.d(TAG, "$TUN2SOCKS输出流结束")
+                    VpnFileLogger.d(TAG, "${TUN2SOCKS}输出流结束")
                 } catch (e: Exception) {
                     if (currentState == V2RayState.CONNECTED) {
-                        VpnFileLogger.e(TAG, "读取$TUN2SOCKS输出异常", e)
+                        VpnFileLogger.e(TAG, "读取${TUN2SOCKS}输出异常", e)
                     }
                 }
             }.start()
@@ -999,18 +999,18 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             Thread {
                 Thread.sleep(1000)  // 给进程一秒钟启动时间
                 if (process?.isAlive != true) {
-                    VpnFileLogger.e(TAG, "$TUN2SOCKS进程启动后立即退出")
+                    VpnFileLogger.e(TAG, "${TUN2SOCKS}进程启动后立即退出")
                     // 尝试读取任何错误输出
                     try {
                         val errorInfo = process?.errorStream?.bufferedReader()?.readText()
                         if (!errorInfo.isNullOrEmpty()) {
-                            VpnFileLogger.e(TAG, "$TUN2SOCKS错误输出: $errorInfo")
+                            VpnFileLogger.e(TAG, "${TUN2SOCKS}错误输出: $errorInfo")
                         }
                     } catch (e: Exception) {
                         VpnFileLogger.e(TAG, "读取错误流失败", e)
                     }
                 } else {
-                    VpnFileLogger.i(TAG, "$TUN2SOCKS进程运行正常")
+                    VpnFileLogger.i(TAG, "${TUN2SOCKS}进程运行正常")
                 }
             }.start()
             
