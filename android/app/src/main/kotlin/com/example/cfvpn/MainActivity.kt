@@ -18,12 +18,13 @@ import kotlinx.coroutines.*
 
 /**
  * 主Activity - 处理Flutter与原生的通信
+ * 增强版：支持分应用代理、子网绕过、Android 13+通知权限等功能
+ * 修改：支持国际化文字传递
  * 
- * 版本：简化后的分应用代理
- * - 保持接口向后兼容（接收blockedApps但不使用）
- * - 内部只使用allowedApps：空列表=全部应用走VPN，非空=仅列表内应用走VPN
- * - 支持国际化文字传递
- * - 支持Android 13+通知权限
+ * 简化版本：
+ * - 不接收blockedApps（Dart端不传递）
+ * - 不接收appProxyMode（Dart端不传递）
+ * - 只使用allowedApps：空列表=全部应用走VPN，非空=仅列表内应用走VPN
  */
 class MainActivity: FlutterActivity() {
     
@@ -33,33 +34,33 @@ class MainActivity: FlutterActivity() {
         private const val NOTIFICATION_REQUEST_CODE = 101
         private const val TAG = "MainActivity"
         
+        // 新增：VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
-        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
         private const val VPN_START_TIMEOUT = 10000L  // 10秒超时
     }
     
     private lateinit var channel: MethodChannel
     private val mainScope = MainScope()
     
-    // 保持完整的请求数据结构（向后兼容）
+    // 保存待处理的VPN启动请求（增加国际化文字参数）
     private data class PendingVpnRequest(
         val config: String,
         val mode: String,
         val globalProxy: Boolean,
-        val blockedApps: List<String>?,  // 保留字段以兼容，但传递时为null
         val allowedApps: List<String>?,
-        val appProxyMode: String,  // 保留字段以兼容
         val bypassSubnets: List<String>?,
-        val localizedStrings: Map<String, String>,
+        val localizedStrings: Map<String, String>,  // 新增：国际化文字
         val result: MethodChannel.Result
     )
     private var pendingRequest: PendingVpnRequest? = null
     
+    // 修复：添加同步锁保护并发访问
     private val pendingResultLock = Any()
     private var pendingStartResult: MethodChannel.Result? = null
     private var startTimeoutJob: Job? = null
     
-    // VPN启动结果广播接收器
+    // 新增：VPN启动结果广播接收器
     private val vpnStartResultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_VPN_START_RESULT) {
@@ -68,10 +69,13 @@ class MainActivity: FlutterActivity() {
                 
                 VpnFileLogger.d(TAG, "收到VPN启动结果广播: success=$success, error=$error")
                 
+                // 修复：使用同步锁保护并发访问
                 synchronized(pendingResultLock) {
+                    // 取消超时任务
                     startTimeoutJob?.cancel()
                     startTimeoutJob = null
                     
+                    // 返回结果给Flutter
                     pendingStartResult?.let { result ->
                         if (success) {
                             result.success(true)
@@ -86,11 +90,12 @@ class MainActivity: FlutterActivity() {
         }
     }
     
-    // VPN停止广播接收器
+    // 新增：VPN停止广播接收器（用于通知栏停止按钮）
     private val vpnStoppedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_VPN_STOPPED) {
                 VpnFileLogger.d(TAG, "收到VPN停止广播（来自通知栏）")
+                // 通知Flutter端VPN已断开
                 channel.invokeMethod("onVpnDisconnected", null)
             }
         }
@@ -99,15 +104,21 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
+        // 初始化文件日志系统
         VpnFileLogger.init(applicationContext)
         
+        // 注册VPN启动结果广播接收器
         registerReceiver(vpnStartResultReceiver, IntentFilter(ACTION_VPN_START_RESULT))
+        
+        // 注册VPN停止广播接收器（用于通知栏停止按钮）
         registerReceiver(vpnStoppedReceiver, IntentFilter(ACTION_VPN_STOPPED))
         
+        // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startVpn" -> {
+                    // 修复：使用同步锁检查重复调用
                     synchronized(pendingResultLock) {
                         if (pendingStartResult != null) {
                             VpnFileLogger.w(TAG, "正在处理上一个VPN启动请求")
@@ -116,17 +127,16 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     
+                    // 启动VPN（增强版：支持国际化文字）
                     val config = call.argument<String>("config")
                     val mode = call.argument<String>("mode") ?: "VPN_TUN"
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
                     
-                    // 接收所有参数以保持兼容性
-                    val blockedApps = call.argument<List<String>>("blockedApps")  // 接收但不使用
+                    // 简化：只接收Dart端实际传递的参数
                     val allowedApps = call.argument<List<String>>("allowedApps")
-                    val appProxyMode = call.argument<String>("appProxyMode") ?: "EXCLUDE"  // 接收但使用默认值
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets")
                     
-                    // 国际化文字
+                    // 新增：接收国际化文字
                     val localizedStrings = mutableMapOf<String, String>()
                     localizedStrings["appName"] = call.argument<String>("appName") ?: "CFVPN"
                     localizedStrings["notificationChannelName"] = call.argument<String>("notificationChannelName") ?: "VPN Service"
@@ -138,43 +148,44 @@ class MainActivity: FlutterActivity() {
                     localizedStrings["trafficStatsFormat"] = call.argument<String>("trafficStatsFormat") ?: "Traffic: ↑%upload ↓%download"
                     
                     if (config != null) {
-                        // Android 13+通知权限检查
+                        // 检查通知权限（Android 13+）- 但不阻塞VPN启动
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             if (!checkNotificationPermission()) {
                                 VpnFileLogger.w(TAG, "没有通知权限，但继续启动VPN")
                                 requestNotificationPermission()
+                                // 不等待权限结果，继续启动VPN
                             }
                         }
                         
-                        startVpn(
-                            config, mode, globalProxy, 
-                            blockedApps,  // 传递以保持兼容
-                            allowedApps, 
-                            appProxyMode,  // 传递以保持兼容
-                            bypassSubnets, 
-                            localizedStrings, 
-                            result
-                        )
+                        startVpn(config, mode, globalProxy, allowedApps, bypassSubnets, localizedStrings, result)
                     } else {
                         result.error("INVALID_CONFIG", "配置为空", null)
                     }
                 }
                 
                 "stopVpn" -> {
+                    // 停止VPN
                     stopVpn()
                     result.success(true)
                 }
                 
                 "isVpnConnected" -> {
+                    // 检查VPN是否连接
                     val isConnected = V2RayVpnService.isServiceRunning()
                     result.success(isConnected)
                 }
                 
                 "getTrafficStats" -> {
+                    // 获取流量统计（增强版：返回更详细的数据）
                     val stats = V2RayVpnService.getTrafficStats()
+                    
+                    // 创建新的Map用于返回，支持混合类型（Long和String）
                     val enhancedStats = mutableMapOf<String, Any>()
                     
+                    // 添加原始的Long值
                     enhancedStats.putAll(stats)
+                    
+                    // 添加格式化的String值
                     enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
                     enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
                     enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
@@ -184,11 +195,13 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "checkPermission" -> {
+                    // 检查VPN权限
                     val hasPermission = checkVpnPermission()
                     result.success(hasPermission)
                 }
                 
                 "getInstalledApps" -> {
+                    // 获取已安装应用列表（供选择分应用代理）
                     mainScope.launch {
                         try {
                             val apps = getInstalledApps()
@@ -201,23 +214,24 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "saveProxyConfig" -> {
-                    // 接收所有参数以保持兼容
-                    val blockedApps = call.argument<List<String>>("blockedApps") ?: emptyList()
+                    // 保存代理配置（简化：只保存allowedApps和bypassSubnets）
                     val allowedApps = call.argument<List<String>>("allowedApps") ?: emptyList()
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets") ?: emptyList()
                     
-                    // 内部只保存allowedApps和bypassSubnets
                     saveProxyConfig(allowedApps, bypassSubnets)
                     result.success(true)
                 }
                 
                 "loadProxyConfig" -> {
+                    // 加载代理配置
                     val config = loadProxyConfig()
                     result.success(config)
                 }
                 
-                // 开机自启动相关
+                // ===== 开机自启动相关 =====
+                
                 "setAutoStartEnabled" -> {
+                    // 设置开机自启动
                     val enabled = call.argument<Boolean>("enabled") ?: false
                     try {
                         AutoStartManager.setAutoStartEnabled(this, enabled)
@@ -229,11 +243,13 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "isAutoStartEnabled" -> {
+                    // 检查开机自启动是否启用
                     val enabled = AutoStartManager.isAutoStartEnabled(this)
                     result.success(enabled)
                 }
                 
                 "saveAutoStartConfig" -> {
+                    // 保存自启动配置
                     val config = call.argument<String>("config")
                     val mode = call.argument<String>("mode") ?: "VPN_TUN"
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
@@ -247,6 +263,7 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "clearAutoStartConfig" -> {
+                    // 清除自启动配置（可选功能）
                     AutoStartManager.clearAutoStartConfig(this)
                     result.success(true)
                 }
@@ -286,18 +303,16 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 启动VPN
-     * 保持完整参数列表以兼容，但内部简化逻辑
+     * 启动VPN（简化版）
+     * 修复：等待Service真正启动完成后再返回结果
      */
     private fun startVpn(
         config: String,
         mode: String,
         globalProxy: Boolean,
-        blockedApps: List<String>?,  // 接收但传null给Service
         allowedApps: List<String>?,
-        appProxyMode: String,  // 接收但使用默认值
         bypassSubnets: List<String>?,
-        localizedStrings: Map<String, String>,
+        localizedStrings: Map<String, String>,  // 新增：国际化文字
         result: MethodChannel.Result
     ) {
         mainScope.launch {
@@ -305,7 +320,10 @@ class MainActivity: FlutterActivity() {
                 // 检查是否已在运行
                 if (V2RayVpnService.isServiceRunning()) {
                     VpnFileLogger.w(TAG, "VPN已在运行，先停止再启动")
+                    
+                    // 清理可能存在的pending状态
                     cancelPendingStart("服务重启")
+                    
                     V2RayVpnService.stopVpnService(this@MainActivity)
                     delay(500)
                 }
@@ -314,9 +332,11 @@ class MainActivity: FlutterActivity() {
                 if (mode == "PROXY_ONLY") {
                     VpnFileLogger.d(TAG, "仅代理模式，无需VPN权限")
                     
+                    // 修复：使用同步锁保护设置pendingStartResult
                     synchronized(pendingResultLock) {
                         pendingStartResult = result
                         
+                        // 设置超时保护
                         startTimeoutJob = mainScope.launch {
                             delay(VPN_START_TIMEOUT)
                             synchronized(pendingResultLock) {
@@ -329,21 +349,22 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     
-                    // 启动服务
+                    // 启动服务（传递国际化文字）
                     V2RayVpnService.startVpnService(
-                        context = this@MainActivity,
-                        config = config,
-                        mode = V2RayVpnService.ConnectionMode.PROXY_ONLY,
-                        globalProxy = globalProxy,
-                        blockedApps = null,  // 简化：始终传null
-                        allowedApps = allowedApps,
-                        appProxyMode = V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // 使用默认值
-                        bypassSubnets = bypassSubnets,
-                        enableAutoStats = true,
-                        disconnectButtonName = localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                        localizedStrings = localizedStrings
+                        this@MainActivity,
+                        config,
+                        V2RayVpnService.ConnectionMode.PROXY_ONLY,
+                        globalProxy,
+                        null,  // blockedApps始终为null（简化）
+                        allowedApps,
+                        V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // appProxyMode使用固定值（简化）
+                        bypassSubnets,
+                        true,  // enableAutoStats
+                        localizedStrings["disconnectButtonName"] ?: "Disconnect",
+                        localizedStrings  // 传递国际化文字
                     )
                     
+                    // 等待Service通过广播返回结果
                     return@launch
                 }
                 
@@ -353,12 +374,9 @@ class MainActivity: FlutterActivity() {
                     VpnFileLogger.d(TAG, "需要请求VPN权限")
                     
                     pendingRequest = PendingVpnRequest(
-                        config, mode, globalProxy,
-                        blockedApps,  // 保存原始值以兼容
-                        allowedApps, 
-                        appProxyMode,  // 保存原始值以兼容
-                        bypassSubnets,
-                        localizedStrings,
+                        config, mode, globalProxy, 
+                        allowedApps, bypassSubnets, 
+                        localizedStrings,  // 保存国际化文字
                         result
                     )
                     
@@ -372,9 +390,11 @@ class MainActivity: FlutterActivity() {
                 } else {
                     VpnFileLogger.d(TAG, "已有VPN权限，直接启动服务")
                     
+                    // 修复：使用同步锁保护设置pendingStartResult
                     synchronized(pendingResultLock) {
                         pendingStartResult = result
                         
+                        // 设置超时保护
                         startTimeoutJob = mainScope.launch {
                             delay(VPN_START_TIMEOUT)
                             synchronized(pendingResultLock) {
@@ -387,20 +407,22 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     
-                    // 启动服务
+                    // 启动服务（传递国际化文字）
                     V2RayVpnService.startVpnService(
-                        context = this@MainActivity,
-                        config = config,
-                        mode = V2RayVpnService.ConnectionMode.valueOf(mode),
-                        globalProxy = globalProxy,
-                        blockedApps = null,  // 简化：始终传null
-                        allowedApps = allowedApps,
-                        appProxyMode = V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // 使用默认值
-                        bypassSubnets = bypassSubnets,
-                        enableAutoStats = true,
-                        disconnectButtonName = localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                        localizedStrings = localizedStrings
+                        this@MainActivity,
+                        config,
+                        V2RayVpnService.ConnectionMode.valueOf(mode),
+                        globalProxy,
+                        null,  // blockedApps始终为null（简化）
+                        allowedApps,
+                        V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // appProxyMode使用固定值（简化）
+                        bypassSubnets,
+                        true,  // enableAutoStats
+                        localizedStrings["disconnectButtonName"] ?: "Disconnect",
+                        localizedStrings  // 传递国际化文字
                     )
+                    
+                    // 等待Service通过广播返回结果
                 }
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "启动VPN失败", e)
@@ -411,15 +433,23 @@ class MainActivity: FlutterActivity() {
     
     /**
      * 停止VPN
+     * 修复：清理pending状态，不再主动通知Flutter（由Service广播通知）
      */
     private fun stopVpn() {
         VpnFileLogger.d(TAG, "停止VPN服务")
+        
+        // 如果正在连接，取消并返回错误
         cancelPendingStart("用户取消连接")
+        
         V2RayVpnService.stopVpnService(this)
+        
+        // 移除：不再这里通知Flutter，改由Service广播通知
+        // 这样避免重复通知，且通知栏停止也能正确通知Flutter
     }
     
     /**
      * 取消待处理的启动请求
+     * 修复：使用同步锁保护并发访问
      */
     private fun cancelPendingStart(reason: String) {
         synchronized(pendingResultLock) {
@@ -434,7 +464,7 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 检查VPN权限
+     * 检查是否有VPN权限
      */
     private fun checkVpnPermission(): Boolean {
         return try {
@@ -446,7 +476,7 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 获取已安装应用列表
+     * 获取已安装应用列表（供选择分应用代理）
      */
     private suspend fun getInstalledApps(): List<Map<String, Any>> = withContext(Dispatchers.IO) {
         val apps = mutableListOf<Map<String, Any>>()
@@ -455,6 +485,7 @@ class MainActivity: FlutterActivity() {
         try {
             val packages = pm.getInstalledApplications(0)
             packages.forEach { appInfo ->
+                // 过滤系统应用（可选）
                 val isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                 
                 // 排除自身
@@ -467,6 +498,7 @@ class MainActivity: FlutterActivity() {
                 }
             }
             
+            // 按名称排序
             apps.sortBy { it["appName"] as String }
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "获取应用列表失败", e)
@@ -476,16 +508,16 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 保存代理配置
-     * 内部只保存allowedApps，但保持向后兼容
+     * 保存代理配置（简化版）
      */
     private fun saveProxyConfig(allowedApps: List<String>, bypassSubnets: List<String>) {
         val prefs = getSharedPreferences("proxy_config", MODE_PRIVATE)
         prefs.edit().apply {
+            // 只保存allowedApps和bypassSubnets
             putStringSet("allowed_apps", allowedApps.toSet())
             putStringSet("bypass_subnets", bypassSubnets.toSet())
             
-            // 清理旧数据
+            // 清理旧的blocked_apps数据（如果存在）
             remove("blocked_apps")
             apply()
         }
@@ -493,12 +525,12 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 加载代理配置
-     * 返回兼容的结构（包含空的blockedApps）
+     * 加载代理配置（简化版）
      */
     private fun loadProxyConfig(): Map<String, List<String>> {
         val prefs = getSharedPreferences("proxy_config", MODE_PRIVATE)
         
+        // 默认绕过子网（私有网络）
         val defaultBypassSubnets = setOf(
             "10.0.0.0/8",
             "172.16.0.0/12",
@@ -507,7 +539,6 @@ class MainActivity: FlutterActivity() {
         )
         
         return mapOf(
-            "blockedApps" to emptyList(),  // 返回空列表以保持兼容
             "allowedApps" to (prefs.getStringSet("allowed_apps", emptySet())?.toList() ?: emptyList()),
             "bypassSubnets" to (prefs.getStringSet("bypass_subnets", defaultBypassSubnets)?.toList() ?: defaultBypassSubnets.toList())
         )
@@ -527,7 +558,7 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 处理VPN权限请求结果
+     * 处理权限请求结果
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -549,9 +580,11 @@ class MainActivity: FlutterActivity() {
                     
                     mainScope.launch {
                         try {
+                            // 修复：使用同步锁保护设置pendingStartResult
                             synchronized(pendingResultLock) {
                                 pendingStartResult = request.result
                                 
+                                // 设置超时保护
                                 startTimeoutJob = mainScope.launch {
                                     delay(VPN_START_TIMEOUT)
                                     synchronized(pendingResultLock) {
@@ -564,20 +597,22 @@ class MainActivity: FlutterActivity() {
                                 }
                             }
                             
-                            // 启动服务（使用保存的参数）
+                            // 启动服务（传递国际化文字）
                             V2RayVpnService.startVpnService(
-                                context = this@MainActivity,
-                                config = request.config,
-                                mode = V2RayVpnService.ConnectionMode.valueOf(request.mode),
-                                globalProxy = request.globalProxy,
-                                blockedApps = null,  // 简化：始终传null
-                                allowedApps = request.allowedApps,
-                                appProxyMode = V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // 使用默认值
-                                bypassSubnets = request.bypassSubnets,
-                                enableAutoStats = true,
-                                disconnectButtonName = request.localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                                localizedStrings = request.localizedStrings
+                                this@MainActivity,
+                                request.config,
+                                V2RayVpnService.ConnectionMode.valueOf(request.mode),
+                                request.globalProxy,
+                                null,  // blockedApps始终为null（简化）
+                                request.allowedApps,
+                                V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // appProxyMode使用固定值（简化）
+                                request.bypassSubnets,
+                                true,  // enableAutoStats
+                                request.localizedStrings["disconnectButtonName"] ?: "Disconnect",
+                                request.localizedStrings  // 传递国际化文字
                             )
+                            
+                            // 等待Service通过广播返回结果
                         } catch (e: Exception) {
                             VpnFileLogger.e(TAG, "启动VPN服务失败", e)
                             request.result.error("START_FAILED", e.message, null)
@@ -597,7 +632,7 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 处理通知权限请求结果（Android 13+）
+     * 处理权限请求结果（Android 13+通知权限）
      */
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -622,8 +657,10 @@ class MainActivity: FlutterActivity() {
     override fun onDestroy() {
         super.onDestroy()
         
+        // 清理pending状态
         cancelPendingStart("Activity销毁")
         
+        // 注销广播接收器
         try {
             unregisterReceiver(vpnStartResultReceiver)
         } catch (e: Exception) {
@@ -636,6 +673,7 @@ class MainActivity: FlutterActivity() {
             // 可能已经注销
         }
         
+        // 取消所有协程
         mainScope.cancel()
     }
 }
