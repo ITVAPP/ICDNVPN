@@ -17,6 +17,12 @@
       "statsOutboundDownlink": true
     }
   },
+  "api": {
+    "tag": "api",
+    "services": [
+      "StatsService"
+    ]
+  },
   "inbounds": [
     {
       "tag": "socks",
@@ -42,6 +48,14 @@
         "udp": true,
         "allowTransparent": false,
         "userLevel": 8
+      }
+    },
+    {
+      "tag": "api",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
       }
     }
   ],
@@ -71,7 +85,7 @@
         "network": "ws",
         "security": "tls",
         "tlsSettings": {
-          "allowInsecure": false,
+          "allowInsecure": true,
           "serverName": "pages-vless-a9f.pages.dev",
           "fingerprint": "randomized"
         },
@@ -119,31 +133,81 @@
   "dns": {
     "hosts": {
       "dns.google": "8.8.8.8",
+      "dns.alidns.com": ["223.5.5.5", "223.6.6.6"],
+      "doh.pub": ["1.12.12.12", "120.53.53.53"],
+      "dot.pub": ["1.12.12.12", "120.53.53.53"],
+      "dns.cloudflare.com": ["1.1.1.1", "1.0.0.1"],
+      "cloudflare-dns.com": ["1.1.1.1", "1.0.0.1"],
+      "one.one.one.one": ["1.1.1.1", "1.0.0.1"],
+      "dns.quad9.net": "9.9.9.9",
       "proxy.example.com": "127.0.0.1"
     },
     "servers": [
+      "1.1.1.1",
+      "8.8.8.8",
       {
         "address": "223.5.5.5",
+        "port": 53,
         "domains": [
           "geosite:cn",
           "geosite:geolocation-cn"
         ],
         "expectIPs": [
           "geoip:cn"
-        ]
-      },
-      "1.1.1.1",
-      "8.8.8.8"
+        ],
+        "skipFallback": true
+      }
     ]
   },
   "routing": {
-    "domainStrategy": "AsIs",
+    "domainStrategy": "IPIfNonMatch",
     "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "port": "53",
+        "ip": [
+          "223.5.5.5",
+          "223.6.6.6",
+          "1.12.12.12",
+          "120.53.53.53",
+          "119.29.29.29",
+          "114.114.114.114",
+          "114.114.115.115",
+          "180.76.76.76",
+          "180.184.1.1",
+          "180.184.2.2"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "port": "53",
+        "ip": [
+          "1.1.1.1",
+          "1.0.0.1",
+          "8.8.8.8",
+          "8.8.4.4",
+          "9.9.9.9"
+        ],
+        "outboundTag": "proxy"
+      },
       {
         "type": "field",
         "port": "443",
         "network": "udp",
         "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "direct"
       },
       {
         "type": "field",
@@ -162,26 +226,6 @@
         "type": "field",
         "outboundTag": "direct",
         "ip": [
-          "223.5.5.5/32",
-          "223.6.6.6/32",
-          "2400:3200::1/128",
-          "2400:3200:baba::1/128",
-          "119.29.29.29/32",
-          "1.12.12.12/32",
-          "120.53.53.53/32",
-          "2402:4e00::/128",
-          "2402:4e00:1::/128",
-          "180.76.76.76/32",
-          "2400:da00::6666/128",
-          "114.114.114.114/32",
-          "114.114.115.115/32",
-          "180.184.1.1/32",
-          "180.184.2.2/32",
-          "101.226.4.6/32",
-          "218.30.118.6/32",
-          "123.125.81.6/32",
-          "140.207.198.6/32",
-          "geoip:private",
           "geoip:cn"
         ]
       },
