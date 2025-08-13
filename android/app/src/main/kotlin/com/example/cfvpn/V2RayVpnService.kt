@@ -17,6 +17,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import android.system.Os
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -30,6 +31,8 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URL
 import java.lang.ref.WeakReference
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 // 正确的导入(基于method_summary.md)
 import go.Seq
@@ -38,12 +41,13 @@ import libv2ray.CoreController
 import libv2ray.CoreCallbackHandler
 
 /**
- * V2Ray VPN服务实现 - 简化版
+ * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
  * 
  * 核心原则：
  * 1. 配置处理完全由dart端负责
  * 2. Android端只负责VPN隧道建立和V2Ray核心启动
  * 3. 流量统计按需查询，用于通知栏显示
+ * 4. 保持连接稳定性（WakeLock、电池优化等）
  * 
  * 简化改进：
  * - 移除 AppProxyMode 枚举
@@ -56,6 +60,7 @@ import libv2ray.CoreCallbackHandler
  * - tun2socks进程管理 (使用v2rayNG同款的badvpn-tun2socks)
  * - 流量统计和通知更新
  * - 分应用代理支持（简化版）
+ * - 连接保持机制（WakeLock、Doze模式处理）
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -80,6 +85,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
         private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"
         
+        // WakeLock标签
+        private const val WAKELOCK_TAG = "cfvpn:v2ray"
+        
         // VPN配置常量（与v2rayNG保持一致）
         private const val VPN_MTU = 1500
         private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"
@@ -99,6 +107,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // tun2socks二进制文件名（与v2rayNG一致）
         private const val TUN2SOCKS = "libtun2socks.so"
+        
+        // 连接检查间隔
+        private const val CONNECTION_CHECK_INTERVAL = 30000L  // 30秒检查一次
         
         // 服务状态
         @Volatile
@@ -127,7 +138,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             config: String,
             mode: ConnectionMode = ConnectionMode.VPN_TUN,
             globalProxy: Boolean = false,
+            blockedApps: List<String>? = null,  // 保留接口兼容性，但不使用
             allowedApps: List<String>? = null,  // 简化：只保留允许列表
+            appProxyMode: AppProxyMode = AppProxyMode.EXCLUDE,  // 保留接口兼容性，但不使用
             bypassSubnets: List<String>? = null,
             enableAutoStats: Boolean = true,
             disconnectButtonName: String = "停止",
@@ -164,6 +177,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "启动服务失败", e)
             }
+        }
+        
+        // AppProxyMode枚举 - 保留以保持接口兼容性
+        enum class AppProxyMode {
+            EXCLUDE,
+            INCLUDE
         }
         
         /**
@@ -233,6 +252,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 网络回调（Android P及以上）
     private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
     
+    // WakeLock（保持CPU唤醒）
+    private var wakeLock: PowerManager.WakeLock? = null
+    
     // tun2socks重启控制
     private var tun2socksRestartCount = 0
     private var tun2socksFirstRestartTime = 0L
@@ -264,6 +286,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     // 统计任务
     private var statsJob: Job? = null
+    
+    // 连接检查任务
+    private var connectionCheckJob: Job? = null
     
     // 广播接收器
     private val stopReceiver = object : BroadcastReceiver() {
@@ -319,7 +344,46 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 复制资源文件
         copyAssetFiles()
         
+        // 获取WakeLock
+        acquireWakeLock()
+        
         VpnFileLogger.d(TAG, "VPN服务onCreate完成")
+    }
+    
+    /**
+     * 获取WakeLock以保持CPU唤醒
+     */
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                WAKELOCK_TAG
+            ).apply {
+                setReferenceCounted(false)
+                acquire(10 * 60 * 1000L)  // 10分钟后自动释放，防止泄漏
+            }
+            VpnFileLogger.d(TAG, "WakeLock已获取")
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "获取WakeLock失败", e)
+        }
+    }
+    
+    /**
+     * 释放WakeLock
+     */
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    VpnFileLogger.d(TAG, "WakeLock已释放")
+                }
+            }
+            wakeLock = null
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "释放WakeLock失败", e)
+        }
     }
     
     /**
@@ -582,7 +646,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.d(TAG, "coreController.startLoop() 调用完成")
             
             // 等待核心启动
-            delay(500)
+            delay(1000)  // 增加等待时间
             
             // 验证运行状态
             val isRunningNow = coreController?.isRunning ?: false
@@ -653,6 +717,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.d(TAG, "启动流量统计监控")
                 startTrafficMonitor()
             }
+            
+            // 启动连接检查
+            startConnectionCheck()
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray(VPN模式)失败: ${e.message}", e)
@@ -737,6 +804,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.d(TAG, "步骤2: 启动V2Ray核心")
             coreController?.startLoop(configJson)
             
+            // 等待核心启动
+            delay(1000)
+            
             // 步骤3: 验证运行状态
             val isRunningNow = coreController?.isRunning ?: false
             if (!isRunningNow) {
@@ -772,11 +842,76 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 startTrafficMonitor()
             }
             
+            // 启动连接检查
+            startConnectionCheck()
+            
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray(仅代理模式)失败: ${e.message}", e)
             cleanupResources()
             sendStartResultBroadcast(false, e.message)
             throw e
+        }
+    }
+    
+    /**
+     * 启动连接状态检查
+     */
+    private fun startConnectionCheck() {
+        connectionCheckJob?.cancel()
+        
+        connectionCheckJob = serviceScope.launch {
+            while (currentState == V2RayState.CONNECTED && isActive) {
+                delay(CONNECTION_CHECK_INTERVAL)
+                
+                try {
+                    // 检查V2Ray核心是否运行
+                    val isRunning = coreController?.isRunning ?: false
+                    if (!isRunning) {
+                        VpnFileLogger.e(TAG, "V2Ray核心意外停止")
+                        stopV2Ray()
+                        break
+                    }
+                    
+                    // 检查tun2socks进程（VPN模式）
+                    if (mode == ConnectionMode.VPN_TUN) {
+                        val processAlive = process?.isAlive ?: false
+                        if (!processAlive) {
+                            VpnFileLogger.w(TAG, "tun2socks进程不存在，尝试重启")
+                            if (shouldRestartTun2socks()) {
+                                restartTun2socks()
+                            } else {
+                                VpnFileLogger.e(TAG, "tun2socks重启失败次数过多")
+                                stopV2Ray()
+                                break
+                            }
+                        }
+                    }
+                    
+                    // 更新WakeLock（防止超时释放）
+                    renewWakeLock()
+                    
+                } catch (e: Exception) {
+                    VpnFileLogger.e(TAG, "连接检查异常", e)
+                }
+            }
+        }
+    }
+    
+    /**
+     * 更新WakeLock
+     */
+    private fun renewWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.acquire(10 * 60 * 1000L)  // 续期10分钟
+                    VpnFileLogger.d(TAG, "WakeLock已续期")
+                } else {
+                    acquireWakeLock()
+                }
+            } ?: acquireWakeLock()
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "更新WakeLock失败", e)
         }
     }
     
@@ -801,6 +936,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun cleanupResources() {
         currentState = V2RayState.DISCONNECTED
+        
+        // 停止连接检查
+        connectionCheckJob?.cancel()
+        connectionCheckJob = null
         
         // 注销网络回调
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -827,6 +966,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 关闭VPN接口
         mInterface?.close()
         mInterface = null
+        
+        // 释放WakeLock
+        releaseWakeLock()
     }
     
     /**
@@ -964,7 +1106,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 启动tun2socks进程 - 与v2rayNG完全一致的实现
+     * 启动tun2socks进程 - 修复版：改进日志读取
      */
     private fun runTun2socks() {
         if (mode != ConnectionMode.VPN_TUN) {
@@ -1014,43 +1156,101 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 .directory(applicationContext.filesDir)
                 .start()
             
-            // 启动日志读取线程 - 关键修复！读取tun2socks的输出
+            // 改进的日志读取 - 使用最小缓冲区并立即读取
             Thread {
                 try {
                     VpnFileLogger.d(TAG, "开始读取${TUN2SOCKS}输出...")
-                    process?.inputStream?.bufferedReader()?.use { reader ->
-                        var line: String?
-                        while (reader.readLine().also { line = it } != null) {
-                            // 记录tun2socks的所有输出
-                            VpnFileLogger.d("tun2socks", line ?: "")
+                    
+                    // 使用更小的缓冲区并立即刷新
+                    val reader = BufferedReader(
+                        InputStreamReader(process?.inputStream), 
+                        1  // 最小缓冲区，确保立即读取
+                    )
+                    
+                    var line: String?
+                    var lineCount = 0
+                    
+                    // 持续读取直到进程结束
+                    while (true) {
+                        try {
+                            line = reader.readLine()
+                            if (line == null) {
+                                VpnFileLogger.d(TAG, "${TUN2SOCKS}输出流结束")
+                                break
+                            }
                             
-                            // 检查关键日志
-                            line?.let {
-                                when {
-                                    it.contains("ERROR", ignoreCase = true) -> {
-                                        VpnFileLogger.e("tun2socks", "[ERROR] $it")
-                                    }
-                                    it.contains("WARNING", ignoreCase = true) -> {
-                                        VpnFileLogger.w("tun2socks", "[WARNING] $it")
-                                    }
-                                    it.contains("NOTICE", ignoreCase = true) -> {
-                                        VpnFileLogger.i("tun2socks", "[NOTICE] $it")
-                                    }
-                                    it.contains("initializing", ignoreCase = true) -> {
-                                        VpnFileLogger.i("tun2socks", "[启动] $it")
-                                    }
-                                    it.contains("exiting", ignoreCase = true) -> {
-                                        VpnFileLogger.w("tun2socks", "[退出] $it")
-                                    }
+                            lineCount++
+                            
+                            // 记录所有输出
+                            VpnFileLogger.d("tun2socks", "[$lineCount] $line")
+                            
+                            // 检查关键日志并高亮
+                            when {
+                                line.contains("ERROR", ignoreCase = true) -> {
+                                    VpnFileLogger.e("tun2socks", "[ERROR] $line")
+                                }
+                                line.contains("WARNING", ignoreCase = true) || 
+                                line.contains("WARN", ignoreCase = true) -> {
+                                    VpnFileLogger.w("tun2socks", "[WARNING] $line")
+                                }
+                                line.contains("NOTICE", ignoreCase = true) || 
+                                line.contains("INFO", ignoreCase = true) -> {
+                                    VpnFileLogger.i("tun2socks", "[INFO] $line")
+                                }
+                                line.contains("initializing", ignoreCase = true) || 
+                                line.contains("starting", ignoreCase = true) -> {
+                                    VpnFileLogger.i("tun2socks", "[启动] $line")
+                                }
+                                line.contains("exiting", ignoreCase = true) || 
+                                line.contains("stopping", ignoreCase = true) -> {
+                                    VpnFileLogger.w("tun2socks", "[退出] $line")
+                                }
+                                line.contains("connected", ignoreCase = true) -> {
+                                    VpnFileLogger.i("tun2socks", "[连接] $line")
+                                }
+                                line.contains("accepted", ignoreCase = true) -> {
+                                    VpnFileLogger.i("tun2socks", "[接受] $line")
                                 }
                             }
+                            
+                            // 强制刷新日志
+                            VpnFileLogger.flush()
+                            
+                        } catch (e: Exception) {
+                            if (process?.isAlive == true) {
+                                VpnFileLogger.e(TAG, "读取${TUN2SOCKS}输出异常", e)
+                            }
+                            break
                         }
                     }
-                    VpnFileLogger.d(TAG, "${TUN2SOCKS}输出流结束")
-                } catch (e: Exception) {
-                    if (currentState == V2RayState.CONNECTED) {
-                        VpnFileLogger.e(TAG, "读取${TUN2SOCKS}输出异常", e)
+                    
+                    VpnFileLogger.d(TAG, "${TUN2SOCKS}输出读取结束，共读取${lineCount}行")
+                    
+                    // 关闭reader
+                    try {
+                        reader.close()
+                    } catch (e: Exception) {
+                        // 忽略关闭异常
                     }
+                    
+                } catch (e: Exception) {
+                    VpnFileLogger.e(TAG, "tun2socks日志线程异常", e)
+                }
+            }.start()
+            
+            // 同时监控错误流（以防万一）
+            Thread {
+                try {
+                    val errorReader = BufferedReader(
+                        InputStreamReader(process?.errorStream),
+                        1
+                    )
+                    var errorLine: String?
+                    while (errorReader.readLine().also { errorLine = it } != null) {
+                        VpnFileLogger.e("tun2socks-err", errorLine ?: "")
+                    }
+                } catch (e: Exception) {
+                    // 忽略，可能errorStream已被合并
                 }
             }.start()
             
@@ -1080,15 +1280,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 Thread.sleep(1000)  // 给进程一秒钟启动时间
                 if (process?.isAlive != true) {
                     VpnFileLogger.e(TAG, "${TUN2SOCKS}进程启动后立即退出")
-                    // 尝试读取任何错误输出
-                    try {
-                        val errorInfo = process?.errorStream?.bufferedReader()?.readText()
-                        if (!errorInfo.isNullOrEmpty()) {
-                            VpnFileLogger.e(TAG, "${TUN2SOCKS}错误输出: $errorInfo")
-                        }
-                    } catch (e: Exception) {
-                        VpnFileLogger.e(TAG, "读取错误流失败", e)
-                    }
                 } else {
                     VpnFileLogger.i(TAG, "${TUN2SOCKS}进程运行正常")
                 }
@@ -1291,11 +1482,22 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             VpnFileLogger.d(TAG, "Block流量: 上行=$blockUplink, 下行=$blockDownlink")
             
-            var currentUpload = proxyUplink + directUplink + blockUplink
-            var currentDownload = proxyDownlink + directDownlink + blockDownlink
+            // 查询proxy3的流量（Fragment出站）
+            val proxy3Uplink = controller.queryStats("outbound>>>proxy3>>>traffic>>>uplink", "")
+            val proxy3Downlink = controller.queryStats("outbound>>>proxy3>>>traffic>>>downlink", "")
             
-            // 如果没有proxy流量，检查总流量
-            if (proxyUplink == 0L && proxyDownlink == 0L) {
+            VpnFileLogger.d(TAG, "Proxy3(Fragment)流量: 上行=$proxy3Uplink, 下行=$proxy3Downlink")
+            
+            // 使用proxy3的流量作为主要统计（因为它是实际出站）
+            var currentUpload = if (proxy3Uplink > 0) proxy3Uplink else proxyUplink
+            var currentDownload = if (proxy3Downlink > 0) proxy3Downlink else proxyDownlink
+            
+            // 加上direct和block的流量
+            currentUpload += directUplink + blockUplink
+            currentDownload += directDownlink + blockDownlink
+            
+            // 如果还是没有流量，尝试查询总流量
+            if (currentUpload == 0L && currentDownload == 0L) {
                 val totalUplink = controller.queryStats("outbound>>>traffic>>>uplink", "")
                 val totalDownlink = controller.queryStats("outbound>>>traffic>>>downlink", "")
                 
@@ -1304,10 +1506,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 if (totalUplink > 0 || totalDownlink > 0) {
                     currentUpload = totalUplink
                     currentDownload = totalDownlink
-                }
-                
-                if (totalUplink == 0L && totalDownlink == 0L) {
-                    VpnFileLogger.w(TAG, "警告: 没有任何流量数据")
                 }
             }
             
@@ -1391,6 +1589,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         statsJob?.cancel()
         statsJob = null
         
+        // 停止连接检查
+        connectionCheckJob?.cancel()
+        connectionCheckJob = null
+        
         // 通知MainActivity服务已停止
         sendBroadcast(Intent(ACTION_VPN_STOPPED))
         VpnFileLogger.d(TAG, "已发送VPN停止广播")
@@ -1439,6 +1641,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.e(TAG, "关闭VPN接口异常", e)
             }
         }
+        
+        // 释放WakeLock
+        releaseWakeLock()
         
         VpnFileLogger.i(TAG, "V2Ray服务已完全停止")
     }
@@ -1743,6 +1948,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             statsJob?.cancel()
             statsJob = null
             
+            connectionCheckJob?.cancel()
+            connectionCheckJob = null
+            
             // 注销网络回调
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 try {
@@ -1778,6 +1986,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         coreController = null
         
+        // 释放WakeLock
+        releaseWakeLock()
+        
         VpnFileLogger.d(TAG, "onDestroy完成,服务已销毁")
         
         runBlocking {
@@ -1785,3 +1996,4 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         VpnFileLogger.close()
     }
+}
