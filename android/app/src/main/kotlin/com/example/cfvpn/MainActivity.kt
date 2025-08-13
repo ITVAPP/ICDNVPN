@@ -18,7 +18,7 @@ import kotlinx.coroutines.*
 
 /**
  * 主Activity - 处理Flutter与原生的通信
- * 增强版：支持分应用代理、子网绕过、延迟测试、Android 13+通知权限等功能
+ * 增强版：支持分应用代理、子网绕过、Android 13+通知权限等功能
  * 修改：支持国际化文字传递
  */
 class MainActivity: FlutterActivity() {
@@ -31,7 +31,7 @@ class MainActivity: FlutterActivity() {
         
         // 新增：VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
-        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
+        private const val ACTION_VPN_STOPPED = "com.example.cfv vaguespn.VPN_STOPPED"  // 新增：VPN停止广播
         private const val VPN_START_TIMEOUT = 10000L  // 10秒超时
     }
     
@@ -45,7 +45,7 @@ class MainActivity: FlutterActivity() {
         val globalProxy: Boolean,
         val blockedApps: List<String>?,
         val allowedApps: List<String>?,
-        val appProxyMode: String,
+        // 修改：移除appProxyMode
         val bypassSubnets: List<String>?,
         val localizedStrings: Map<String, String>,  // 新增：国际化文字
         val result: MethodChannel.Result
@@ -130,7 +130,7 @@ class MainActivity: FlutterActivity() {
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
                     val blockedApps = call.argument<List<String>>("blockedApps")
                     val allowedApps = call.argument<List<String>>("allowedApps")
-                    val appProxyMode = call.argument<String>("appProxyMode") ?: "EXCLUDE"
+                    // 修改：移除appProxyMode
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets")
                     
                     // 新增：接收国际化文字
@@ -154,7 +154,7 @@ class MainActivity: FlutterActivity() {
                             }
                         }
                         
-                        startVpn(config, mode, globalProxy, blockedApps, allowedApps, appProxyMode, bypassSubnets, localizedStrings, result)
+                        startVpn(config, mode, globalProxy, blockedApps, allowedApps, bypassSubnets, localizedStrings, result)
                     } else {
                         result.error("INVALID_CONFIG", "配置为空", null)
                     }
@@ -195,43 +195,6 @@ class MainActivity: FlutterActivity() {
                     // 检查VPN权限
                     val hasPermission = checkVpnPermission()
                     result.success(hasPermission)
-                }
-                
-                // ===== 新增功能 =====
-                
-                "testConnectedDelay" -> {
-                    // 测试已连接服务器的延迟
-                    val testUrl = call.argument<String>("url") ?: "https://www.google.com/generate_204"
-                    
-                    mainScope.launch {
-                        try {
-                            val delay = V2RayVpnService.testConnectedDelay(testUrl)
-                            result.success(delay)
-                        } catch (e: Exception) {
-                            VpnFileLogger.e(TAG, "测试延迟失败", e)
-                            result.error("TEST_FAILED", e.message, null)
-                        }
-                    }
-                }
-                
-                "testServerDelay" -> {
-                    // 测试指定配置的服务器延迟（未连接状态）
-                    val config = call.argument<String>("config")
-                    val testUrl = call.argument<String>("url") ?: "https://www.google.com/generate_204"
-                    
-                    if (config != null) {
-                        mainScope.launch {
-                            try {
-                                val delay = V2RayVpnService.testServerDelay(config, testUrl)
-                                result.success(delay)
-                            } catch (e: Exception) {
-                                VpnFileLogger.e(TAG, "测试延迟失败", e)
-                                result.error("TEST_FAILED", e.message, null)
-                            }
-                        }
-                    } else {
-                        result.error("INVALID_CONFIG", "配置为空", null)
-                    }
                 }
                 
                 "getInstalledApps" -> {
@@ -346,7 +309,7 @@ class MainActivity: FlutterActivity() {
         globalProxy: Boolean,
         blockedApps: List<String>?,
         allowedApps: List<String>?,
-        appProxyMode: String,
+        // 修改：移除appProxyMode
         bypassSubnets: List<String>?,
         localizedStrings: Map<String, String>,  // 新增：国际化文字
         result: MethodChannel.Result
@@ -393,7 +356,7 @@ class MainActivity: FlutterActivity() {
                         globalProxy,
                         blockedApps,
                         allowedApps,
-                        V2RayVpnService.AppProxyMode.valueOf(appProxyMode),
+                        // 修改：移除appProxyMode参数
                         bypassSubnets,
                         localizedStrings = localizedStrings  // 传递国际化文字
                     )
@@ -409,7 +372,7 @@ class MainActivity: FlutterActivity() {
                     
                     pendingRequest = PendingVpnRequest(
                         config, mode, globalProxy, blockedApps, 
-                        allowedApps, appProxyMode, bypassSubnets, 
+                        allowedApps, bypassSubnets, 
                         localizedStrings,  // 保存国际化文字
                         result
                     )
@@ -449,7 +412,7 @@ class MainActivity: FlutterActivity() {
                         globalProxy,
                         blockedApps,
                         allowedApps,
-                        V2RayVpnService.AppProxyMode.valueOf(appProxyMode),
+                        // 修改：移除appProxyMode参数
                         bypassSubnets,
                         localizedStrings = localizedStrings  // 传递国际化文字
                     )
@@ -633,7 +596,7 @@ class MainActivity: FlutterActivity() {
                                 request.globalProxy,
                                 request.blockedApps,
                                 request.allowedApps,
-                                V2RayVpnService.AppProxyMode.valueOf(request.appProxyMode),
+                                // 修改：移除appProxyMode参数
                                 request.bypassSubnets,
                                 localizedStrings = request.localizedStrings  // 传递国际化文字
                             )
