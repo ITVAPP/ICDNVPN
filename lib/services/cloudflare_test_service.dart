@@ -30,6 +30,31 @@ class CloudflareTestService {
   // 过滤条件
   static double maxLossRate = 1.0; // 丢包率上限（默认100%）
   
+  // ===== 优化1：HttpClient连接池复用 =====
+  // 使用连接池避免重复创建连接，提升性能
+  static HttpClient? _sharedHttpClient;
+  
+  // 获取共享的HttpClient实例
+  static HttpClient _getSharedHttpClient() {
+    // Dart是单线程的，不需要同步锁
+    if (_sharedHttpClient == null) {
+      _sharedHttpClient = HttpClient();
+      // 配置连接池
+      _sharedHttpClient!.maxConnectionsPerHost = AppConfig.httpClientMaxConnectionsPerHost;
+      _sharedHttpClient!.idleTimeout = AppConfig.httpClientIdleTimeout;
+      // 不设置全局connectionTimeout，每个请求单独设置
+      _sharedHttpClient!.badCertificateCallback = (cert, host, port) => true;
+    }
+    return _sharedHttpClient!;
+  }
+  
+  // 清理HttpClient（应该在应用退出时调用，而不是在Widget dispose时）
+  // 例如：在main.dart的应用退出逻辑中调用
+  static void dispose() {
+    _sharedHttpClient?.close(force: true);
+    _sharedHttpClient = null;
+  }
+  
   // 统一的测速方法（合并单独测速和批量测试）
   static Future<List<Map<String, dynamic>>> testLatencyUnified({
     required List<String> ips,
@@ -57,9 +82,16 @@ class CloudflareTestService {
     int failCount = 0;
     int tested = 0;
     
+    // ===== 优化2：智能批处理，失败率高时提前退出 =====
+    int consecutiveFailBatches = 0; // 连续失败批次计数
+    const int maxConsecutiveFailBatches = 3; // 最大连续失败批次
+    const double batchFailRateThreshold = 0.9; // 批次失败率阈值
+    
     for (int i = 0; i < ips.length; i += batchSize) {
       final batch = ips.skip(i).take(batchSize).toList();
       final futures = <Future>[];
+      int batchSuccessCount = 0;
+      int batchFailCount = 0;
       
       await _log.debug('测试批次 ${(i / batchSize).floor() + 1}/${((ips.length - 1) / batchSize).floor() + 1}，包含 ${batch.length} 个IP', tag: _logTag);
       
@@ -77,9 +109,11 @@ class CloudflareTestService {
           
           if (latency > 0 && latency < 999 && lossRate < 1.0) {
             successCount++;
+            batchSuccessCount++;
             _log.debug('✓ IP $ip 延迟: ${latency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(2)}%', tag: _logTag);
           } else {
             failCount++;
+            batchFailCount++;
           }
           
           // 进度回调
@@ -87,6 +121,7 @@ class CloudflareTestService {
           
         }).catchError((e) {
           failCount++;
+          batchFailCount++;
           tested++;
           results.add({
             'ip': ip,
@@ -103,6 +138,26 @@ class CloudflareTestService {
       }
       
       await Future.wait(futures);
+      
+      // ===== 优化：批次失败率检查 =====
+      final batchFailRate = batch.length > 0 ? batchFailCount / batch.length : 0.0;
+      if (batchFailRate >= batchFailRateThreshold) {
+        consecutiveFailBatches++;
+        await _log.warn('批次失败率过高: ${(batchFailRate * 100).toStringAsFixed(1)}%，连续失败批次: $consecutiveFailBatches', tag: _logTag);
+        
+        // 连续多个批次失败率过高，考虑提前退出
+        if (consecutiveFailBatches >= maxConsecutiveFailBatches && !singleTest) {
+          await _log.error('连续 $consecutiveFailBatches 个批次失败率超过 ${(batchFailRateThreshold * 100).toStringAsFixed(0)}%，提前结束测试', tag: _logTag);
+          // 如果是TCPing模式，标记需要切换到HTTPing
+          if (!useHttping) {
+            // 返回当前结果，让调用方决定是否切换模式
+            break;
+          }
+        }
+      } else {
+        // 重置连续失败计数
+        consecutiveFailBatches = 0;
+      }
       
       // 单个测试完成后立即返回
       if (singleTest) break;
@@ -123,20 +178,21 @@ class CloudflareTestService {
     return results;
   }
   
-  // HTTPing 模式测试单个IP（优化版：单次测试，快速返回）
+  // HTTPing 模式测试单个IP（优化版：使用共享HttpClient，但更好地处理超时）
   static Future<Map<String, dynamic>> _testSingleHttping(String ip, int port, [int maxLatency = 300]) async {
     // HTTPing使用配置的超时时间 - 使用AppConfig
     await _log.debug('[HTTPing] 开始测试 $ip:$port (超时: ${AppConfig.httpingTimeout}ms)', tag: _logTag);
     
-    final httpClient = HttpClient();
-    // 使用更合理的超时设置
-    httpClient.connectionTimeout = Duration(milliseconds: AppConfig.httpingTimeout);
-    await _log.debug('[HTTPing] 连接超时设置: ${AppConfig.httpingTimeout}ms', tag: _logTag);
+    // ===== 优化：使用共享的HttpClient（HTTPing测试频率高，复用有必要）=====
+    final httpClient = _getSharedHttpClient();
     
     // HTTPing 强制使用 HTTP 协议（80端口），避免证书问题
     if (port != 80 && port != _httpPort) {
       await _log.warn('[HTTPing] 警告：HTTPing模式应使用80端口，当前端口: $port', tag: _logTag);
     }
+    
+    HttpClientRequest? request;
+    HttpClientResponse? response;
     
     try {
       // HTTPing始终使用HTTP协议
@@ -151,8 +207,11 @@ class CloudflareTestService {
       
       final stopwatch = Stopwatch()..start();
       
-      // 创建请求
-      final request = await httpClient.getUrl(uri);
+      // 创建请求（设置总体超时）
+      request = await httpClient.getUrl(uri).timeout(
+        Duration(milliseconds: AppConfig.httpingTimeout),
+        onTimeout: () => throw TimeoutException('HTTPing connection timeout'),
+      );
       
       // 记录连接时间（调试用）
       final connectTime = stopwatch.elapsedMilliseconds;
@@ -163,8 +222,11 @@ class CloudflareTestService {
       request.headers.set('Accept', 'text/plain');
       request.headers.set('Connection', 'close');
       
-      // 发送请求并等待响应头
-      final response = await request.close();
+      // 发送请求并等待响应头（设置超时）
+      response = await request.close().timeout(
+        Duration(milliseconds: AppConfig.httpingTimeout - connectTime),  // 剩余时间
+        onTimeout: () => throw TimeoutException('HTTPing response timeout'),
+      );
       
       // 停止计时（收到响应头即可）
       stopwatch.stop();
@@ -198,7 +260,6 @@ class CloudflareTestService {
         
         await _log.info('[HTTPing] 成功 $ip - 原始延迟: ${totalTime}ms，设置延迟: ${randomLatency}ms', tag: _logTag);
         
-        httpClient.close();
         return {
           'ip': ip,
           'latency': randomLatency,  // 使用随机延迟
@@ -229,7 +290,6 @@ class CloudflareTestService {
       
       await _log.debug('[HTTPing] 失败: $errorDetail', tag: _logTag);
       
-      httpClient.close();
       return {
         'ip': ip,
         'latency': 999,
@@ -286,7 +346,9 @@ class CloudflareTestService {
     return controller.stream;
   }
   
-  // 实际执行测试的方法 - 改为公共方法
+  // ===== 优化3：拆分长方法，提高可维护性 =====
+  
+  // 执行测试的主方法（拆分为多个子方法）
   static Future<void> executeTestWithProgress({
     required StreamController<TestProgress> controller,
     required int count,
@@ -297,86 +359,201 @@ class CloudflareTestService {
     double? lossRateLimit,
   }) async {
     try {
-      // 设置测试参数
-      httping = useHttping;
-      if (lossRateLimit != null) maxLossRate = lossRateLimit;
+      // 初始化测试参数
+      _initTestParameters(useHttping, lossRateLimit);
+      await _logTestStart(count, maxLatency, testCount, location);
       
-      await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
-      await _log.info('参数: count=$count, maxLatency=$maxLatency, testCount=$testCount, location=$location', tag: _logTag);
-      await _log.info('模式: ${httping ? "HTTPing" : "TCPing"}, 丢包率上限: ${(maxLossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
-      
-      // 定义测试端口 - HTTPing使用80端口
+      // 定义测试端口
       final int testPort = httping ? _httpPort : _defaultPort;
       await _log.info('测试端口: $testPort', tag: _logTag);
       
       // 显示使用的IP段
-      await _log.debug('Cloudflare IP段列表:', tag: _logTag);
-      for (var i = 0; i < AppConfig.cloudflareIpRanges.length; i++) {
-        await _log.debug('  ${i + 1}. ${AppConfig.cloudflareIpRanges[i]}', tag: _logTag);
-      }
+      await _logIpRanges();
       
       // 总步骤数
       const totalSteps = 5;
       var currentStep = 0;
       
       // 步骤1：准备阶段
-      controller.add(TestProgress(
-        step: ++currentStep,
-        totalSteps: totalSteps,
-        messageKey: 'preparingTestEnvironment',
-        detailKey: 'initializing',
-        progress: currentStep / totalSteps,
-      ));
-      
-      await Future.delayed(const Duration(milliseconds: 500));
+      currentStep = await _reportPreparationStep(controller, currentStep, totalSteps);
       
       // 步骤2：IP采样
-      controller.add(TestProgress(
-        step: ++currentStep,
-        totalSteps: totalSteps,
-        messageKey: 'generatingTestIPs',
-        detailKey: 'ipRanges',
-        detailParams: {'count': AppConfig.cloudflareIpRanges.length},
-        progress: currentStep / totalSteps,
-      ));
-      
-      await _log.info('目标采样数量: $testCount', tag: _logTag);
-      
-      final sampleIps = await _sampleIpsFromRanges(testCount);
-      await _log.info('从 IP 段中采样了 ${sampleIps.length} 个 IP', tag: _logTag);
+      final sampleIps = await _performIpSampling(controller, currentStep, totalSteps, testCount);
+      currentStep++;
       
       if (sampleIps.isEmpty) {
-        await _log.error('无法生成采样IP', tag: _logTag);
         throw TestException(
           messageKey: 'testFailed',
           detailKey: 'noQualifiedNodes',
         );
       }
       
-      // 记录前10个采样IP作为示例
-      if (sampleIps.isNotEmpty) {
-        final examples = sampleIps.take(10).join(', ');
-        await _log.debug('采样IP示例: $examples', tag: _logTag);
+      // 步骤3：延迟测速
+      currentStep++;
+      final pingResults = await _performLatencyTest(
+        controller, 
+        currentStep, 
+        totalSteps, 
+        sampleIps, 
+        testPort, 
+        maxLatency
+      );
+      
+      await _logLatencyDistribution(pingResults);
+      
+      // 过滤有效服务器
+      final validServers = _filterValidServers(pingResults, maxLatency, testPort);
+      
+      if (validServers.isEmpty) {
+        await _logNoValidServersFound(maxLatency, testCount, testPort);
+        throw TestException(
+          messageKey: 'noQualifiedNodes',
+          detailKey: 'checkNetworkOrRequirements',
+        );
       }
       
-      // 步骤3：延迟测速（带子进度）
-      currentStep++;
-      controller.add(TestProgress(
-        step: currentStep,
-        totalSteps: totalSteps,
-        messageKey: 'testingDelay',
-        detailKey: 'nodeProgress',
-        detailParams: {'current': 0, 'total': sampleIps.length},
-        progress: currentStep / totalSteps,
-        subProgress: 0.0,
-      ));
+      // 按延迟排序
+      validServers.sort((a, b) => a.ping.compareTo(b.ping));
       
-      await _log.info('开始${httping ? "HTTPing" : "TCPing"}延迟测速...', tag: _logTag);
-      var pingResults = await testLatencyUnified(
-        ips: sampleIps,
-        port: testPort,
-        useHttping: httping,
-        maxLatency: maxLatency,  // 传递maxLatency参数
+      // 步骤4：Trace响应速度测试
+      currentStep++;
+      final finalServers = await _performTraceTest(
+        controller,
+        currentStep,
+        totalSteps,
+        validServers,
+        count
+      );
+      
+      // 记录最优节点
+      await _logTopNodes(finalServers, validServers.length);
+      
+      // 步骤5：完成
+      _reportCompletion(controller, totalSteps, finalServers);
+      
+    } catch (e, stackTrace) {
+      _handleTestError(controller, e, stackTrace);
+    } finally {
+      await controller.close();
+    }
+  }
+  
+  // 初始化测试参数
+  static void _initTestParameters(bool useHttping, double? lossRateLimit) {
+    httping = useHttping;
+    if (lossRateLimit != null) maxLossRate = lossRateLimit;
+  }
+  
+  // 记录测试开始
+  static Future<void> _logTestStart(int count, int maxLatency, int testCount, String location) async {
+    await _log.info('=== 开始测试 Cloudflare 节点 ===', tag: _logTag);
+    await _log.info('参数: count=$count, maxLatency=$maxLatency, testCount=$testCount, location=$location', tag: _logTag);
+    await _log.info('模式: ${httping ? "HTTPing" : "TCPing"}, 丢包率上限: ${(maxLossRate * 100).toStringAsFixed(1)}%', tag: _logTag);
+  }
+  
+  // 记录IP段信息
+  static Future<void> _logIpRanges() async {
+    await _log.debug('Cloudflare IP段列表:', tag: _logTag);
+    for (var i = 0; i < AppConfig.cloudflareIpRanges.length; i++) {
+      await _log.debug('  ${i + 1}. ${AppConfig.cloudflareIpRanges[i]}', tag: _logTag);
+    }
+  }
+  
+  // 报告准备步骤
+  static Future<int> _reportPreparationStep(StreamController<TestProgress> controller, int currentStep, int totalSteps) async {
+    controller.add(TestProgress(
+      step: ++currentStep,
+      totalSteps: totalSteps,
+      messageKey: 'preparingTestEnvironment',
+      detailKey: 'initializing',
+      progress: currentStep / totalSteps,
+    ));
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    return currentStep;
+  }
+  
+  // 执行IP采样
+  static Future<List<String>> _performIpSampling(
+    StreamController<TestProgress> controller,
+    int currentStep,
+    int totalSteps,
+    int testCount
+  ) async {
+    controller.add(TestProgress(
+      step: currentStep + 1,
+      totalSteps: totalSteps,
+      messageKey: 'generatingTestIPs',
+      detailKey: 'ipRanges',
+      detailParams: {'count': AppConfig.cloudflareIpRanges.length},
+      progress: (currentStep + 1) / totalSteps,
+    ));
+    
+    await _log.info('目标采样数量: $testCount', tag: _logTag);
+    
+    final sampleIps = await _sampleIpsFromRanges(testCount);
+    await _log.info('从 IP 段中采样了 ${sampleIps.length} 个 IP', tag: _logTag);
+    
+    // 记录前10个采样IP作为示例
+    if (sampleIps.isNotEmpty) {
+      final examples = sampleIps.take(10).join(', ');
+      await _log.debug('采样IP示例: $examples', tag: _logTag);
+    }
+    
+    return sampleIps;
+  }
+  
+  // 执行延迟测试
+  static Future<List<Map<String, dynamic>>> _performLatencyTest(
+    StreamController<TestProgress> controller,
+    int currentStep,
+    int totalSteps,
+    List<String> sampleIps,
+    int testPort,
+    int maxLatency
+  ) async {
+    controller.add(TestProgress(
+      step: currentStep,
+      totalSteps: totalSteps,
+      messageKey: 'testingDelay',
+      detailKey: 'nodeProgress',
+      detailParams: {'current': 0, 'total': sampleIps.length},
+      progress: currentStep / totalSteps,
+      subProgress: 0.0,
+    ));
+    
+    await _log.info('开始${httping ? "HTTPing" : "TCPing"}延迟测速...', tag: _logTag);
+    
+    var pingResults = await testLatencyUnified(
+      ips: sampleIps,
+      port: testPort,
+      useHttping: httping,
+      maxLatency: maxLatency,
+      onProgress: (current, total) {
+        controller.add(TestProgress(
+          step: currentStep,
+          totalSteps: totalSteps,
+          messageKey: 'testingDelay',
+          detailKey: 'nodeProgress',
+          detailParams: {'current': current, 'total': total},
+          progress: (currentStep - 1 + current / total) / totalSteps,
+          subProgress: current / total,
+        ));
+      },
+    );
+    
+    // 如果是TCPing模式且没有找到有效节点，自动切换到HTTPing重试
+    if (!httping && pingResults.where((r) => r['lossRate'] as double < 1.0).isEmpty) {
+      await _log.warn('TCPing测试全部失败，自动切换到HTTPing重试...', tag: _logTag);
+      
+      final httpingTestIps = sampleIps.take(AppConfig.httpingTestIpCount).toList();
+      await _log.info('HTTPing模式将测试 ${httpingTestIps.length} 个IP（原计划: ${sampleIps.length}个）', tag: _logTag);
+      
+      pingResults = await testLatencyUnified(
+        ips: httpingTestIps,
+        port: _httpPort,
+        useHttping: true,
+        maxLatency: maxLatency,
         onProgress: (current, total) {
           controller.add(TestProgress(
             step: currentStep,
@@ -389,261 +566,234 @@ class CloudflareTestService {
           ));
         },
       );
+    }
+    
+    await _log.info('延迟测速完成，获得 ${pingResults.length} 个结果', tag: _logTag);
+    return pingResults;
+  }
+  
+  // 记录延迟分布
+  static Future<void> _logLatencyDistribution(List<Map<String, dynamic>> pingResults) async {
+    final latencyStats = <String, int>{};
+    for (final result in pingResults) {
+      final latency = result['latency'] as int;
+      final lossRate = result['lossRate'] as double;
       
-      // 如果是TCPing模式且没有找到有效节点，自动切换到HTTPing重试
-      if (!httping && pingResults.where((r) => r['lossRate'] as double < 1.0).isEmpty) {
-        await _log.warn('TCPing测试全部失败，自动切换到HTTPing重试...', tag: _logTag);
-        
-        // 修改：只测试配置的IP数量，提升效率 - 使用AppConfig
-        final httpingTestIps = sampleIps.take(AppConfig.httpingTestIpCount).toList();
-        await _log.info('HTTPing模式将测试 ${httpingTestIps.length} 个IP（原计划: ${sampleIps.length}个）', tag: _logTag);
-        
-        // 重置进度，使用HTTPing重新测试
-        final httpingResults = await testLatencyUnified(
-          ips: httpingTestIps,  // 修改：只测试配置的IP数量
-          port: _httpPort,  // HTTPing使用80端口
-          useHttping: true,  // 强制使用HTTPing
-          maxLatency: maxLatency,
-          onProgress: (current, total) {
-            controller.add(TestProgress(
-              step: currentStep,
-              totalSteps: totalSteps,
-              messageKey: 'testingDelay',
-              detailKey: 'nodeProgress',
-              detailParams: {'current': current, 'total': total},
-              progress: (currentStep - 1 + current / total) / totalSteps,
-              subProgress: current / total,
-            ));
-          },
-        );
-        
-        // 使用HTTPing的结果
-        pingResults.clear();
-        pingResults.addAll(httpingResults);
+      if (lossRate >= 1.0) {
+        latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
+      } else if (latency < 100) {
+        latencyStats['<100ms'] = (latencyStats['<100ms'] ?? 0) + 1;
+      } else if (latency < 200) {
+        latencyStats['100-200ms'] = (latencyStats['100-200ms'] ?? 0) + 1;
+      } else if (latency < 300) {
+        latencyStats['200-300ms'] = (latencyStats['200-300ms'] ?? 0) + 1;
+      } else if (latency < 500) {
+        latencyStats['300-500ms'] = (latencyStats['300-500ms'] ?? 0) + 1;
+      } else if (latency < 999) {
+        latencyStats['500-999ms'] = (latencyStats['500-999ms'] ?? 0) + 1;
+      } else {
+        latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
       }
+    }
+    await _log.info('延迟分布: $latencyStats', tag: _logTag);
+  }
+  
+  // 过滤有效服务器
+  static List<ServerModel> _filterValidServers(
+    List<Map<String, dynamic>> pingResults,
+    int maxLatency,
+    int testPort
+  ) {
+    final validServers = <ServerModel>[];
+    for (final result in pingResults) {
+      final ip = result['ip'] as String;
+      final latency = result['latency'] as int;
+      final lossRate = result['lossRate'] as double;
       
-      await _log.info('延迟测速完成，获得 ${pingResults.length} 个结果', tag: _logTag);
-      
-      // 统计延迟分布
-      final latencyStats = <String, int>{};
-      for (final result in pingResults) {
-        final latency = result['latency'] as int;
-        final lossRate = result['lossRate'] as double;
-        
-        if (lossRate >= 1.0) {
-          latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
-        } else if (latency < 100) {
-          latencyStats['<100ms'] = (latencyStats['<100ms'] ?? 0) + 1;
-        } else if (latency < 200) {
-          latencyStats['100-200ms'] = (latencyStats['100-200ms'] ?? 0) + 1;
-        } else if (latency < 300) {
-          latencyStats['200-300ms'] = (latencyStats['200-300ms'] ?? 0) + 1;
-        } else if (latency < 500) {
-          latencyStats['300-500ms'] = (latencyStats['300-500ms'] ?? 0) + 1;
-        } else if (latency < 999) {
-          latencyStats['500-999ms'] = (latencyStats['500-999ms'] ?? 0) + 1;
-        } else {
-          latencyStats['失败'] = (latencyStats['失败'] ?? 0) + 1;
-        }
+      if (latency > 0 && latency <= maxLatency && lossRate < maxLossRate) {
+        validServers.add(ServerModel(
+          id: '${DateTime.now().millisecondsSinceEpoch}_${ip.replaceAll('.', '')}',
+          name: ip,
+          location: 'US',
+          ip: ip,
+          port: testPort,
+          ping: latency,
+        ));
       }
-      await _log.info('延迟分布: $latencyStats', tag: _logTag);
-      
-      // 过滤有效服务器
-      final validServers = <ServerModel>[];
-      for (final result in pingResults) {
-        final ip = result['ip'] as String;
-        final latency = result['latency'] as int;
-        final lossRate = result['lossRate'] as double;
-        
-        // 过滤条件：延迟小于等于上限，且丢包率小于指定值
-        if (latency > 0 && latency <= maxLatency && lossRate < maxLossRate) {
-          // 暂时使用默认位置，后续会通过trace获取
-          validServers.add(ServerModel(
-            id: '${DateTime.now().millisecondsSinceEpoch}_${ip.replaceAll('.', '')}',
-            name: ip,
-            location: 'US',  // 临时默认值，后续通过trace更新
-            ip: ip,
-            port: testPort,
-            ping: latency,
-          ));
-        }
-      }
-      
-      await _log.info('初步过滤后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms，丢包率<${(maxLossRate * 100).toStringAsFixed(1)}%）', tag: _logTag);
-      
-      if (validServers.isEmpty) {
-        await _log.error('''未找到符合条件的节点
+    }
+    
+    _log.info('初步过滤后找到 ${validServers.length} 个符合条件的节点（延迟<=$maxLatency ms，丢包率<${(maxLossRate * 100).toStringAsFixed(1)}%）', tag: _logTag);
+    return validServers;
+  }
+  
+  // 记录未找到有效服务器的原因
+  static Future<void> _logNoValidServersFound(int maxLatency, int testCount, int testPort) async {
+    await _log.error('''未找到符合条件的节点
 建议：
   1. 检查网络连接是否正常
   2. 降低延迟要求（当前: $maxLatency ms）
   3. 提高丢包率容忍度（当前: ${(maxLossRate * 100).toStringAsFixed(1)}%）
   4. 增加测试数量（当前: $testCount）
   5. 检查防火墙是否阻止了${testPort}端口''', tag: _logTag);
+  }
+  
+  // 执行Trace测试
+  static Future<List<ServerModel>> _performTraceTest(
+    StreamController<TestProgress> controller,
+    int currentStep,
+    int totalSteps,
+    List<ServerModel> validServers,
+    int count
+  ) async {
+    controller.add(TestProgress(
+      step: currentStep,
+      totalSteps: totalSteps,
+      messageKey: 'testingResponseSpeed',
+      detailKey: 'startingTraceTest',
+      progress: currentStep / totalSteps,
+    ));
+    
+    final finalServers = <ServerModel>[];
+    
+    if (validServers.length <= count) {
+      // 节点不足，快速获取位置信息
+      await _log.info('找到 ${validServers.length} 个节点，不足 $count 个，快速获取位置信息', tag: _logTag);
+      
+      for (int i = 0; i < validServers.length; i++) {
+        final server = validServers[i];
         
-        throw TestException(
-          messageKey: 'noQualifiedNodes',
-          detailKey: 'checkNetworkOrRequirements',
-        );
-      }
-      
-      // 按延迟排序（与开源项目一致，先按丢包率，再按延迟）
-      validServers.sort((a, b) => a.ping.compareTo(b.ping));
-      
-      // 步骤4：Trace响应速度测试（替代原来的下载测速）
-      currentStep++;
-      controller.add(TestProgress(
-        step: currentStep,
-        totalSteps: totalSteps,
-        messageKey: 'testingResponseSpeed',  // 使用新的国际化键
-        detailKey: 'startingTraceTest',  // 使用新的国际化键
-        progress: currentStep / totalSteps,
-      ));
-      
-      // 收集最终的服务器列表
-      final finalServers = <ServerModel>[];
-      
-      // 新逻辑：根据节点数量决定测速策略
-      if (validServers.length <= count) {
-        // 节点不足，跳过额外测速，但仍需获取位置信息
-        await _log.info('找到 ${validServers.length} 个节点，不足 $count 个，快速获取位置信息', tag: _logTag);
-        
-        // 为每个节点获取位置信息（使用简化的trace请求）
-        for (int i = 0; i < validServers.length; i++) {
-          final server = validServers[i];
-          
-          controller.add(TestProgress(
-            step: currentStep,
-            totalSteps: totalSteps,
-            messageKey: 'testingResponseSpeed',
-            detailKey: 'nodeProgress',
-            detailParams: {
-              'current': i + 1,
-              'total': validServers.length,
-            },
-            progress: (currentStep - 1 + (i + 1) / validServers.length) / totalSteps,
-            subProgress: (i + 1) / validServers.length,
-          ));
-          
-          final traceResult = await _testTraceSpeed(server.ip, server.port);
-          
-          // 更新服务器位置信息
-          finalServers.add(ServerModel(
-            id: server.id,
-            name: server.name,
-            location: traceResult['location'] ?? 'US',  // 使用trace返回的loc
-            ip: server.ip,
-            port: server.port,
-            ping: server.ping,
-            downloadSpeed: traceResult['speed'] ?? 9999.0,  // 存储trace访问时间
-          ));
-        }
-      } else {
-        // 节点充足，进行Trace测速
-        int traceTestCount = math.min(validServers.length, math.max(count * 2, 10));
-        await _log.info('开始Trace测速，将测试前 $traceTestCount 个低延迟节点', tag: _logTag);
-        
-        // 临时列表，用于存储测速后的节点
-        final testedServers = <ServerModel>[];
-        
-        // 对服务器进行Trace测速
-        for (int i = 0; i < traceTestCount; i++) {
-          final server = validServers[i];
-          await _log.debug('测试服务器 ${i + 1}/$traceTestCount: ${server.ip}', tag: _logTag);
-          
-          controller.add(TestProgress(
-            step: currentStep,
-            totalSteps: totalSteps,
-            messageKey: 'testingResponseSpeed',
-            detailKey: 'nodeProgress',
-            detailParams: {
-              'current': i + 1,
-              'total': traceTestCount,
-              'ip': server.ip
-            },
-            progress: (currentStep - 1 + (i + 1) / traceTestCount) / totalSteps,
-            subProgress: (i + 1) / traceTestCount,
-          ));
-          
-          final traceResult = await _testTraceSpeed(server.ip, server.port);
-          final traceSpeed = traceResult['speed'] ?? 9999.0;
-          final location = traceResult['location'] ?? 'US';
-          
-          await _log.info('节点 ${server.ip} - 延迟: ${server.ping}ms, Trace时间: ${traceSpeed.toStringAsFixed(0)}ms, 位置: $location', tag: _logTag);
-          
-          // 创建更新后的服务器对象
-          testedServers.add(ServerModel(
-            id: server.id,
-            name: server.name,
-            location: location,  // 使用trace返回的位置
-            ip: server.ip,
-            port: server.port,
-            ping: server.ping,
-            downloadSpeed: traceSpeed,  // 存储trace访问时间
-          ));
-        }
-        
-        // 按Trace访问速度排序（从快到慢）
-        await _log.info('按Trace访问速度重新排序...', tag: _logTag);
-        testedServers.sort((a, b) => a.downloadSpeed.compareTo(b.downloadSpeed));  // 时间越短越好
-        
-        // 取速度最快的节点
-        finalServers.addAll(testedServers.take(count));
-      }
-      
-      // 记录最优的几个节点
-      await _log.info('找到 ${finalServers.length} 个节点（从 ${validServers.length} 个低延迟节点中选出）', tag: _logTag);
-      final topNodes = finalServers.take(math.min(5, finalServers.length));
-      for (final node in topNodes) {
-        await _log.info('最终节点: ${node.ip} - ${node.ping}ms - Trace:${node.downloadSpeed.toStringAsFixed(0)}ms - ${node.location}', tag: _logTag);
-      }
-      
-      await _log.info('=== 测试完成 ===', tag: _logTag);
-      
-      // 步骤5：完成
-      controller.add(TestProgress(
-        step: totalSteps,
-        totalSteps: totalSteps,
-        messageKey: 'testCompleted',
-        detailKey: 'foundQualityNodes',
-        detailParams: {'count': finalServers.length},
-        progress: 1.0,
-        servers: finalServers,
-      ));
-      
-    } catch (e, stackTrace) {
-      if (e is TestException) {
-        await _log.error('Cloudflare 测试失败: ${e.messageKey} - ${e.detailKey}', tag: _logTag);
         controller.add(TestProgress(
-          step: -1,
-          totalSteps: 5,
-          messageKey: e.messageKey,
-          detailKey: e.detailKey,
-          progress: 0,
-          error: e,
+          step: currentStep,
+          totalSteps: totalSteps,
+          messageKey: 'testingResponseSpeed',
+          detailKey: 'nodeProgress',
+          detailParams: {
+            'current': i + 1,
+            'total': validServers.length,
+          },
+          progress: (currentStep - 1 + (i + 1) / validServers.length) / totalSteps,
+          subProgress: (i + 1) / validServers.length,
         ));
-      } else {
-        await _log.error('Cloudflare 测试失败', tag: _logTag, error: e, stackTrace: stackTrace);
-        controller.add(TestProgress(
-          step: -1,
-          totalSteps: 5,
-          messageKey: 'testFailed',
-          detailKey: e.toString(),
-          progress: 0,
-          error: e,
+        
+        final traceResult = await _testTraceSpeed(server.ip, server.port);
+        
+        finalServers.add(ServerModel(
+          id: server.id,
+          name: server.name,
+          location: traceResult['location'] ?? 'US',
+          ip: server.ip,
+          port: server.port,
+          ping: server.ping,
+          downloadSpeed: traceResult['speed'] ?? 9999.0,
         ));
       }
-    } finally {
-      await controller.close();
+    } else {
+      // 节点充足，进行完整Trace测速
+      int traceTestCount = math.min(validServers.length, math.max(count * 2, 10));
+      await _log.info('开始Trace测速，将测试前 $traceTestCount 个低延迟节点', tag: _logTag);
+      
+      final testedServers = <ServerModel>[];
+      
+      for (int i = 0; i < traceTestCount; i++) {
+        final server = validServers[i];
+        await _log.debug('测试服务器 ${i + 1}/$traceTestCount: ${server.ip}', tag: _logTag);
+        
+        controller.add(TestProgress(
+          step: currentStep,
+          totalSteps: totalSteps,
+          messageKey: 'testingResponseSpeed',
+          detailKey: 'nodeProgress',
+          detailParams: {
+            'current': i + 1,
+            'total': traceTestCount,
+            'ip': server.ip
+          },
+          progress: (currentStep - 1 + (i + 1) / traceTestCount) / totalSteps,
+          subProgress: (i + 1) / traceTestCount,
+        ));
+        
+        final traceResult = await _testTraceSpeed(server.ip, server.port);
+        final traceSpeed = traceResult['speed'] ?? 9999.0;
+        final location = traceResult['location'] ?? 'US';
+        
+        await _log.info('节点 ${server.ip} - 延迟: ${server.ping}ms, Trace时间: ${traceSpeed.toStringAsFixed(0)}ms, 位置: $location', tag: _logTag);
+        
+        testedServers.add(ServerModel(
+          id: server.id,
+          name: server.name,
+          location: location,
+          ip: server.ip,
+          port: server.port,
+          ping: server.ping,
+          downloadSpeed: traceSpeed,
+        ));
+      }
+      
+      await _log.info('按Trace访问速度重新排序...', tag: _logTag);
+      testedServers.sort((a, b) => a.downloadSpeed.compareTo(b.downloadSpeed));
+      
+      finalServers.addAll(testedServers.take(count));
+    }
+    
+    return finalServers;
+  }
+  
+  // 记录最优节点
+  static Future<void> _logTopNodes(List<ServerModel> finalServers, int totalValidCount) async {
+    await _log.info('找到 ${finalServers.length} 个节点（从 $totalValidCount 个低延迟节点中选出）', tag: _logTag);
+    final topNodes = finalServers.take(math.min(5, finalServers.length));
+    for (final node in topNodes) {
+      await _log.info('最终节点: ${node.ip} - ${node.ping}ms - Trace:${node.downloadSpeed.toStringAsFixed(0)}ms - ${node.location}', tag: _logTag);
+    }
+    await _log.info('=== 测试完成 ===', tag: _logTag);
+  }
+  
+  // 报告完成
+  static void _reportCompletion(StreamController<TestProgress> controller, int totalSteps, List<ServerModel> servers) {
+    controller.add(TestProgress(
+      step: totalSteps,
+      totalSteps: totalSteps,
+      messageKey: 'testCompleted',
+      detailKey: 'foundQualityNodes',
+      detailParams: {'count': servers.length},
+      progress: 1.0,
+      servers: servers,
+    ));
+  }
+  
+  // 处理测试错误
+  static void _handleTestError(StreamController<TestProgress> controller, dynamic error, StackTrace stackTrace) {
+    if (error is TestException) {
+      _log.error('Cloudflare 测试失败: ${error.messageKey} - ${error.detailKey}', tag: _logTag);
+      controller.add(TestProgress(
+        step: -1,
+        totalSteps: 5,
+        messageKey: error.messageKey,
+        detailKey: error.detailKey,
+        progress: 0,
+        error: error,
+      ));
+    } else {
+      _log.error('Cloudflare 测试失败', tag: _logTag, error: error, stackTrace: stackTrace);
+      controller.add(TestProgress(
+        step: -1,
+        totalSteps: 5,
+        messageKey: 'testFailed',
+        detailKey: error.toString(),
+        progress: 0,
+        error: error,
+      ));
     }
   }
   
-  // Trace响应速度测试（使用COLO映射获取正确的服务器位置）
+  // Trace响应速度测试（每次创建新HttpClient确保超时正确处理）
   static Future<Map<String, dynamic>> _testTraceSpeed(String ip, int port) async {
     HttpClient? httpClient;
-    
     try {
       await _log.debug('[Trace测试] 开始测试 $ip:$port', tag: _logTag);
       
+      // 为了确保超时能正确中断，每次创建新的HttpClient
+      // Trace测试频率低，性能影响可接受
       httpClient = HttpClient();
       httpClient.connectionTimeout = const Duration(seconds: 5);
       httpClient.badCertificateCallback = (cert, host, port) => true;
@@ -669,11 +819,23 @@ class CloudflareTestService {
       request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       request.headers.set('Accept', 'text/plain');
       
-      // 发送请求并获取响应
-      final response = await request.close();
+      // 发送请求并获取响应（整体超时控制）
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          httpClient?.close(force: true);  // 强制关闭连接
+          throw TimeoutException('Trace response timeout');
+        },
+      );
       
-      // 读取响应内容
-      final responseBody = await response.transform(utf8.decoder).join();
+      // 读取响应内容（也设置超时）
+      final responseBody = await response.transform(utf8.decoder).join().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          httpClient?.close(force: true);
+          throw TimeoutException('Trace read timeout');
+        },
+      );
       
       // 停止计时
       stopwatch.stop();
@@ -732,6 +894,7 @@ class CloudflareTestService {
         'userLocation': '',
       };
     } finally {
+      // 确保HttpClient被正确关闭
       httpClient?.close();
     }
   }
@@ -1353,6 +1516,8 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
   @override
   void dispose() {
     _progressSubscription?.cancel();
+    // 注意：不在这里清理静态的HttpClient，因为可能其他地方还在使用
+    // CloudflareTestService.dispose() 应该在应用退出时调用
     super.dispose();
   }
 }
