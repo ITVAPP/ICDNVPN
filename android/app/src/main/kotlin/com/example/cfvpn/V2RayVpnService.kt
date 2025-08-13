@@ -1452,7 +1452,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 try {
                     delay(100L * tries)  // 逐渐增加延迟
                     
-                    VpnFileLogger.d(TAG, "尝试连接Unix域套接字 (第${tries + 1}/$maxTries次)")
+                    VpnFileLogger.d(TAG, "尝试连接Unix域套接字 (${tries + 1}/$maxTries)")
                     
                     val clientSocket = LocalSocket()
                     clientSocket.connect(LocalSocketAddress(sockPath, LocalSocketAddress.Namespace.FILESYSTEM))
