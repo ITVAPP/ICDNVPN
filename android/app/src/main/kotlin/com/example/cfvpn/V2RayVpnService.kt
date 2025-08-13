@@ -1169,9 +1169,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                                 }
                             }
                             
-                            // 强制刷新日志
-                            VpnFileLogger.flush()
-                            
                         } catch (e: Exception) {
                             if (process?.isAlive == true) {
                                 VpnFileLogger.e(TAG, "读取${TUN2SOCKS}输出异常", e)
