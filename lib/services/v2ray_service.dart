@@ -14,12 +14,6 @@ enum V2RayConnectionMode {
   proxyOnly    // 仅代理模式（局部，不创建VPN）
 }
 
-/// 应用代理模式
-enum AppProxyMode {
-  exclude,     // 排除模式：指定的应用不走代理
-  include      // 包含模式：仅指定的应用走代理
-}
-
 /// V2Ray连接状态
 enum V2RayConnectionState {
   disconnected,
@@ -82,6 +76,7 @@ class V2RayStatus {
 }
 
 /// V2Ray服务管理类 - 统一Windows和移动端实现
+/// 简化版本：移除AppProxyMode，只使用allowedApps列表
 class V2RayService {
   // Windows平台进程管理
   static Process? _v2rayProcess;
@@ -713,7 +708,7 @@ class V2RayService {
     _connectionStartTime = null;
   }
   
-  // 启动V2Ray服务（增强版，支持新功能）
+  // 启动V2Ray服务（增强版，支持新功能） - 简化版本
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
@@ -721,9 +716,7 @@ class V2RayService {
     bool globalProxy = false,
     // 新增参数（移动端特有）
     V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
-    List<String>? blockedApps,
-    List<String>? allowedApps,
-    AppProxyMode appProxyMode = AppProxyMode.exclude,
+    List<String>? allowedApps,  // 简化：只保留允许列表
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
     // 新增：国际化文字
@@ -756,9 +749,7 @@ class V2RayService {
           serverName: serverName,
           globalProxy: globalProxy,
           mode: mode,
-          blockedApps: blockedApps,
           allowedApps: allowedApps,
-          appProxyMode: appProxyMode,
           bypassSubnets: bypassSubnets,
           disconnectButtonName: disconnectButtonName,
           localizedStrings: localizedStrings,
@@ -783,16 +774,14 @@ class V2RayService {
     }
   }
   
-  // 移动平台启动逻辑 - 增强版，支持新功能
+  // 移动平台启动逻辑 - 增强版，支持新功能（简化版）
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
     String? serverName,
     bool globalProxy = false,
     V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
-    List<String>? blockedApps,
     List<String>? allowedApps,
-    AppProxyMode appProxyMode = AppProxyMode.exclude,
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
     Map<String, String>? localizedStrings,
@@ -824,12 +813,8 @@ class V2RayService {
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
         await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
         await _log.debug('  - 连接模式: $mode', tag: _logTag);
-        await _log.debug('  - 应用代理模式: $appProxyMode', tag: _logTag);
-        if (blockedApps != null && blockedApps.isNotEmpty) {
-          await _log.debug('  - 排除应用: ${blockedApps.length}个', tag: _logTag);
-        }
         if (allowedApps != null && allowedApps.isNotEmpty) {
-          await _log.debug('  - 包含应用: ${allowedApps.length}个', tag: _logTag);
+          await _log.debug('  - 允许应用: ${allowedApps.length}个', tag: _logTag);
         }
         if (bypassSubnets != null && bypassSubnets.isNotEmpty) {
           await _log.debug('  - 绕过子网: ${bypassSubnets.length}个', tag: _logTag);
@@ -846,14 +831,12 @@ class V2RayService {
         }
       }
       
-      // 3. 准备调用参数
+      // 3. 准备调用参数（简化版）
       final params = <String, dynamic>{
         'config': configJson,
         'mode': mode == V2RayConnectionMode.vpnTun ? 'VPN_TUN' : 'PROXY_ONLY',
         'globalProxy': globalProxy,
-        'blockedApps': blockedApps,
-        'allowedApps': allowedApps,
-        'appProxyMode': appProxyMode == AppProxyMode.exclude ? 'EXCLUDE' : 'INCLUDE',
+        'allowedApps': allowedApps,  // 简化：只传递允许列表
         'bypassSubnets': bypassSubnets,
         'disconnectButtonName': disconnectButtonName,
       };
@@ -933,16 +916,16 @@ class V2RayService {
     return [];
   }
   
-  // 保存代理配置（分应用代理、子网绕过等）
+  // 保存代理配置（分应用代理、子网绕过等） - 简化版
   static Future<void> saveProxyConfig({
-    List<String>? blockedApps,
+    List<String>? allowedApps,
     List<String>? bypassSubnets,
   }) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     
     try {
       await _channel.invokeMethod('saveProxyConfig', {
-        'blockedApps': blockedApps ?? [],
+        'allowedApps': allowedApps ?? [],
         'bypassSubnets': bypassSubnets ?? [],
       });
       _log.info('代理配置已保存', tag: _logTag);
@@ -951,11 +934,11 @@ class V2RayService {
     }
   }
   
-  // 加载代理配置
+  // 加载代理配置 - 简化版
   static Future<Map<String, List<String>>> loadProxyConfig() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return {
-        'blockedApps': [],
+        'allowedApps': [],
         'bypassSubnets': [],
       };
     }
@@ -964,7 +947,7 @@ class V2RayService {
       final config = await _channel.invokeMethod<Map>('loadProxyConfig');
       if (config != null) {
         return {
-          'blockedApps': List<String>.from(config['blockedApps'] ?? []),
+          'allowedApps': List<String>.from(config['allowedApps'] ?? []),
           'bypassSubnets': List<String>.from(config['bypassSubnets'] ?? []),
         };
       }
@@ -973,7 +956,7 @@ class V2RayService {
     }
     
     return {
-      'blockedApps': [],
+      'allowedApps': [],
       'bypassSubnets': [],
     };
   }
