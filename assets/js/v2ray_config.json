@@ -34,7 +34,7 @@
       "settings": {
         "auth": "noauth",
         "udp": true,
-        "userLevel": 0
+        "userLevel": 8
       }
     },
     {
@@ -50,7 +50,7 @@
         "auth": "noauth",
         "udp": true,
         "allowTransparent": false,
-        "userLevel": 0
+        "userLevel": 8
       }
     },
     {
