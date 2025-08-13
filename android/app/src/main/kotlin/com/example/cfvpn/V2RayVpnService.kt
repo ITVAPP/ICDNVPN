@@ -1673,71 +1673,73 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     // ===== CoreCallbackHandler 接口实现 =====
 
-    override fun startup(): Long {
-        VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup() 被调用 ==========")
-        VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
-        
-        // 立即查询一次状态以验证
+// ===== CoreCallbackHandler 接口实现 =====
+
+override fun startup(): Long {
+    VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup() 被调用 ==========")
+    VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
+    
+    // 立即查询一次状态以验证
+    try {
+        val isRunning = coreController?.isRunning ?: false
+        VpnFileLogger.d(TAG, "V2Ray核心运行状态(在startup回调中): $isRunning")
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
+    }
+    
+    return 0L
+}
+
+override fun shutdown(): Long {
+    VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
+    
+    serviceScope.launch {
         try {
-            val isRunning = coreController?.isRunning ?: false
-            VpnFileLogger.d(TAG, "V2Ray核心运行状态(在startup回调中): $isRunning")
+            stopV2Ray()
         } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
+            VpnFileLogger.e(TAG, "shutdown停止服务异常", e)
+        }
+    }
+    
+    return 0L
+}
+
+override fun onEmitStatus(level: Long, status: String?): Long {
+    if (status.isNullOrEmpty()) return 0L
+    
+    try {
+        // 改进的日志级别处理
+        when (level.toInt()) {
+            0 -> VpnFileLogger.d("V2Ray", status)
+            1 -> VpnFileLogger.i("V2Ray", status)
+            2 -> VpnFileLogger.w("V2Ray", status)
+            3, 4 -> VpnFileLogger.e("V2Ray", status)
+            else -> VpnFileLogger.d("V2Ray", "[$level] $status")
+        }
+        
+        // 检测关键状态
+        when {
+            status.contains("started", ignoreCase = true) -> {
+                VpnFileLogger.i(TAG, "V2Ray核心已启动: $status")
+            }
+            status.contains("failed", ignoreCase = true) || 
+            status.contains("error", ignoreCase = true) -> {
+                VpnFileLogger.e(TAG, "V2Ray错误: $status")
+            }
+            status.contains("accepted", ignoreCase = true) -> {
+                VpnFileLogger.d(TAG, "连接已接受: $status")
+            }
+            status.contains("dns", ignoreCase = true) -> {
+                VpnFileLogger.d(TAG, "DNS查询: $status")
+            }
         }
         
         return 0L
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "处理V2Ray状态回调异常", e)
+        return -1L
     }
-    
-    override fun shutdown(): Long {
-        VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
-        
-        serviceScope.launch {
-            try {
-                stopV2Ray()
-            } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "shutdown停止服务异常", e)
-            }
-        }
-        
-        return 0L
-    }
-    
-    override fun onEmitStatus(level: Long, status: String?): Long {
-        if (status.isNullOrEmpty()) return 0L
-        
-        try {
-            // 改进的日志级别处理
-            when (level.toInt()) {
-                0 -> VpnFileLogger.d("V2Ray", status)
-                1 -> VpnFileLogger.i("V2Ray", status)
-                2 -> VpnFileLogger.w("V2Ray", status)
-                3, 4 -> VpnFileLogger.e("V2Ray", status)
-                else -> VpnFileLogger.d("V2Ray", "[$level] $status")
-            }
-            
-            // 检测关键状态
-            when {
-                status.contains("started", ignoreCase = true) -> {
-                    VpnFileLogger.i(TAG, "V2Ray核心已启动: $status")
-                }
-                status.contains("failed", ignoreCase = true) || 
-                status.contains("error", ignoreCase = true) -> {
-                    VpnFileLogger.e(TAG, "V2Ray错误: $status")
-                }
-                status.contains("accepted", ignoreCase = true) -> {
-                    VpnFileLogger.d(TAG, "连接已接受: $status")
-                }
-                status.contains("dns", ignoreCase = true) -> {
-                    VpnFileLogger.d(TAG, "DNS查询: $status")
-                }
-            }
-            
-            return 0L
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "处理V2Ray状态回调异常", e)
-            return -1L
-        }
-    }
+}
     
     // ===== 工具方法 =====
     
