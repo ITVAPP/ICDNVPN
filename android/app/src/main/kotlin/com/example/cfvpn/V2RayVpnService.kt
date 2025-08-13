@@ -45,12 +45,17 @@ import libv2ray.CoreCallbackHandler
  * 2. Android端只负责VPN隧道建立和V2Ray核心启动
  * 3. 流量统计按需查询，用于通知栏显示
  * 
+ * 简化改进：
+ * - 移除 AppProxyMode 枚举
+ * - 移除 blockedApps 参数
+ * - 只使用 allowedApps：空列表=全部应用走VPN，非空=仅列表内应用走VPN
+ * 
  * 主要功能:
  * - VPN隧道管理
  * - V2Ray核心生命周期管理
  * - tun2socks进程管理 (使用v2rayNG同款的badvpn-tun2socks)
  * - 流量统计和通知更新
- * - 分应用代理支持
+ * - 分应用代理支持（简化版）
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -65,12 +70,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         DISCONNECTED,
         CONNECTING,
         CONNECTED
-    }
-    
-    // 应用代理模式
-    enum class AppProxyMode {
-        EXCLUDE,    // 排除模式:指定的应用不走代理
-        INCLUDE     // 包含模式:仅指定的应用走代理
     }
     
     companion object {
@@ -118,7 +117,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
         
         /**
-         * 启动VPN服务
+         * 启动VPN服务 - 简化版
+         * 
+         * @param allowedApps 允许走VPN的应用列表（空列表或null表示所有应用）
          */
         @JvmStatic
         fun startVpnService(
@@ -126,15 +127,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             config: String,
             mode: ConnectionMode = ConnectionMode.VPN_TUN,
             globalProxy: Boolean = false,
-            blockedApps: List<String>? = null,
-            allowedApps: List<String>? = null,
-            appProxyMode: AppProxyMode = AppProxyMode.EXCLUDE,
+            allowedApps: List<String>? = null,  // 简化：只保留允许列表
             bypassSubnets: List<String>? = null,
             enableAutoStats: Boolean = true,
             disconnectButtonName: String = "停止",
             localizedStrings: Map<String, String> = emptyMap()
         ) {
             VpnFileLogger.d(TAG, "准备启动服务,模式: $mode, 全局代理: $globalProxy")
+            VpnFileLogger.d(TAG, "允许应用: ${allowedApps?.size ?: "全部"}")
             
             // 保存国际化文字
             this.localizedStrings.clear()
@@ -146,8 +146,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 putExtra("mode", mode.name)
                 putExtra("globalProxy", globalProxy)
                 putExtra("enableAutoStats", enableAutoStats)
-                putExtra("appProxyMode", appProxyMode.name)
-                putStringArrayListExtra("blockedApps", ArrayList(blockedApps ?: emptyList()))
                 putStringArrayListExtra("allowedApps", ArrayList(allowedApps ?: emptyList()))
                 putStringArrayListExtra("bypassSubnets", ArrayList(bypassSubnets ?: emptyList()))
                 
@@ -243,9 +241,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var configJson: String = ""  // 直接保存dart生成的JSON配置
     private var mode: ConnectionMode = ConnectionMode.VPN_TUN
     private var globalProxy: Boolean = false
-    private var blockedApps: List<String> = emptyList()
-    private var allowedApps: List<String> = emptyList()
-    private var appProxyMode: AppProxyMode = AppProxyMode.EXCLUDE
+    private var allowedApps: List<String> = emptyList()  // 简化：只保留允许列表
     private var bypassSubnets: List<String> = emptyList()
     private var enableAutoStats: Boolean = true
     
@@ -411,23 +407,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         globalProxy = intent.getBooleanExtra("globalProxy", false)
         enableAutoStats = intent.getBooleanExtra("enableAutoStats", true)
-        appProxyMode = try {
-            AppProxyMode.valueOf(intent.getStringExtra("appProxyMode") ?: AppProxyMode.EXCLUDE.name)
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "解析appProxyMode失败: ${intent.getStringExtra("appProxyMode")}", e)
-            AppProxyMode.EXCLUDE
-        }
         
-        blockedApps = intent.getStringArrayListExtra("blockedApps") ?: emptyList()
+        // 简化：只获取允许列表
         allowedApps = intent.getStringArrayListExtra("allowedApps") ?: emptyList()
         bypassSubnets = intent.getStringArrayListExtra("bypassSubnets") ?: emptyList()
         
         VpnFileLogger.d(TAG, "===== 启动参数 =====")
         VpnFileLogger.d(TAG, "模式: $mode")
         VpnFileLogger.d(TAG, "全局代理: $globalProxy")
-        VpnFileLogger.d(TAG, "代理模式: $appProxyMode")
-        VpnFileLogger.d(TAG, "排除应用: $blockedApps")
-        VpnFileLogger.d(TAG, "包含应用: $allowedApps")
+        VpnFileLogger.d(TAG, "允许应用: ${if (allowedApps.isEmpty()) "全部" else "${allowedApps.size}个: $allowedApps"}")
         VpnFileLogger.d(TAG, "绕过子网: $bypassSubnets")
         VpnFileLogger.d(TAG, "自动统计: $enableAutoStats")
         
@@ -451,7 +439,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         
         VpnFileLogger.d(TAG, "配置参数: 模式=$mode, 全局代理=$globalProxy, " +
-                "代理模式=$appProxyMode, 绕过子网=${bypassSubnets.size}个")
+                "允许应用=${allowedApps.size}个, 绕过子网=${bypassSubnets.size}个")
         
         // 启动前台服务
         try {
@@ -474,7 +462,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return START_NOT_STICKY
         }
         
-        // 【修复2】检查VPN准备状态
+        // 检查VPN准备状态
         if (mode == ConnectionMode.VPN_TUN) {
             val prepare = prepare(this)
             if (prepare != null) {
@@ -573,7 +561,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.d(TAG, "================== startV2RayWithVPN START ==================")
         
         try {
-            // 【修复1】调整启动顺序：先启动V2Ray核心，再建立VPN（与v2rayNG一致）
+            // 调整启动顺序：先启动V2Ray核心，再建立VPN（与v2rayNG一致）
             
             // 步骤1: 创建核心控制器
             VpnFileLogger.d(TAG, "===== 步骤1: 创建核心控制器 =====")
@@ -628,7 +616,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             VpnFileLogger.d(TAG, "VPN隧道建立成功, FD=${mInterface?.fd}")
             
-            // 【修复4】配置网络回调（Android P及以上）
+            // 配置网络回调（Android P及以上）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 configureNetworkCallback()
             }
@@ -676,7 +664,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 【新增】配置网络回调以处理网络切换
+     * 配置网络回调以处理网络切换
      */
     @android.annotation.TargetApi(Build.VERSION_CODES.P)
     private fun configureNetworkCallback() {
@@ -814,7 +802,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private fun cleanupResources() {
         currentState = V2RayState.DISCONNECTED
         
-        // 【修复4】注销网络回调
+        // 注销网络回调
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 defaultNetworkCallback?.let {
@@ -842,7 +830,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 建立VPN隧道
+     * 建立VPN隧道 - 简化版
      */
     private fun establishVpn() {
         VpnFileLogger.d(TAG, "开始建立VPN隧道")
@@ -923,7 +911,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // 分应用代理(Android 5.0+)
+        // ===== 简化的分应用代理 (Android 5.0+) =====
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             // 始终排除自身
             try {
@@ -933,34 +921,35 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.w(TAG, "排除自身应用失败", e)
             }
             
-            when (appProxyMode) {
-                AppProxyMode.EXCLUDE -> {
-                    VpnFileLogger.d(TAG, "使用排除模式,排除${blockedApps.size}个应用")
-                    blockedApps.forEach { app ->
-                        try {
-                            builder.addDisallowedApplication(app)
-                            VpnFileLogger.d(TAG, "排除应用: $app")
-                        } catch (e: Exception) {
-                            VpnFileLogger.w(TAG, "排除应用失败: $app", e)
-                        }
+            // 简化逻辑：只使用允许列表
+            // - allowedApps为空 = 所有应用都走VPN（除了自身）
+            // - allowedApps不为空 = 只有列表中的应用走VPN
+            if (allowedApps.isNotEmpty()) {
+                // 过滤掉自身应用、空白字符串，避免冲突
+                val filteredApps = allowedApps
+                    .map { it.trim() }  // 去除首尾空白
+                    .filter { app -> 
+                        app.isNotEmpty() && app != packageName 
                     }
-                }
+                    .distinct()  // 去重
                 
-                AppProxyMode.INCLUDE -> {
-                    if (allowedApps.isNotEmpty()) {
-                        VpnFileLogger.d(TAG, "使用包含模式,包含${allowedApps.size}个应用")
-                        allowedApps.forEach { app ->
-                            try {
-                                builder.addAllowedApplication(app)
-                                VpnFileLogger.d(TAG, "包含应用: $app")
-                            } catch (e: Exception) {
-                                VpnFileLogger.w(TAG, "包含应用失败: $app", e)
-                            }
+                if (filteredApps.isNotEmpty()) {
+                    VpnFileLogger.d(TAG, "使用包含模式，原始${allowedApps.size}个，过滤后${filteredApps.size}个应用走VPN")
+                    filteredApps.forEach { app ->
+                        try {
+                            builder.addAllowedApplication(app)
+                            VpnFileLogger.d(TAG, "允许应用: $app")
+                        } catch (e: Exception) {
+                            VpnFileLogger.w(TAG, "添加允许应用失败: $app - ${e.message}")
                         }
-                    } else {
-                        VpnFileLogger.e(TAG, "包含模式但未指定任何应用")
                     }
+                } else {
+                    // 过滤后为空，回退到全部应用模式
+                    VpnFileLogger.w(TAG, "警告：过滤后无有效应用，回退到全局模式（除了自身）")
                 }
+            } else {
+                // 空列表表示所有应用都走VPN（默认行为）
+                VpnFileLogger.d(TAG, "所有应用都走VPN（除了自身）")
             }
         }
         
@@ -1015,12 +1004,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             "--enable-udprelay",
             "--loglevel", "notice"
         )
-        
-        // 可选：添加IPv6支持
-        // if (enableIPv6) {
-        //     cmd.add("--netif-ip6addr")
-        //     cmd.add(PRIVATE_VLAN6_ROUTER)
-        // }
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
         
@@ -1412,7 +1395,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         sendBroadcast(Intent(ACTION_VPN_STOPPED))
         VpnFileLogger.d(TAG, "已发送VPN停止广播")
         
-        // 【修复4】注销网络回调（Android P及以上）
+        // 注销网络回调（Android P及以上）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 defaultNetworkCallback?.let {
@@ -1439,7 +1422,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
         }
         
-        // 【修复3】重要：stopSelf必须在mInterface.close()之前调用
+        // 重要：stopSelf必须在mInterface.close()之前调用
         // v2rayNG的注释：stopSelf has to be called ahead of mInterface.close(). 
         // otherwise v2ray core cannot be stopped. It's strange but true.
         stopForeground(true)
@@ -1760,7 +1743,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             statsJob?.cancel()
             statsJob = null
             
-            // 【修复4】注销网络回调
+            // 注销网络回调
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 try {
                     defaultNetworkCallback?.let {
@@ -1784,7 +1767,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
             }
             
-            // 【修复3】确保mInterface在最后关闭
+            // 确保mInterface在最后关闭
             try {
                 mInterface?.close()
                 mInterface = null
@@ -1802,4 +1785,3 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         VpnFileLogger.close()
     }
-}
