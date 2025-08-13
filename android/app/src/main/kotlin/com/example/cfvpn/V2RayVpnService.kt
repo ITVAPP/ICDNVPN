@@ -8,8 +8,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -227,6 +231,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     // tun2socks进程（与v2rayNG一致）
     private var process: Process? = null
+    
+    // 网络回调（Android P及以上）
+    private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
     
     // tun2socks重启控制
     private var tun2socksRestartCount = 0
@@ -467,6 +474,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return START_NOT_STICKY
         }
         
+        // 【修复2】检查VPN准备状态
+        if (mode == ConnectionMode.VPN_TUN) {
+            val prepare = prepare(this)
+            if (prepare != null) {
+                VpnFileLogger.e(TAG, "VPN未授权，需要用户授权")
+                currentState = V2RayState.DISCONNECTED
+                sendStartResultBroadcast(false, "需要VPN授权")
+                // 这里可以启动授权Activity或返回错误
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+        
         // 根据模式启动
         serviceScope.launch {
             try {
@@ -553,21 +573,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.d(TAG, "================== startV2RayWithVPN START ==================")
         
         try {
-            // 步骤1: 建立VPN隧道
-            VpnFileLogger.d(TAG, "===== 步骤1: 建立VPN隧道 =====")
-            withContext(Dispatchers.Main) {
-                establishVpn()
-            }
+            // 【修复1】调整启动顺序：先启动V2Ray核心，再建立VPN（与v2rayNG一致）
             
-            if (mInterface == null) {
-                VpnFileLogger.e(TAG, "VPN隧道建立失败: mInterface为null")
-                throw Exception("VPN隧道建立失败")
-            }
-            
-            VpnFileLogger.d(TAG, "VPN隧道建立成功, FD=${mInterface?.fd}")
-            
-            // 步骤2: 创建核心控制器
-            VpnFileLogger.d(TAG, "===== 步骤2: 创建核心控制器 =====")
+            // 步骤1: 创建核心控制器
+            VpnFileLogger.d(TAG, "===== 步骤1: 创建核心控制器 =====")
             coreController = Libv2ray.newCoreController(this@V2RayVpnService)
             
             if (coreController == null) {
@@ -576,8 +585,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             VpnFileLogger.d(TAG, "CoreController创建成功")
             
-            // 步骤3: 启动V2Ray核心
-            VpnFileLogger.d(TAG, "===== 步骤3: 启动V2Ray核心 =====")
+            // 步骤2: 启动V2Ray核心
+            VpnFileLogger.d(TAG, "===== 步骤2: 启动V2Ray核心 =====")
             VpnFileLogger.d(TAG, "原始配置长度: ${configJson.length} 字符")
             
             VpnFileLogger.d(TAG, "调用 coreController.startLoop()...")
@@ -587,8 +596,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 等待核心启动
             delay(500)
             
-            // 步骤4: 验证运行状态
-            VpnFileLogger.d(TAG, "===== 步骤4: 验证V2Ray运行状态 =====")
+            // 验证运行状态
             val isRunningNow = coreController?.isRunning ?: false
             VpnFileLogger.d(TAG, "V2Ray核心运行状态: $isRunningNow")
             
@@ -607,11 +615,29 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             VpnFileLogger.i(TAG, "V2Ray核心启动成功")
             
-            // 步骤5: 启动tun2socks进程（与v2rayNG一致）
-            VpnFileLogger.d(TAG, "===== 步骤5: 启动tun2socks进程 (badvpn-tun2socks) =====")
+            // 步骤3: 建立VPN隧道（在V2Ray启动后）
+            VpnFileLogger.d(TAG, "===== 步骤3: 建立VPN隧道 =====")
+            withContext(Dispatchers.Main) {
+                establishVpn()
+            }
+            
+            if (mInterface == null) {
+                VpnFileLogger.e(TAG, "VPN隧道建立失败: mInterface为null")
+                throw Exception("VPN隧道建立失败")
+            }
+            
+            VpnFileLogger.d(TAG, "VPN隧道建立成功, FD=${mInterface?.fd}")
+            
+            // 【修复4】配置网络回调（Android P及以上）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                configureNetworkCallback()
+            }
+            
+            // 步骤4: 启动tun2socks进程（与v2rayNG一致）
+            VpnFileLogger.d(TAG, "===== 步骤4: 启动tun2socks进程 (badvpn-tun2socks) =====")
             runTun2socks()
             
-            // 步骤6: 更新状态
+            // 步骤5: 更新状态
             currentState = V2RayState.CONNECTED
             startTime = System.currentTimeMillis()
             
@@ -646,6 +672,61 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             cleanupResources()
             sendStartResultBroadcast(false, e.message)
             throw e
+        }
+    }
+    
+    /**
+     * 【新增】配置网络回调以处理网络切换
+     */
+    @android.annotation.TargetApi(Build.VERSION_CODES.P)
+    private fun configureNetworkCallback() {
+        try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                .build()
+            
+            defaultNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    super.onAvailable(network)
+                    VpnFileLogger.d(TAG, "网络可用: $network")
+                    try {
+                        setUnderlyingNetworks(arrayOf(network))
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "设置底层网络失败", e)
+                    }
+                }
+                
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: NetworkCapabilities
+                ) {
+                    super.onCapabilitiesChanged(network, networkCapabilities)
+                    VpnFileLogger.d(TAG, "网络能力变化: $network")
+                    try {
+                        setUnderlyingNetworks(arrayOf(network))
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "更新底层网络失败", e)
+                    }
+                }
+                
+                override fun onLost(network: Network) {
+                    super.onLost(network)
+                    VpnFileLogger.d(TAG, "网络丢失: $network")
+                    try {
+                        setUnderlyingNetworks(null)
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "清除底层网络失败", e)
+                    }
+                }
+            }
+            
+            connectivityManager.requestNetwork(request, defaultNetworkCallback!!)
+            VpnFileLogger.d(TAG, "网络回调已注册")
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "配置网络回调失败", e)
         }
     }
     
@@ -732,9 +813,21 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun cleanupResources() {
         currentState = V2RayState.DISCONNECTED
+        
+        // 【修复4】注销网络回调
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                defaultNetworkCallback?.let {
+                    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    connectivityManager.unregisterNetworkCallback(it)
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "注销网络回调失败", e)
+            }
+            defaultNetworkCallback = null
+        }
+        
         stopTun2socks()
-        mInterface?.close()
-        mInterface = null
         
         try {
             coreController?.stopLoop()
@@ -742,6 +835,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.w(TAG, "停止核心异常", e)
         }
         coreController = null
+        
+        // 关闭VPN接口
+        mInterface?.close()
+        mInterface = null
     }
     
     /**
@@ -1307,6 +1404,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         currentState = V2RayState.DISCONNECTED
         
+        // 停止流量统计
         statsJob?.cancel()
         statsJob = null
         
@@ -1314,10 +1412,26 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         sendBroadcast(Intent(ACTION_VPN_STOPPED))
         VpnFileLogger.d(TAG, "已发送VPN停止广播")
         
+        // 【修复4】注销网络回调（Android P及以上）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                defaultNetworkCallback?.let {
+                    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    connectivityManager.unregisterNetworkCallback(it)
+                    VpnFileLogger.d(TAG, "网络回调已注销")
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "注销网络回调失败", e)
+            }
+            defaultNetworkCallback = null
+        }
+        
+        // 停止tun2socks
         if (mode == ConnectionMode.VPN_TUN) {
             stopTun2socks()
         }
         
+        // 停止V2Ray核心
         try {
             coreController?.stopLoop()
             VpnFileLogger.d(TAG, "V2Ray核心已停止")
@@ -1325,6 +1439,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
         }
         
+        // 【修复3】重要：stopSelf必须在mInterface.close()之前调用
+        // v2rayNG的注释：stopSelf has to be called ahead of mInterface.close(). 
+        // otherwise v2ray core cannot be stopped. It's strange but true.
+        stopForeground(true)
+        stopSelf()
+        VpnFileLogger.d(TAG, "服务已停止")
+        
+        // 关闭VPN接口（在stopSelf之后）
         if (mode == ConnectionMode.VPN_TUN) {
             try {
                 mInterface?.close()
@@ -1334,9 +1456,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.e(TAG, "关闭VPN接口异常", e)
             }
         }
-        
-        stopForeground(true)
-        stopSelf()
         
         VpnFileLogger.i(TAG, "V2Ray服务已完全停止")
     }
@@ -1641,6 +1760,20 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             statsJob?.cancel()
             statsJob = null
             
+            // 【修复4】注销网络回调
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    defaultNetworkCallback?.let {
+                        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                        connectivityManager.unregisterNetworkCallback(it)
+                        VpnFileLogger.d(TAG, "网络回调已注销(onDestroy)")
+                    }
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "注销网络回调失败(onDestroy)", e)
+                }
+                defaultNetworkCallback = null
+            }
+            
             if (mode == ConnectionMode.VPN_TUN) {
                 stopTun2socks()
             }
@@ -1651,6 +1784,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
             }
             
+            // 【修复3】确保mInterface在最后关闭
             try {
                 mInterface?.close()
                 mInterface = null
