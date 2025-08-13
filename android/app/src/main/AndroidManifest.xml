@@ -25,14 +25,24 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
     
-    <!-- 存储权限（可选，用于导入配置） -->
+    <!-- 存储权限（用于导入配置） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    
+    <!-- Android 13+ 媒体权限（可选，用于导入配置） -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" 
+        android:minSdkVersion="33" />
     
     <!-- 开机自启动权限 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     
-    <!-- 防止休眠（可选，保持服务稳定） -->
+    <!-- 防止休眠（必需！保持服务稳定） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <!-- 相机权限（可选，仅在需要扫码功能时添加） -->
+    <!-- <uses-permission android:name="android.permission.CAMERA" /> -->
+    
+    <!-- 电池优化豁免权限（可选但建议） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:label="CFVPN"
@@ -61,13 +71,16 @@
             </intent-filter>
         </activity>
         
-        <!-- V2Ray VPN服务声明 -->
+        <!-- V2Ray VPN服务声明 - 优化版 -->
         <service
             android:name=".V2RayVpnService"
             android:enabled="true"
             android:exported="false"
+            android:label="CFVPN"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse"
+            android:process=":vpn">
+            <!-- 使用独立进程可以提高稳定性 -->
             
             <!-- VPN服务必需的intent-filter -->
             <intent-filter>
@@ -94,6 +107,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- 小米手机的快速启动 -->
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
@@ -110,4 +125,5 @@
             <action android:name="android.intent.action.MAIN" />
         </intent>
     </queries>
+
 </manifest>
