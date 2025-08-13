@@ -31,7 +31,7 @@ class MainActivity: FlutterActivity() {
         
         // 新增：VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
-        private const val ACTION_VPN_STOPPED = "com.example.cfv vaguespn.VPN_STOPPED"  // 新增：VPN停止广播
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
         private const val VPN_START_TIMEOUT = 10000L  // 10秒超时
     }
     
@@ -45,8 +45,7 @@ class MainActivity: FlutterActivity() {
         val globalProxy: Boolean,
         val blockedApps: List<String>?,
         val allowedApps: List<String>?,
-        // 修改：移除appProxyMode
-        val bypassSubnets: List<String>?,
+        val bypassSubnets: List<String>?,  // 保留字段以保持兼容性
         val localizedStrings: Map<String, String>,  // 新增：国际化文字
         val result: MethodChannel.Result
     )
@@ -130,7 +129,6 @@ class MainActivity: FlutterActivity() {
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
                     val blockedApps = call.argument<List<String>>("blockedApps")
                     val allowedApps = call.argument<List<String>>("allowedApps")
-                    // 修改：移除appProxyMode
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets")
                     
                     // 新增：接收国际化文字
@@ -309,8 +307,7 @@ class MainActivity: FlutterActivity() {
         globalProxy: Boolean,
         blockedApps: List<String>?,
         allowedApps: List<String>?,
-        // 修改：移除appProxyMode
-        bypassSubnets: List<String>?,
+        bypassSubnets: List<String>?,  // 保留字段以保持兼容性
         localizedStrings: Map<String, String>,  // 新增：国际化文字
         result: MethodChannel.Result
     ) {
@@ -356,8 +353,6 @@ class MainActivity: FlutterActivity() {
                         globalProxy,
                         blockedApps,
                         allowedApps,
-                        // 修改：移除appProxyMode参数
-                        bypassSubnets,
                         localizedStrings = localizedStrings  // 传递国际化文字
                     )
                     
@@ -412,8 +407,6 @@ class MainActivity: FlutterActivity() {
                         globalProxy,
                         blockedApps,
                         allowedApps,
-                        // 修改：移除appProxyMode参数
-                        bypassSubnets,
                         localizedStrings = localizedStrings  // 传递国际化文字
                     )
                     
@@ -471,7 +464,7 @@ class MainActivity: FlutterActivity() {
     }
     
     /**
-     * 获取已安装应用列表（供分应用代理选择）
+     * 获取已安装应用列表（供选择分应用代理）
      */
     private suspend fun getInstalledApps(): List<Map<String, Any>> = withContext(Dispatchers.IO) {
         val apps = mutableListOf<Map<String, Any>>()
@@ -596,8 +589,6 @@ class MainActivity: FlutterActivity() {
                                 request.globalProxy,
                                 request.blockedApps,
                                 request.allowedApps,
-                                // 修改：移除appProxyMode参数
-                                request.bypassSubnets,
                                 localizedStrings = request.localizedStrings  // 传递国际化文字
                             )
                             
