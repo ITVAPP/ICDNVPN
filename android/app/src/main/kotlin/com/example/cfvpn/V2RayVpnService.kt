@@ -762,185 +762,184 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.d(TAG, "VPN隧道建立成功,FD: ${mInterface?.fd}")
         }
     }
-    
-    private suspend fun runTun2socks() = withContext(Dispatchers.IO) {
-        if (mode != ConnectionMode.VPN_TUN) {
-            VpnFileLogger.d(TAG, "非VPN模式,跳过tun2socks")
-            return@withContext
-        }
-        
-        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 =====")
-        
-        var socksPort = DEFAULT_SOCKS_PORT
-        try {
-            val config = JSONObject(configJson)
-            val inbounds = config.getJSONArray("inbounds")
-            for (i in 0 until inbounds.length()) {
-                val inbound = inbounds.getJSONObject(i)
-                VpnFileLogger.d(TAG, "检查入站[$i]: tag=${inbound.optString("tag")}, protocol=${inbound.optString("protocol")}")
-                if (inbound.optString("tag", "") == "socks" || inbound.optString("protocol", "") == "socks") {
-                    socksPort = inbound.optInt("port", DEFAULT_SOCKS_PORT)
-                    VpnFileLogger.d(TAG, "找到SOCKS端口: $socksPort")
-                    break
-                }
-            }
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "解析SOCKS端口失败", e)
-            VpnFileLogger.d(TAG, "使用默认SOCKS端口: $socksPort")
-        }
-        
-        try {
-            val libtun2socksPath = File(applicationInfo.nativeLibraryDir, "libtun2socks.so").absolutePath
-            
-            VpnFileLogger.d(TAG, "tun2socks路径: $libtun2socksPath")
-            VpnFileLogger.d(TAG, "文件存在: ${File(libtun2socksPath).exists()}")
-            
-            if (!File(libtun2socksPath).exists()) {
-                throw Exception("libtun2socks.so不存在: $libtun2socksPath")
-            }
-            
-            val nativeLibraryDir = applicationInfo.nativeLibraryDir
-            val isArm64 = nativeLibraryDir.contains("arm64")
-            VpnFileLogger.d(TAG, "检测到架构: ${if (isArm64) "arm64-v8a" else "armeabi-v7a"}")
-            
-            val sockPath = File(filesDir, "sock_path").absolutePath
-            
-            try {
-                File(sockPath).delete()
-                VpnFileLogger.d(TAG, "已删除旧套接字文件: $sockPath")
-            } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "删除旧套接字文件失败", e)
-            }
-            
-            val cmd = arrayListOf(
-                libtun2socksPath,
-                "--tun-address", PRIVATE_VLAN4_ROUTER,
-                "--tun-mask", "255.255.255.252",
-                "--tun-mtu", VPN_MTU.toString(),
-                "--proxy", "socks5://127.0.0.1:$socksPort",
-                "--tun-device", "tun0",
-                "--tun-fd", "0",
-                "--loglevel", "debug",
-                "--enable-udprelay"
-            )
-            
-            if (globalProxy) {
-                cmd.add("--tun-gw")
-                cmd.add("0.0.0.0")
-            }
-            
-            VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
-            
-            val processBuilder = ProcessBuilder(cmd).apply {
-                redirectErrorStream(false)
-                directory(filesDir)
-                environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
-                environment()["TUN2SOCKS_LOGFILE"] = File(filesDir, "tun2socks.log").absolutePath
-            }
-            
-            val process = processBuilder.start()
-            tun2socksProcess = process
-            
-            VpnFileLogger.d(TAG, "tun2socks进程已启动, PID: ${process.toHandle().pid()}")
-            
-            serviceScope.launch {
-                try {
-                    VpnFileLogger.d(TAG, "开始读取tun2socks标准输出...")
-                    val inputReader = process.inputStream.bufferedReader()
-                    var line: String?
-                    while (inputReader.readLine().also { line = it } != null) {
-                        VpnFileLogger.d(TAG, "[tun2socks-stdout] $line")
-                        line?.let {
-                            when {
-                                it.contains("error", ignoreCase = true) || 
-                                it.contains("fail", ignoreCase = true) -> {
-                                    VpnFileLogger.e(TAG, "[tun2socks-stdout-error] $it")
-                                }
-                                it.contains("connected", ignoreCase = true) -> {
-                                    VpnFileLogger.i(TAG, "[tun2socks-stdout-info] $it")
-                                }
-                            }
-                        }
-                    }
-                    VpnFileLogger.d(TAG, "tun2socks标准输出流结束")
-                } catch (e: Exception) {
-                    if (currentState != V2RayState.DISCONNECTED) {
-                        VpnFileLogger.e(TAG, "读取tun2socks标准输出异常", e)
-                    }
-                }
-            }
-            
-            serviceScope.launch {
-                try {
-                    VpnFileLogger.d(TAG, "开始读取tun2socks错误输出...")
-                    val errorReader = process.errorStream.bufferedReader()
-                    var line: String?
-                    while (errorReader.readLine().also { line = it } != null) {
-                        VpnFileLogger.e(TAG, "[tun2socks-stderr] $line")
-                        line?.let {
-                            if (it.contains("bind: address already in use", ignoreCase = true)) {
-                                VpnFileLogger.e(TAG, "[tun2socks-critical] 地址已被占用，可能需要检查端口冲突")
-                            }
-                        }
-                    }
-                    VpnFileLogger.d(TAG, "tun2socks错误输出流结束")
-                } catch (e: Exception) {
-                    if (currentState != V2RayState.DISCONNECTED) {
-                        VpnFileLogger.e(TAG, "读取tun2socks错误输出异常", e)
-                    }
-                }
-            }
-            
-            serviceScope.launch {
-                try {
-                    val exitCode = process.waitFor()
-                    if (currentState == V2RayState.DISCONNECTED) {
-                        VpnFileLogger.d(TAG, "tun2socks正常退出,退出码: $exitCode")
-                    } else {
-                        VpnFileLogger.e(TAG, "tun2socks异常退出,退出码: $exitCode")
-                        
-                        if (mode == ConnectionMode.VPN_TUN && shouldRestartTun2socks()) {
-                            VpnFileLogger.w(TAG, "尝试重启tun2socks (第${tun2socksRestartCount + 1}次)")
-                            delay(1000)
-                            restartTun2socks()
-                        } else if (tun2socksRestartCount >= MAX_TUN2SOCKS_RESTART_COUNT) {
-                            VpnFileLogger.e(TAG, "tun2socks重启次数达到上限，停止服务")
-                            stopV2Ray()
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (currentState != V2RayState.DISCONNECTED) {
-                        VpnFileLogger.e(TAG, "监控tun2socks进程失败", e)
-                    }
-                }
-            }
-            
-            delay(1000)
-            if (!process.isAlive) {
-                try {
-                    val errorOutput = process.errorStream.bufferedReader().readText()
-                    if (errorOutput.isNotEmpty()) {
-                        VpnFileLogger.e(TAG, "tun2socks启动失败，错误输出: $errorOutput")
-                    }
-                    val stdOutput = process.inputStream.bufferedReader().readText()
-                    if (stdOutput.isNotEmpty()) {
-                        VpnFileLogger.e(TAG, "tun2socks启动失败，标准输出: $stdOutput")
-                    }
-                } catch (e: Exception) {
-                    VpnFileLogger.e(TAG, "读取启动失败输出异常", e)
-                }
-                
-                VpnFileLogger.e(TAG, "tun2socks进程启动后立即退出，退出码: ${process.exitValue()}")
-                throw Exception("tun2socks进程启动后立即退出")
-            }
-            
-            VpnFileLogger.d(TAG, "tun2socks进程启动成功，进程存活: ${process.isAlive}")
-            
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "启动tun2socks失败", e)
-            throw e
-        }
+
+private suspend fun runTun2socks() = withContext(Dispatchers.IO) {
+    if (mode != ConnectionMode.VPN_TUN) {
+        VpnFileLogger.d(TAG, "非VPN模式,跳过tun2socks")
+        return@withContext
     }
+    
+    VpnFileLogger.d(TAG, "===== 启动tun2socks进程 =====")
+    
+    var socksPort = DEFAULT_SOCKS_PORT
+    try {
+        val config = JSONObject(configJson)
+        val inbounds = config.getJSONArray("inbounds")
+        for (i in 0 until inbounds.length()) {
+            val inbound = inbounds.getJSONObject(i)
+            VpnFileLogger.d(TAG, "检查入站[$i]: tag=${inbound.optString("tag")}, protocol=${inbound.optString("protocol")}")
+            if (inbound.optString("tag", "") == "socks" || inbound.optString("protocol", "") == "socks") {
+                socksPort = inbound.optInt("port", DEFAULT_SOCKS_PORT)
+                VpnFileLogger.d(TAG, "找到SOCKS端口: $socksPort")
+                break
+            }
+        }
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "解析SOCKS端口失败", e)
+        VpnFileLogger.d(TAG, "使用默认SOCKS端口: $socksPort")
+    }
+    
+    try {
+        val libtun2socksPath = File(applicationInfo.nativeLibraryDir, "libtun2socks.so").absolutePath
+        
+        VpnFileLogger.d(TAG, "tun2socks路径: $libtun2socksPath")
+        VpnFileLogger.d(TAG, "文件存在: ${File(libtun2socksPath).exists()}")
+        
+        if (!File(libtun2socksPath).exists()) {
+            throw Exception("libtun2socks.so不存在: $libtun2socksPath")
+        }
+        
+        val nativeLibraryDir = applicationInfo.nativeLibraryDir
+        val isArm64 = nativeLibraryDir.contains("arm64")
+        VpnFileLogger.d(TAG, "检测到架构: ${if (isArm64) "arm64-v8a" else "armeabi-v7a"}")
+        
+        val sockPath = File(filesDir, "sock_path").absolutePath
+        
+        try {
+            File(sockPath).delete()
+            VpnFileLogger.d(TAG, "已删除旧套接字文件: $sockPath")
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "删除旧套接字文件失败", e)
+        }
+        
+        val cmd = arrayListOf(
+            libtun2socksPath,
+            "--tun-address", PRIVATE_VLAN4_ROUTER,
+            "--tun-mask", "255.255.255.252",
+            "--tun-mtu", VPN_MTU.toString(),
+            "--proxy", "socks5://127.0.0.1:$socksPort",
+            "--tun-device", "tun0",
+            "--tun-fd", "0",
+            "--loglevel", "debug",
+            "--enable-udprelay"
+        )
+        
+        if (globalProxy) {
+            cmd.add("--tun-gw")
+            cmd.add("0.0.0.0")
+        }
+        
+        VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
+        
+        val processBuilder = ProcessBuilder(cmd).apply {
+            redirectErrorStream(false)
+            directory(filesDir)
+            environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
+            environment()["TUN2SOCKS_LOGFILE"] = File(filesDir, "tun2socks.log").absolutePath
+        }
+        
+        val process = processBuilder.start()
+        tun2socksProcess = process
+        
+        VpnFileLogger.d(TAG, "tun2socks进程已启动")
+        
+        serviceScope.launch {
+            try {
+                VpnFileLogger.d(TAG, "开始读取tun2socks标准输出...")
+                val inputReader: BufferedReader = process.inputStream.bufferedReader()
+                var line: String?
+                while (inputReader.readLine().also { line = it } != null) {
+                    VpnFileLogger.d(TAG, "[tun2socks-stdout] $line")
+                    line?.let {
+                        when {
+                            it.contains("error", ignoreCase = true) || 
+                            it.contains("fail", ignoreCase = true) -> {
+                                VpnFileLogger.e(TAG, "[tun2socks-stdout-error] $it")
+                            }
+                            it.contains("connected", ignoreCase = true) -> {
+                                VpnFileLogger.i(TAG, "[tun2socks-stdout-info] $it")
+                            }
+                        }
+                    }
+                }
+                VpnFileLogger.d(TAG, "tun2socks标准输出流结束")
+            } catch (e: Exception) {
+                if (currentState != V2RayState.DISCONNECTED) {
+                    VpnFileLogger.e(TAG, "读取tun2socks标准输出异常", e)
+                }
+            }
+        }
+        
+        serviceScope.launch {
+            try {
+                VpnFileLogger.d(TAG, "开始读取tun2socks错误输出...")
+                val errorReader: BufferedReader = process.errorStream.bufferedReader()
+                var line: String?
+                while (errorReader.readLine().also { line = it } != null) {
+                    VpnFileLogger.e(TAG, "[tun2socks-stderr] $line")
+                    line?.let {
+                        if (it.contains("bind: address already in use", ignoreCase = true)) {
+                            VpnFileLogger.e(TAG, "[tun2socks-critical] 地址已被占用，可能需要检查端口冲突")
+                        }
+                    }
+                }
+                VpnFileLogger.d(TAG, "tun2socks错误输出流结束")
+            } catch (e: Exception) {
+                if (currentState != V2RayState.DISCONNECTED) {
+                    VpnFileLogger.e(TAG, "读取tun2socks错误输出异常", e)
+                }
+            }
+        }
+        
+        serviceScope.launch {
+            try {
+                val exitCode = process.waitFor()
+                if (currentState == V2RayState.DISCONNECTED) {
+                    VpnFileLogger.d(TAG, "tun2socks正常退出,退出码: $exitCode")
+                } else {
+                    VpnFileLogger.e(TAG, "tun2socks异常退出,退出码: $exitCode")
+                    
+                    if (mode == ConnectionMode.VPN_TUN && shouldRestartTun2socks()) {
+                        VpnFileLogger.w(TAG, "尝试重启tun2socks (第${tun2socksRestartCount + 1}次)")
+                        delay(1000)
+                        restartTun2socks()
+                    } else if (tun2socksRestartCount >= MAX_TUN2SOCKS_RESTART_COUNT) {
+                        VpnFileLogger.e(TAG, "tun2socks重启次数达到上限，停止服务")
+                        stopV2Ray()
+                    }
+                }
+            } catch (e: Exception) {
+                if (currentState != V2RayState.DISCONNECTED) {
+                    VpnFileLogger.e(TAG, "监控tun2socks进程失败", e)
+                }
+            }
+        }
+        
+        delay(1000)
+        if (!process.isAlive) {
+            try {
+                val errorOutput = process.errorStream.bufferedReader().readText()
+                if (errorOutput.isNotEmpty()) {
+                    VpnFileLogger.e(TAG, "tun2socks启动失败，错误输出: $errorOutput")
+                }
+                val stdOutput = process.inputStream.bufferedReader().readText()
+                if (stdOutput.isNotEmpty()) {
+                    VpnFileLogger.e(TAG, "tun2socks启动失败，标准输出: $stdOutput")
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "读取启动失败输出异常", e)
+            }
+            
+            VpnFileLogger.e(TAG, "tun2socks进程启动后立即退出，退出码: ${process.exitValue()}")
+            throw Exception("tun2socks进程启动后立即退出")
+        }
+        
+        VpnFileLogger.d(TAG, "tun2socks进程启动成功，进程存活: ${process.isAlive}")
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "启动tun2socks失败", e)
+        throw e
+    }
+}
     
     private fun shouldRestartTun2socks(): Boolean {
         val now = System.currentTimeMillis()
