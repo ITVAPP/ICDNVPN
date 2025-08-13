@@ -201,7 +201,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         
         /**
-         * 获取流量统计 - 简化版
+         * 获取流量统计 - 修复版：返回真实流量数据
          * 返回当前通知栏显示的数据
          */
         @JvmStatic
@@ -248,7 +248,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 协程作用域
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // 简化的流量统计数据（只用于通知栏显示）
+    // 真实的流量统计数据（从V2Ray核心获取）
     private var uploadBytes: Long = 0
     private var downloadBytes: Long = 0
     private var uploadSpeed: Long = 0
@@ -675,10 +675,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.w(TAG, "保存自启动配置失败", e)
             }
             
-            // 启动简化的流量监控（只用于通知栏显示）
+            // 启动真实的流量监控（从V2Ray核心获取数据）
             if (enableAutoStats) {
                 VpnFileLogger.d(TAG, "启动流量统计监控")
-                startSimpleTrafficMonitor()
+                startRealTrafficMonitor()
             }
             
         } catch (e: Exception) {
@@ -795,10 +795,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 VpnFileLogger.w(TAG, "保存自启动配置失败", e)
             }
             
-            // 启动简化的流量监控
+            // 启动真实的流量监控
             if (enableAutoStats) {
                 VpnFileLogger.d(TAG, "启动流量统计监控")
-                startSimpleTrafficMonitor()
+                startRealTrafficMonitor()
             }
             
         } catch (e: Exception) {
@@ -966,9 +966,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // DNS服务器配置 - 使用固定的公共DNS
+        // DNS服务器配置 - 修复：使用多个DNS服务器
+        builder.addDnsServer("1.1.1.1")
         builder.addDnsServer("8.8.8.8")
-        VpnFileLogger.d(TAG, "添加DNS: 8.8.8.8")
+        // 如果是中国用户，添加国内DNS作为备选
+        if (java.util.Locale.getDefault().country == "CN") {
+            builder.addDnsServer("223.5.5.5")
+        }
+        VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1, 8.8.8.8, 223.5.5.5")
         
         // 路由规则配置 - 根据globalProxy参数设置
         if (globalProxy) {
@@ -1099,7 +1104,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             "--tunmtu", VPN_MTU.toString(),
             "--sock-path", "sock_path",  // 相对路径，与v2rayNG一致
             "--enable-udprelay",
-            "--loglevel", "notice"
+            "--loglevel", "info"  // 改为info级别获取更多日志
         )
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
@@ -1111,60 +1116,50 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 .directory(applicationContext.filesDir)
                 .start()
             
-            // 改进的日志读取 - 使用最小缓冲区并立即读取
+            // 修复的日志读取 - 使用更合理的缓冲区
             Thread {
                 try {
                     VpnFileLogger.d(TAG, "开始读取${TUN2SOCKS}输出...")
                     
-                    // 使用更小的缓冲区并立即刷新
+                    // 使用标准缓冲区大小
                     val reader = BufferedReader(
                         InputStreamReader(process?.inputStream), 
-                        1  // 最小缓冲区，确保立即读取
+                        8192  // 标准缓冲区大小
                     )
                     
                     var line: String?
                     var lineCount = 0
                     
                     // 持续读取直到进程结束
-                    while (true) {
+                    while (process?.isAlive == true) {
                         try {
                             line = reader.readLine()
                             if (line == null) {
-                                VpnFileLogger.d(TAG, "${TUN2SOCKS}输出流结束")
-                                break
+                                Thread.sleep(100)  // 没有数据时短暂休眠
+                                continue
                             }
                             
                             lineCount++
                             
                             // 记录所有输出
-                            VpnFileLogger.d("tun2socks", "[$lineCount] $line")
+                            VpnFileLogger.d("tun2socks", line)
                             
-                            // 检查关键日志并高亮
+                            // 检查关键日志
                             when {
                                 line.contains("ERROR", ignoreCase = true) -> {
-                                    VpnFileLogger.e("tun2socks", "[ERROR] $line")
+                                    VpnFileLogger.e("tun2socks", "[错误] $line")
                                 }
                                 line.contains("WARNING", ignoreCase = true) || 
                                 line.contains("WARN", ignoreCase = true) -> {
-                                    VpnFileLogger.w("tun2socks", "[WARNING] $line")
+                                    VpnFileLogger.w("tun2socks", "[警告] $line")
                                 }
-                                line.contains("NOTICE", ignoreCase = true) || 
-                                line.contains("INFO", ignoreCase = true) -> {
-                                    VpnFileLogger.i("tun2socks", "[INFO] $line")
-                                }
-                                line.contains("initializing", ignoreCase = true) || 
-                                line.contains("starting", ignoreCase = true) -> {
+                                line.contains("starting", ignoreCase = true) || 
+                                line.contains("listening", ignoreCase = true) -> {
                                     VpnFileLogger.i("tun2socks", "[启动] $line")
                                 }
-                                line.contains("exiting", ignoreCase = true) || 
-                                line.contains("stopping", ignoreCase = true) -> {
-                                    VpnFileLogger.w("tun2socks", "[退出] $line")
-                                }
-                                line.contains("connected", ignoreCase = true) -> {
-                                    VpnFileLogger.i("tun2socks", "[连接] $line")
-                                }
+                                line.contains("connected", ignoreCase = true) || 
                                 line.contains("accepted", ignoreCase = true) -> {
-                                    VpnFileLogger.i("tun2socks", "[接受] $line")
+                                    VpnFileLogger.i("tun2socks", "[连接] $line")
                                 }
                             }
                             
@@ -1190,22 +1185,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }.start()
             
-            // 同时监控错误流（以防万一）
-            Thread {
-                try {
-                    val errorReader = BufferedReader(
-                        InputStreamReader(process?.errorStream),
-                        1
-                    )
-                    var errorLine: String?
-                    while (errorReader.readLine().also { errorLine = it } != null) {
-                        VpnFileLogger.e("tun2socks-err", errorLine ?: "")
-                    }
-                } catch (e: Exception) {
-                    // 忽略，可能errorStream已被合并
-                }
-            }.start()
-            
             // 启动进程监控线程
             Thread {
                 VpnFileLogger.d(TAG, "$TUN2SOCKS check")
@@ -1227,19 +1206,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }.start()
             
-            // 检查进程是否成功启动
-            Thread {
-                Thread.sleep(1000)  // 给进程一秒钟启动时间
-                if (process?.isAlive != true) {
-                    VpnFileLogger.e(TAG, "${TUN2SOCKS}进程启动后立即退出")
-                } else {
-                    VpnFileLogger.i(TAG, "${TUN2SOCKS}进程运行正常")
-                }
-            }.start()
-            
             // 发送文件描述符（与v2rayNG一致）
             Thread.sleep(500)  // 等待tun2socks准备就绪
-            sendFd()
+            sendFdWithRetry()
             
             VpnFileLogger.d(TAG, "tun2socks进程启动完成")
             
@@ -1250,56 +1219,44 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 发送文件描述符给tun2socks（与v2rayNG完全一致）
+     * 发送文件描述符给tun2socks - 增加重试机制
      */
-    private fun sendFd() {
+    private fun sendFdWithRetry() {
         val path = File(applicationContext.filesDir, "sock_path").absolutePath
-        val localSocket = LocalSocket()
         
-        try {
-            // 最多尝试6次，每次间隔递增
-            var tries = 0
-            val maxTries = 6
-            
-            while (tries < maxTries) {
-                try {
-                    Thread.sleep(50L * tries)
-                    
-                    VpnFileLogger.d(TAG, "尝试连接Unix域套接字 (第${tries + 1}次)")
-                    
-                    localSocket.connect(LocalSocketAddress(path, LocalSocketAddress.Namespace.FILESYSTEM))
-                    
-                    if (!localSocket.isConnected) {
-                        throw Exception("LocalSocket连接失败")
-                    }
-                    
-                    if (!localSocket.isBound) {
-                        throw Exception("LocalSocket未绑定")
-                    }
-                    
-                    // 发送文件描述符
-                    localSocket.setFileDescriptorsForSend(arrayOf(mInterface!!.fileDescriptor))
-                    localSocket.outputStream.write(42)  // 与v2rayNG一致，发送任意字节触发
-                    localSocket.outputStream.flush()
-                    
-                    VpnFileLogger.d(TAG, "文件描述符发送成功")
-                    break
-                    
-                } catch (e: Exception) {
-                    tries++
-                    if (tries >= maxTries) {
-                        VpnFileLogger.e(TAG, "发送文件描述符失败，已达最大重试次数", e)
-                        throw e
-                    } else {
-                        VpnFileLogger.w(TAG, "发送文件描述符失败，将重试 ($tries/$maxTries): ${e.message}")
-                    }
-                }
-            }
-        } finally {
+        var retries = 0
+        val maxRetries = 10  // 增加重试次数
+        
+        while (retries < maxRetries) {
             try {
+                Thread.sleep(100L * (retries + 1))  // 递增等待时间
+                
+                VpnFileLogger.d(TAG, "尝试连接Unix域套接字 (第${retries + 1}次)")
+                
+                val localSocket = LocalSocket()
+                localSocket.connect(LocalSocketAddress(path, LocalSocketAddress.Namespace.FILESYSTEM))
+                
+                if (!localSocket.isConnected) {
+                    throw Exception("LocalSocket连接失败")
+                }
+                
+                // 发送文件描述符
+                localSocket.setFileDescriptorsForSend(arrayOf(mInterface!!.fileDescriptor))
+                localSocket.outputStream.write(42)  // 与v2rayNG一致，发送任意字节触发
+                localSocket.outputStream.flush()
                 localSocket.close()
+                
+                VpnFileLogger.d(TAG, "文件描述符发送成功")
+                break
+                
             } catch (e: Exception) {
-                // 忽略关闭异常
+                retries++
+                if (retries >= maxRetries) {
+                    VpnFileLogger.e(TAG, "发送文件描述符失败，已达最大重试次数", e)
+                    throw e
+                } else {
+                    VpnFileLogger.w(TAG, "发送文件描述符失败，将重试 ($retries/$maxRetries): ${e.message}")
+                }
             }
         }
     }
@@ -1368,11 +1325,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 启动简化的流量监控（只用于通知栏显示）
-     * 采用v2rayNG验证过的简单方式
+     * 启动真实的流量监控（从V2Ray核心获取数据）
      */
-    private fun startSimpleTrafficMonitor() {
-        VpnFileLogger.d(TAG, "启动简化流量监控")
+    private fun startRealTrafficMonitor() {
+        VpnFileLogger.d(TAG, "启动真实流量监控")
         
         statsJob?.cancel()
         
@@ -1381,7 +1337,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             while (currentState == V2RayState.CONNECTED && isActive) {
                 try {
-                    updateSimpleTrafficStats()
+                    updateRealTrafficStats()
                 } catch (e: Exception) {
                     VpnFileLogger.w(TAG, "更新流量统计异常", e)
                 }
@@ -1392,21 +1348,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 简化的流量统计更新
-     * 只维护通知栏显示所需的基本数据
+     * 更新真实的流量统计
+     * 从V2Ray核心获取真实流量数据
      */
-    private fun updateSimpleTrafficStats() {
+    private fun updateRealTrafficStats() {
         try {
-            // 这里可以通过其他方式获取流量数据
-            // v2rayNG使用的是简化配置，不依赖Stats API
-            // 可以从系统或V2Ray核心的其他接口获取
+            // 通过CoreController查询流量统计
+            // 注意：不同版本的libv2ray可能有不同的API
+            val proxyUplink = coreController?.queryStats("outbound>>>proxy>>>traffic>>>uplink") ?: 0L
+            val proxyDownlink = coreController?.queryStats("outbound>>>proxy>>>traffic>>>downlink") ?: 0L
             
-            // 暂时使用模拟数据，实际可以从TrafficStats或其他来源获取
+            // 更新流量值
+            uploadBytes = proxyUplink
+            downloadBytes = proxyDownlink
+            
+            // 计算速度
             val currentTime = System.currentTimeMillis()
             val timeDiff = (currentTime - lastStatsTime) / 1000.0
             
             if (timeDiff > 0 && lastStatsTime > 0) {
-                // 简单的速度计算
                 val uploadDiff = uploadBytes - lastUploadBytes
                 val downloadDiff = downloadBytes - lastDownloadBytes
                 
@@ -1420,18 +1380,31 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             lastDownloadBytes = downloadBytes
             lastStatsTime = currentTime
             
-            // 模拟流量增长（实际应从系统或V2Ray获取）
-            uploadBytes += (Math.random() * 1024).toLong()
-            downloadBytes += (Math.random() * 2048).toLong()
-            
             if (enableAutoStats) {
                 updateNotification()
             }
             
-            VpnFileLogger.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
+            VpnFileLogger.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}, " +
+                    "速度: ↑${formatBytes(uploadSpeed)}/s ↓${formatBytes(downloadSpeed)}/s")
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "更新流量统计失败", e)
+            
+            // 如果无法从核心获取，尝试备用方法
+            // 注意：这只是备用方案，可能不够准确
+            try {
+                val uid = android.os.Process.myUid()
+                val rxBytes = android.net.TrafficStats.getUidRxBytes(uid)
+                val txBytes = android.net.TrafficStats.getUidTxBytes(uid)
+                
+                if (rxBytes > 0 && txBytes > 0) {
+                    downloadBytes = rxBytes
+                    uploadBytes = txBytes
+                    VpnFileLogger.d(TAG, "使用TrafficStats备用统计")
+                }
+            } catch (e2: Exception) {
+                VpnFileLogger.w(TAG, "备用流量统计也失败", e2)
+            }
         }
     }
     
@@ -1730,35 +1703,32 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     override fun onEmitStatus(level: Long, status: String?): Long {
+        if (status.isNullOrEmpty()) return 0L
+        
         try {
-            val levelName = when (level.toInt()) {
-                0 -> "DEBUG"
-                1 -> "INFO"
-                2 -> "WARNING"
-                3 -> "ERROR"
-                4 -> "FATAL"
-                else -> "LEVEL$level"
+            // 改进的日志级别处理
+            when (level.toInt()) {
+                0 -> VpnFileLogger.d("V2Ray", status)
+                1 -> VpnFileLogger.i("V2Ray", status)
+                2 -> VpnFileLogger.w("V2Ray", status)
+                3, 4 -> VpnFileLogger.e("V2Ray", status)
+                else -> VpnFileLogger.d("V2Ray", "[$level] $status")
             }
             
-            // 记录所有V2Ray日志，不过滤
-            VpnFileLogger.d(TAG, "[V2Ray-$levelName] $status")
-            
-            // 对重要事件使用不同的日志级别
-            if (status != null) {
-                when {
-                    status.contains("failed", ignoreCase = true) || 
-                    status.contains("error", ignoreCase = true) -> {
-                        VpnFileLogger.e(TAG, "[V2Ray错误] $status")
-                    }
-                    status.contains("warning", ignoreCase = true) -> {
-                        VpnFileLogger.w(TAG, "[V2Ray警告] $status")
-                    }
-                    status.contains("started", ignoreCase = true) ||
-                    status.contains("listening", ignoreCase = true) ||
-                    status.contains("accepted", ignoreCase = true) ||
-                    status.contains("connection", ignoreCase = true) -> {
-                        VpnFileLogger.i(TAG, "[V2Ray信息] $status")
-                    }
+            // 检测关键状态
+            when {
+                status.contains("started", ignoreCase = true) -> {
+                    VpnFileLogger.i(TAG, "V2Ray核心已启动: $status")
+                }
+                status.contains("failed", ignoreCase = true) || 
+                status.contains("error", ignoreCase = true) -> {
+                    VpnFileLogger.e(TAG, "V2Ray错误: $status")
+                }
+                status.contains("accepted", ignoreCase = true) -> {
+                    VpnFileLogger.d(TAG, "连接已接受: $status")
+                }
+                status.contains("dns", ignoreCase = true) -> {
+                    VpnFileLogger.d(TAG, "DNS查询: $status")
                 }
             }
             
