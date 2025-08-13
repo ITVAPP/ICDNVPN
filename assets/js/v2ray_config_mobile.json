@@ -2,6 +2,30 @@
   "log": {
     "loglevel": "error"
   },
+  "stats": {},
+  "api": {
+    "tag": "api",
+    "services": ["StatsService"]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 5,
+        "connIdle": 300,
+        "uplinkOnly": 3,
+        "downlinkOnly": 5,
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "bufferSize": 8
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
   "inbounds": [
     {
       "tag": "socks",
@@ -28,6 +52,15 @@
         "allowTransparent": false,
         "userLevel": 0
       }
+    },
+    {
+      "tag": "api",
+      "port": 10085,
+      "listen": "127.0.0.1",
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      }
     }
   ],
   "outbounds": [
@@ -42,8 +75,10 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                "encryption": "none",
-                "level": 0
+                "alterId": 0,
+                "email": "t@t.tt",
+                "security": "auto",
+                "encryption": "none"
               }
             ]
           }
@@ -53,7 +88,7 @@
         "network": "ws",
         "security": "tls",
         "tlsSettings": {
-          "allowInsecure": false,
+          "allowInsecure": true,
           "serverName": "pages-vless-a9f.pages.dev",
           "fingerprint": "randomized"
         },
@@ -62,6 +97,9 @@
           "headers": {
             "Host": "pages-vless-a9f.pages.dev"
           }
+        },
+        "sockopt": {
+          "dialerProxy": "proxy3"
         }
       },
       "mux": {
@@ -77,12 +115,33 @@
     {
       "tag": "block",
       "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    },
+    {
+      "tag": "proxy3",
+      "protocol": "freedom",
+      "settings": {
+        "fragment": {
+          "packets": "tlshello",
+          "length": "100-200",
+          "interval": "10-20"
+        }
+      }
+    },
+    {
+      "tag": "api",
+      "protocol": "freedom",
       "settings": {}
     }
   ],
   "dns": {
     "hosts": {
-      "dns.google": "8.8.8.8"
+      "dns.google": "8.8.8.8",
+      "proxy.example.com": "127.0.0.1"
     },
     "servers": [
       {
@@ -104,6 +163,17 @@
     "rules": [
       {
         "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "port": "443",
+        "network": "udp",
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
         "outboundTag": "direct",
         "domain": [
           "domain:dns.alidns.com",
@@ -121,12 +191,23 @@
         "ip": [
           "223.5.5.5/32",
           "223.6.6.6/32",
+          "2400:3200::1/128",
+          "2400:3200:baba::1/128",
           "119.29.29.29/32",
           "1.12.12.12/32",
           "120.53.53.53/32",
+          "2402:4e00::/128",
+          "2402:4e00:1::/128",
           "180.76.76.76/32",
+          "2400:da00::6666/128",
           "114.114.114.114/32",
           "114.114.115.115/32",
+          "180.184.1.1/32",
+          "180.184.2.2/32",
+          "101.226.4.6/32",
+          "218.30.118.6/32",
+          "123.125.81.6/32",
+          "140.207.198.6/32",
           "geoip:private",
           "geoip:cn"
         ]
