@@ -398,9 +398,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 日志配置
             val log = config.optJSONObject("log")
-            VpnFileLogger.d(TAG, "日志级别: ${log?.optString("loglevel", "warning")}")
-            VpnFileLogger.d(TAG, "访问日志: ${log?.optString("access", "none")}")
-            VpnFileLogger.d(TAG, "错误日志: ${log?.optString("error", "none")}")
+            VpnFileLogger.d(TAG, "日志级别: ${log?.optString("loglevel", "info")}")
+            VpnFileLogger.d(TAG, "访问日志: ${log?.optString("access", "info")}")
+            VpnFileLogger.d(TAG, "错误日志: ${log?.optString("error", "info")}")
             
             // 入站配置
             val inbounds = config.optJSONArray("inbounds")
@@ -968,8 +968,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // DNS服务器配置 - 使用固定的公共DNS
         builder.addDnsServer("8.8.8.8")
-        builder.addDnsServer("1.1.1.1")
-        VpnFileLogger.d(TAG, "添加DNS: 8.8.8.8, 1.1.1.1")
+        VpnFileLogger.d(TAG, "添加DNS: 8.8.8.8")
         
         // 路由规则配置 - 根据globalProxy参数设置
         if (globalProxy) {
