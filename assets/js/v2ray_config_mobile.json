@@ -3,25 +3,16 @@
     "loglevel": "error"
   },
   "stats": {},
-  "api": {
-    "tag": "api",
-    "services": ["StatsService"]
-  },
   "policy": {
     "levels": {
-      "0": {
-        "handshake": 5,
+      "8": {
+        "handshake": 4,
         "connIdle": 300,
-        "uplinkOnly": 3,
-        "downlinkOnly": 5,
-        "statsUserUplink": true,
-        "statsUserDownlink": true,
-        "bufferSize": 8
+        "uplinkOnly": 1,
+        "downlinkOnly": 1
       }
     },
     "system": {
-      "statsInboundUplink": true,
-      "statsInboundDownlink": true,
       "statsOutboundUplink": true,
       "statsOutboundDownlink": true
     }
@@ -34,7 +25,7 @@
       "settings": {
         "auth": "noauth",
         "udp": true,
-        "userLevel": 0
+        "userLevel": 8
       }
     },
     {
@@ -50,16 +41,7 @@
         "auth": "noauth",
         "udp": true,
         "allowTransparent": false,
-        "userLevel": 0
-      }
-    },
-    {
-      "tag": "api",
-      "port": 10085,
-      "listen": "127.0.0.1",
-      "protocol": "dokodemo-door",
-      "settings": {
-        "address": "127.0.0.1"
+        "userLevel": 8
       }
     }
   ],
@@ -78,7 +60,8 @@
                 "alterId": 0,
                 "email": "t@t.tt",
                 "security": "auto",
-                "encryption": "none"
+                "encryption": "none",
+                "level": 8
               }
             ]
           }
@@ -88,7 +71,7 @@
         "network": "ws",
         "security": "tls",
         "tlsSettings": {
-          "allowInsecure": true,
+          "allowInsecure": false,
           "serverName": "pages-vless-a9f.pages.dev",
           "fingerprint": "randomized"
         },
@@ -131,11 +114,6 @@
           "interval": "10-20"
         }
       }
-    },
-    {
-      "tag": "api",
-      "protocol": "freedom",
-      "settings": {}
     }
   ],
   "dns": {
@@ -161,11 +139,6 @@
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
-      {
-        "type": "field",
-        "inboundTag": ["api"],
-        "outboundTag": "api"
-      },
       {
         "type": "field",
         "port": "443",
