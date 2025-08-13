@@ -39,9 +39,6 @@ class CloudflareTestService {
     // Dart是单线程的，不需要同步锁
     if (_sharedHttpClient == null) {
       _sharedHttpClient = HttpClient();
-      // 配置连接池
-      _sharedHttpClient!.maxConnectionsPerHost = AppConfig.httpClientMaxConnectionsPerHost;
-      _sharedHttpClient!.idleTimeout = AppConfig.httpClientIdleTimeout;
       // 不设置全局connectionTimeout，每个请求单独设置
       _sharedHttpClient!.badCertificateCallback = (cert, host, port) => true;
     }
