@@ -1672,29 +1672,35 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     // ===== CoreCallbackHandler 接口实现 =====
-   override fun startup(p1: Long): Long {
-       VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup(p1=$p1) 被调用 ==========")
-       VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
-       try {
-           val isRunning = coreController?.isRunning ?: false
-           VpnFileLogger.d(TAG, "V2Ray核心运行状态(在startup回调中): $isRunning")
-       } catch (e: Exception) {
-           VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
-       }
-       return 0L
-   }
 
-   override fun shutdown(p1: Long): Long {
-       VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown(p1=$p1) 被调用")
-       serviceScope.launch {
-           try {
-               stopV2Ray()
-           } catch (e: Exception) {
-               VpnFileLogger.e(TAG, "shutdown停止服务异常", e)
-           }
-       }
-       return 0L
-   }
+    override fun startup(): Long {
+        VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup() 被调用 ==========")
+        VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
+        
+        // 立即查询一次状态以验证
+        try {
+            val isRunning = coreController?.isRunning ?: false
+            VpnFileLogger.d(TAG, "V2Ray核心运行状态(在startup回调中): $isRunning")
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
+        }
+        
+        return 0L
+    }
+    
+    override fun shutdown(): Long {
+        VpnFileLogger.d(TAG, "CoreCallbackHandler.shutdown() 被调用")
+        
+        serviceScope.launch {
+            try {
+                stopV2Ray()
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "shutdown停止服务异常", e)
+            }
+        }
+        
+        return 0L
+    }
     
     override fun onEmitStatus(level: Long, status: String?): Long {
         if (status.isNullOrEmpty()) return 0L
