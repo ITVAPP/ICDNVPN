@@ -42,7 +42,6 @@ import libv2ray.CoreCallbackHandler
 
 /**
  * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
- * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -71,8 +70,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
         
         // VPN配置常量（与v2rayNG保持一致）
-        // 优化2: MTU优化 - 增加MTU值以提高吞吐量（需要测试网络兼容性）
-        private const val VPN_MTU = 1500  // 可根据网络环境调整，某些网络支持9000
+        private const val VPN_MTU = 1500
         private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"
         private const val PRIVATE_VLAN4_ROUTER = "26.26.26.2"
         private const val PRIVATE_VLAN6_CLIENT = "da26:2626::1"
@@ -82,8 +80,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val DEFAULT_SOCKS_PORT = 7898
         
         // 流量统计配置
-        // 优化4: 流量统计优化 - 减少查询频率
-        private const val STATS_UPDATE_INTERVAL = 15000L  // 从10秒改为15秒，减少JNI调用
+        private const val STATS_UPDATE_INTERVAL = 10000L  // 10秒更新一次
         
         // tun2socks重启限制
         private const val MAX_TUN2SOCKS_RESTART_COUNT = 3
@@ -93,8 +90,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val TUN2SOCKS = "libtun2socks.so"
         
         // 连接检查间隔
-        // 优化3: 连接保持优化 - 调整检查间隔为60秒
-        private const val CONNECTION_CHECK_INTERVAL = 60000L  // 从30秒改为60秒
+        private const val CONNECTION_CHECK_INTERVAL = 30000L  // 30秒检查一次
         
         // 服务状态
         @Volatile
@@ -243,14 +239,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var lastStatsTime: Long = 0
     private var startTime: Long = 0
     
-    // 优化4: 批量查询缓存
-    private data class StatsData(
-        val tag: String,
-        var uplink: Long = 0L,
-        var downlink: Long = 0L
-    )
-    private val statsCache = mutableListOf<StatsData>()
-    
     // 系统流量统计初始值（备用方案）
     private var initialUploadBytes: Long? = null
     private var initialDownloadBytes: Long? = null
@@ -323,23 +311,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 获取WakeLock
         acquireWakeLock()
         
-        // 优化4: 初始化统计缓存
-        initStatsCache()
-        
         VpnFileLogger.d(TAG, "VPN服务onCreate完成")
-    }
-    
-    /**
-     * 优化4: 初始化流量统计缓存
-     */
-    private fun initStatsCache() {
-        statsCache.clear()
-        // 预先添加需要查询的标签
-        statsCache.add(StatsData("proxy"))
-        statsCache.add(StatsData("direct"))
-        statsCache.add(StatsData("block"))
-        statsCache.add(StatsData("proxy3"))
-        VpnFileLogger.d(TAG, "流量统计缓存初始化完成，监控${statsCache.size}个标签")
     }
     
     /**
@@ -412,6 +384,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 解析并验证配置
         try {
+            val config = JSONObject(configJson)
+            
+            // 解析并验证配置
             val config = JSONObject(configJson)
             
             // 记录关键配置信息
@@ -718,9 +693,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 startSimpleTrafficMonitor()
             }
             
-            // 优化3: 启动连接保持检查
-            startConnectionCheck()
-            
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray(VPN模式)失败", e)
             cleanupResources()
@@ -842,9 +814,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 startSimpleTrafficMonitor()
             }
             
-            // 优化3: 启动连接保持检查
-            startConnectionCheck()
-            
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray(仅代理模式)失败", e)
             cleanupResources()
@@ -854,7 +823,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化3: 启动连接状态检查 - 改进的重连机制
+     * 启动连接状态检查
      */
     private fun startConnectionCheck() {
         connectionCheckJob?.cancel()
@@ -877,16 +846,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                         val processAlive = process?.isAlive ?: false
                         if (!processAlive) {
                             VpnFileLogger.w(TAG, "tun2socks进程不存在，尝试重启")
-                            
-                            // 优化3: 改进的重启逻辑
                             if (shouldRestartTun2socks()) {
-                                // 等待一段时间再重启，避免频繁重启
-                                delay(2000)
-                                
-                                // 检查是否仍需要重启
-                                if (currentState == V2RayState.CONNECTED && (process?.isAlive != true)) {
-                                    restartTun2socks()
-                                }
+                                restartTun2socks()
                             } else {
                                 VpnFileLogger.e(TAG, "tun2socks重启失败次数过多")
                                 stopV2Ray()
@@ -1200,7 +1161,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化1: 启动tun2socks进程 - 添加缓冲区优化参数
+     * 启动tun2socks进程 - 修复版：改进日志读取
      */
     private fun runTun2socks() {
         if (mode != ConnectionMode.VPN_TUN) {
@@ -1208,7 +1169,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 优化版 =====")
+        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) =====")
         
         // 从配置中提取SOCKS端口
         val socksPort = try {
@@ -1229,7 +1190,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             DEFAULT_SOCKS_PORT
         }
         
-        // 优化1: 构建命令行参数（与v2rayNG完全一致）+ 添加缓冲区优化
+        // 构建命令行参数（与v2rayNG完全一致）
         val cmd = arrayListOf(
             File(applicationContext.applicationInfo.nativeLibraryDir, TUN2SOCKS).absolutePath,
             "--netif-ipaddr", PRIVATE_VLAN4_ROUTER,
@@ -1238,14 +1199,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             "--tunmtu", VPN_MTU.toString(),
             "--sock-path", "sock_path",  // 相对路径，与v2rayNG一致
             "--enable-udprelay",
-            "--loglevel", "notice",
-            // 优化1: 添加缓冲区优化参数
-            "--tcp-rcvbuf", "4m",  // TCP接收缓冲区 4MB
-            "--tcp-sndbuf", "4m",  // TCP发送缓冲区 4MB
-            "--udpgw-connection-buffer-size", "64"  // UDP缓冲区，默认8，增加到64
+            "--loglevel", "notice"
         )
         
-        VpnFileLogger.d(TAG, "tun2socks命令(优化版): ${cmd.joinToString(" ")}")
+        VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
         
         try {
             val proBuilder = ProcessBuilder(cmd)
@@ -1358,10 +1315,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 if (currentState == V2RayState.CONNECTED) {
                     VpnFileLogger.e(TAG, "$TUN2SOCKS unexpectedly exited, exit code: $exitCode")
                     
-                    // 优化3: 改进的重启逻辑
+                    // 尝试重启tun2socks
                     if (shouldRestartTun2socks()) {
                         VpnFileLogger.w(TAG, "尝试重启tun2socks (第${tun2socksRestartCount + 1}次)")
-                        Thread.sleep(2000)  // 等待2秒再重启
+                        Thread.sleep(1000)
                         restartTun2socks()
                     } else {
                         VpnFileLogger.e(TAG, "tun2socks重启次数达到上限，停止服务")
@@ -1384,7 +1341,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             Thread.sleep(500)  // 等待tun2socks准备就绪
             sendFd()
             
-            VpnFileLogger.d(TAG, "tun2socks进程启动完成（优化版）")
+            VpnFileLogger.d(TAG, "tun2socks进程启动完成")
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动tun2socks失败", e)
@@ -1467,7 +1424,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化3: 重启tun2socks进程 - 改进的重启逻辑
+     * 重启tun2socks进程
      */
     private fun restartTun2socks() {
         try {
@@ -1477,15 +1434,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 先停止当前进程
             stopTun2socks()
             
-            // 等待一下，确保资源释放
-            Thread.sleep(1000)
-            
-            // 检查VPN接口是否还有效
-            if (mInterface == null || mInterface?.fileDescriptor == null) {
-                VpnFileLogger.e(TAG, "VPN接口无效，无法重启tun2socks")
-                stopV2Ray()
-                return
-            }
+            // 等待一下
+            Thread.sleep(500)
             
             // 重新启动
             runTun2socks()
@@ -1552,28 +1502,27 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化4: 真实的流量统计更新 - 批量查询优化
+     * 真实的流量统计更新
      * 使用libv2ray.aar的queryStats方法获取实际流量数据
      */
     private fun updateSimpleTrafficStats() {
         try {
-            // 优化4: 批量查询所有标签的流量，减少JNI调用
-            var totalUpload = 0L
-            var totalDownload = 0L
+            // 使用queryStats方法查询实际流量
+            // 基于配置文件，查询所有出站标签的流量
+            val proxyUplink = coreController?.queryStats("proxy", "uplink") ?: 0L
+            val proxyDownlink = coreController?.queryStats("proxy", "downlink") ?: 0L
+            val directUplink = coreController?.queryStats("direct", "uplink") ?: 0L
+            val directDownlink = coreController?.queryStats("direct", "downlink") ?: 0L
+            val blockUplink = coreController?.queryStats("block", "uplink") ?: 0L
+            val blockDownlink = coreController?.queryStats("block", "downlink") ?: 0L
             
-            // 一次性查询所有缓存的标签
-            for (stats in statsCache) {
-                // 查询上行流量
-                val uplink = coreController?.queryStats(stats.tag, "uplink") ?: 0L
-                // 查询下行流量
-                val downlink = coreController?.queryStats(stats.tag, "downlink") ?: 0L
-                
-                stats.uplink = uplink
-                stats.downlink = downlink
-                
-                totalUpload += uplink
-                totalDownload += downlink
-            }
+            // 配置中还有proxy3标签，也需要统计
+            val proxy3Uplink = coreController?.queryStats("proxy3", "uplink") ?: 0L
+            val proxy3Downlink = coreController?.queryStats("proxy3", "downlink") ?: 0L
+            
+            // 计算总流量（所有出站的总和）
+            val totalUpload = proxyUplink + directUplink + blockUplink + proxy3Uplink
+            val totalDownload = proxyDownlink + directDownlink + blockDownlink + proxy3Downlink
             
             // 计算速度
             val currentTime = System.currentTimeMillis()
@@ -1601,14 +1550,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 updateNotification()
             }
             
-                val statsLog = StringBuilder("流量统计 - ")
-                for (stats in statsCache) {
-                    if (stats.uplink > 0 || stats.downlink > 0) {
-                        statsLog.append("${stats.tag}: ↑${formatBytes(stats.uplink)} ↓${formatBytes(stats.downlink)} | ")
-                    }
-                }
-                statsLog.append("总计: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}")
-                VpnFileLogger.d(TAG, statsLog.toString())
+            VpnFileLogger.d(TAG, "流量统计 - " +
+                    "代理: ↑${formatBytes(proxyUplink)} ↓${formatBytes(proxyDownlink)} | " +
+                    "代理3: ↑${formatBytes(proxy3Uplink)} ↓${formatBytes(proxy3Downlink)} | " +
+                    "直连: ↑${formatBytes(directUplink)} ↓${formatBytes(directDownlink)} | " +
+                    "总计: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}")
             
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "查询流量统计失败，使用备用方案", e)
@@ -1654,17 +1600,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 如果服务正在运行，尝试更新一次最新数据
         if (currentState == V2RayState.CONNECTED && coreController != null) {
             try {
-                // 优化4: 快速查询一次最新流量（批量查询）
-                var totalUpload = 0L
-                var totalDownload = 0L
+                // 快速查询一次最新流量（包含所有出站标签）
+                val proxyUplink = coreController?.queryStats("proxy", "uplink") ?: 0L
+                val proxyDownlink = coreController?.queryStats("proxy", "downlink") ?: 0L
+                val directUplink = coreController?.queryStats("direct", "uplink") ?: 0L
+                val directDownlink = coreController?.queryStats("direct", "downlink") ?: 0L
+                val blockUplink = coreController?.queryStats("block", "uplink") ?: 0L
+                val blockDownlink = coreController?.queryStats("block", "downlink") ?: 0L
+                val proxy3Uplink = coreController?.queryStats("proxy3", "uplink") ?: 0L
+                val proxy3Downlink = coreController?.queryStats("proxy3", "downlink") ?: 0L
                 
-                for (stats in statsCache) {
-                    totalUpload += coreController?.queryStats(stats.tag, "uplink") ?: 0L
-                    totalDownload += coreController?.queryStats(stats.tag, "downlink") ?: 0L
-                }
-                
-                uploadBytes = totalUpload
-                downloadBytes = totalDownload
+                // 更新总流量
+                uploadBytes = proxyUplink + directUplink + blockUplink + proxy3Uplink
+                downloadBytes = proxyDownlink + directDownlink + blockDownlink + proxy3Downlink
                 
                 VpnFileLogger.d(TAG, "实时查询流量: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
             } catch (e: Exception) {
