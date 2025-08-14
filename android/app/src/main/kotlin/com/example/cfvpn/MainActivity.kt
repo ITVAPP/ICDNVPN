@@ -178,43 +178,38 @@ class MainActivity: FlutterActivity() {
                 
                 "getTrafficStats" -> {
                     // 获取流量统计（增强版：返回实时数据）
-                    mainScope.launch {
-                        try {
-                            // 获取当前通知栏显示的流量统计
-                            val stats = V2RayVpnService.getTrafficStats()
-                            
-                            // 创建返回的Map，支持混合类型（Long和String）
-                            val enhancedStats = mutableMapOf<String, Any>()
-                            
-                            // 添加原始的Long值
-                            enhancedStats.putAll(stats)
-                            
-                            // 添加格式化的String值
-                            enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
-                            enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
-                            enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
-                            enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
-                            
-                            // 添加连接时长（如果服务正在运行）
-                            if (V2RayVpnService.isServiceRunning()) {
-                                val startTime = stats["startTime"] ?: System.currentTimeMillis()
-                                val connectedTime = System.currentTimeMillis() - startTime
-                                enhancedStats["connectedTime"] = connectedTime
-                                enhancedStats["connectedTimeFormatted"] = formatDuration(connectedTime)
-                            }
-                            
-                            VpnFileLogger.d(TAG, "返回流量统计: 上传=${enhancedStats["uploadFormatted"]}, " +
-                                    "下载=${enhancedStats["downloadFormatted"]}")
-                            
-                            withContext(Dispatchers.Main) {
-                                result.success(enhancedStats)
-                            }
-                        } catch (e: Exception) {
-                            VpnFileLogger.e(TAG, "获取流量统计失败", e)
-                            withContext(Dispatchers.Main) {
-                                result.error("GET_STATS_FAILED", e.message, null)
-                            }
+                    // 修复：不需要异步，直接调用
+                    try {
+                        // 获取当前通知栏显示的流量统计
+                        val stats = V2RayVpnService.getTrafficStats()
+                        
+                        // 创建返回的Map，支持混合类型（Long和String）
+                        val enhancedStats = mutableMapOf<String, Any>()
+                        
+                        // 添加原始的Long值
+                        enhancedStats.putAll(stats)
+                        
+                        // 添加格式化的String值
+                        enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
+                        enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
+                        enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
+                        enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
+                        
+                        // 添加连接时长（如果服务正在运行）
+                        if (V2RayVpnService.isServiceRunning()) {
+                            val startTime = stats["startTime"] ?: System.currentTimeMillis()
+                            val connectedTime = System.currentTimeMillis() - startTime
+                            enhancedStats["connectedTime"] = connectedTime
+                            enhancedStats["connectedTimeFormatted"] = formatDuration(connectedTime)
                         }
+                        
+                        VpnFileLogger.d(TAG, "返回流量统计: 上传=${enhancedStats["uploadFormatted"]}, " +
+                                "下载=${enhancedStats["downloadFormatted"]}")
+                        
+                        result.success(enhancedStats)
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "获取流量统计失败", e)
+                        result.error("GET_STATS_FAILED", e.message, null)
                     }
                 }
                 
