@@ -384,8 +384,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 解析并验证配置
         try {
-            val config = JSONObject(configJson)
-            
             // 解析并验证配置
             val config = JSONObject(configJson)
             
