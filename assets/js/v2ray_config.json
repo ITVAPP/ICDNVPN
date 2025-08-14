@@ -150,7 +150,7 @@
     "servers": [
       "1.1.1.1",
       "8.8.8.8",
-      "https://8.8.8.8/dns-query"
+      "https://8.8.8.8/dns-query",
       {
         "address": "223.5.5.5",
         "port": 53,
@@ -175,9 +175,9 @@
       },
       {
         "type": "field",
-        "port": "443",
+        "port": "53",
         "network": "udp",
-        "outboundTag": "block"
+        "outboundTag": "direct"
       },
       {
         "type": "field",
