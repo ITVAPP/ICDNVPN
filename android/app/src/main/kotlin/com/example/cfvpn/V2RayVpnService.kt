@@ -1601,8 +1601,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 updateNotification()
             }
             
-            // 优化4: 批量输出日志，减少日志开销
-            if (VpnFileLogger.isDebugEnabled()) {
                 val statsLog = StringBuilder("流量统计 - ")
                 for (stats in statsCache) {
                     if (stats.uplink > 0 || stats.downlink > 0) {
@@ -1611,7 +1609,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
                 statsLog.append("总计: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}")
                 VpnFileLogger.d(TAG, statsLog.toString())
-            }
             
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "查询流量统计失败，使用备用方案", e)
