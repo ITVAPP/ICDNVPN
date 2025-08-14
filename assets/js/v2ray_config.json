@@ -148,10 +148,9 @@
       "proxy.example.com": "127.0.0.1"
     },
     "servers": [
-      "https://1.1.1.1/dns-query",
-      "https://8.8.8.8/dns-query",
       "1.1.1.1",
       "8.8.8.8",
+      "https://8.8.8.8/dns-query"
       {
         "address": "223.5.5.5",
         "port": 53,
