@@ -19,9 +19,7 @@
   },
   "api": {
     "tag": "api",
-    "services": [
-      "StatsService"
-    ]
+    "services": ["StatsService"]
   },
   "inbounds": [
     {
@@ -168,9 +166,7 @@
       },
       {
         "type": "field",
-        "ip": [
-          "geoip:private"
-        ],
+        "ip": ["geoip:private"],
         "outboundTag": "direct"
       },
       {
@@ -184,9 +180,7 @@
       {
         "type": "field",
         "outboundTag": "direct",
-        "ip": [
-          "geoip:cn"
-        ]
+        "ip": ["geoip:cn"]
       },
       {
         "type": "field",
