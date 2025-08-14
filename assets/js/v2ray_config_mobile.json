@@ -19,7 +19,9 @@
   },
   "api": {
     "tag": "api",
-    "services": ["StatsService"]
+    "services": [
+      "StatsService"
+    ]
   },
   "inbounds": [
     {
@@ -43,6 +45,7 @@
       },
       "settings": {
         "auth": "noauth",
+        "udp": true,
         "allowTransparent": false,
         "userLevel": 8
       }
@@ -68,6 +71,9 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
+                "alterId": 0,
+                "email": "t@t.tt",
+                "security": "auto",
                 "encryption": "none",
                 "level": 8
               }
@@ -88,6 +94,9 @@
           "headers": {
             "Host": "pages-vless-a9f.pages.dev"
           }
+        },
+        "sockopt": {
+          "dialerProxy": "proxy3"
         }
       },
       "mux": {
@@ -108,9 +117,31 @@
           "type": "http"
         }
       }
+    },
+    {
+      "tag": "proxy3",
+      "protocol": "freedom",
+      "settings": {
+        "fragment": {
+          "packets": "tlshello",
+          "length": "100-200",
+          "interval": "10-20"
+        }
+      }
     }
   ],
   "dns": {
+    "hosts": {
+      "dns.google": "8.8.8.8",
+      "dns.alidns.com": ["223.5.5.5", "223.6.6.6"],
+      "doh.pub": ["1.12.12.12", "120.53.53.53"],
+      "dot.pub": ["1.12.12.12", "120.53.53.53"],
+      "dns.cloudflare.com": ["1.1.1.1", "1.0.0.1"],
+      "cloudflare-dns.com": ["1.1.1.1", "1.0.0.1"],
+      "one.one.one.one": ["1.1.1.1", "1.0.0.1"],
+      "dns.quad9.net": "9.9.9.9",
+      "proxy.example.com": "127.0.0.1"
+    },
     "servers": [
       "1.1.1.1",
       "8.8.8.8",
@@ -121,7 +152,9 @@
           "geosite:cn",
           "geosite:geolocation-cn"
         ],
-        "expectIPs": ["geoip:cn"],
+        "expectIPs": [
+          "geoip:cn"
+        ],
         "skipFallback": true
       }
     ]
@@ -139,7 +172,15 @@
         "port": "53",
         "ip": [
           "223.5.5.5",
-          "119.29.29.29"
+          "223.6.6.6",
+          "1.12.12.12",
+          "120.53.53.53",
+          "119.29.29.29",
+          "114.114.114.114",
+          "114.114.115.115",
+          "180.76.76.76",
+          "180.184.1.1",
+          "180.184.2.2"
         ],
         "outboundTag": "direct"
       },
@@ -148,7 +189,10 @@
         "port": "53",
         "ip": [
           "1.1.1.1",
-          "8.8.8.8"
+          "1.0.0.1",
+          "8.8.8.8",
+          "8.8.4.4",
+          "9.9.9.9"
         ],
         "outboundTag": "proxy"
       },
@@ -160,13 +204,20 @@
       },
       {
         "type": "field",
-        "ip": ["geoip:private"],
+        "ip": [
+          "geoip:private"
+        ],
         "outboundTag": "direct"
       },
       {
         "type": "field",
         "outboundTag": "direct",
         "domain": [
+          "domain:dns.alidns.com",
+          "domain:doh.pub",
+          "domain:dot.pub",
+          "domain:doh.360.cn",
+          "domain:dot.360.cn",
           "geosite:cn",
           "geosite:geolocation-cn"
         ]
@@ -174,7 +225,9 @@
       {
         "type": "field",
         "outboundTag": "direct",
-        "ip": ["geoip:cn"]
+        "ip": [
+          "geoip:cn"
+        ]
       },
       {
         "type": "field",

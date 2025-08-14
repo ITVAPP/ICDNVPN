@@ -48,6 +48,7 @@
       },
       "settings": {
         "auth": "noauth",
+        "udp": true,
         "allowTransparent": false,
         "userLevel": 8
       }
@@ -74,8 +75,10 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                "encryption": "none",
-                "level": 0 
+                "alterId": 0,
+                "email": "t@t.tt",
+                "security": "auto",
+                "encryption": "none"
               }
             ]
           }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.*
  * 主Activity - 处理Flutter与原生的通信
  * 增强版：支持分应用代理、子网绕过、Android 13+通知权限等功能
  * 修改：支持国际化文字传递
+ * 优化：实时流量统计查询
  * 
  * 简化版本：
  * - 不接收blockedApps（Dart端不传递）
@@ -176,22 +177,45 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "getTrafficStats" -> {
-                    // 获取流量统计（增强版：返回更详细的数据）
-                    val stats = V2RayVpnService.getTrafficStats()
-                    
-                    // 创建新的Map用于返回，支持混合类型（Long和String）
-                    val enhancedStats = mutableMapOf<String, Any>()
-                    
-                    // 添加原始的Long值
-                    enhancedStats.putAll(stats)
-                    
-                    // 添加格式化的String值
-                    enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
-                    enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
-                    enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
-                    enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
-                    
-                    result.success(enhancedStats)
+                    // 获取流量统计（增强版：返回实时数据）
+                    mainScope.launch {
+                        try {
+                            // 获取当前通知栏显示的流量统计
+                            val stats = V2RayVpnService.getTrafficStats()
+                            
+                            // 创建返回的Map，支持混合类型（Long和String）
+                            val enhancedStats = mutableMapOf<String, Any>()
+                            
+                            // 添加原始的Long值
+                            enhancedStats.putAll(stats)
+                            
+                            // 添加格式化的String值
+                            enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
+                            enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
+                            enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
+                            enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
+                            
+                            // 添加连接时长（如果服务正在运行）
+                            if (V2RayVpnService.isServiceRunning()) {
+                                val startTime = stats["startTime"] ?: System.currentTimeMillis()
+                                val connectedTime = System.currentTimeMillis() - startTime
+                                enhancedStats["connectedTime"] = connectedTime
+                                enhancedStats["connectedTimeFormatted"] = formatDuration(connectedTime)
+                            }
+                            
+                            VpnFileLogger.d(TAG, "返回流量统计: 上传=${enhancedStats["uploadFormatted"]}, " +
+                                    "下载=${enhancedStats["downloadFormatted"]}")
+                            
+                            withContext(Dispatchers.Main) {
+                                result.success(enhancedStats)
+                            }
+                        } catch (e: Exception) {
+                            VpnFileLogger.e(TAG, "获取流量统计失败", e)
+                            withContext(Dispatchers.Main) {
+                                result.error("GET_STATS_FAILED", e.message, null)
+                            }
+                        }
+                    }
                 }
                 
                 "checkPermission" -> {
@@ -554,6 +578,21 @@ class MainActivity: FlutterActivity() {
             bytes < 1024 * 1024 -> String.format("%.2f KB", bytes / 1024.0)
             bytes < 1024 * 1024 * 1024 -> String.format("%.2f MB", bytes / (1024.0 * 1024))
             else -> String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024))
+        }
+    }
+    
+    /**
+     * 格式化时长
+     */
+    private fun formatDuration(millis: Long): String {
+        val seconds = (millis / 1000) % 60
+        val minutes = (millis / (1000 * 60)) % 60
+        val hours = millis / (1000 * 60 * 60)
+        
+        return when {
+            hours > 0 -> String.format("%d:%02d:%02d", hours, minutes, seconds)
+            minutes > 0 -> String.format("%d:%02d", minutes, seconds)
+            else -> String.format("%d秒", seconds)
         }
     }
     
