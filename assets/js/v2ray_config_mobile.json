@@ -1,6 +1,6 @@
 {
   "log": {
-    "loglevel": "info"
+    "loglevel": "warning"
   },
   "stats": {},
   "policy": {
@@ -94,9 +94,6 @@
           "headers": {
             "Host": "pages-vless-a9f.pages.dev"
           }
-        },
-        "sockopt": {
-          "dialerProxy": "proxy3"
         }
       },
       "mux": {
@@ -115,17 +112,6 @@
       "settings": {
         "response": {
           "type": "http"
-        }
-      }
-    },
-    {
-      "tag": "proxy3",
-      "protocol": "freedom",
-      "settings": {
-        "fragment": {
-          "packets": "tlshello",
-          "length": "100-200",
-          "interval": "10-20"
         }
       }
     }
