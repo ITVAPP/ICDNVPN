@@ -41,7 +41,8 @@ import libv2ray.CoreController
 import libv2ray.CoreCallbackHandler
 
 /**
- * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
+ * V2Ray VPN服务实现 - 与v2rayNG配置一致版本
+ * 使用与v2rayNG相同的VPN接口地址和配置参数
  * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
  * 修复版本：修正流量统计标签获取和查询
  * 简化版本：删除不必要的shouldBypassLan逻辑，让V2Ray处理路由
@@ -72,16 +73,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // WakeLock标签
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
         
-        // VPN配置常量（与v2rayNG保持一致）
+        // VPN配置常量（与v2rayNG完全一致）
         // 优化2: MTU优化 - 增加MTU值以提高吞吐量（需要测试网络兼容性）
         private const val VPN_MTU = 1500  // 可根据网络环境调整，某些网络支持9000
-        private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"
-        private const val PRIVATE_VLAN4_ROUTER = "26.26.26.2"
-        private const val PRIVATE_VLAN6_CLIENT = "da26:2626::1"
-        private const val PRIVATE_VLAN6_ROUTER = "da26:2626::2"
+        private const val PRIVATE_VLAN4_CLIENT = "10.10.14.1"      // 修改：使用v2rayNG默认地址
+        private const val PRIVATE_VLAN4_ROUTER = "10.10.14.2"      // 修改：使用v2rayNG默认地址
+        private const val PRIVATE_VLAN6_CLIENT = "fc00::10:10:14:1" // 修改：使用v2rayNG默认IPv6地址
+        private const val PRIVATE_VLAN6_ROUTER = "fc00::10:10:14:2" // 修改：使用v2rayNG默认IPv6地址
         
-        // V2Ray端口默认值
-        private const val DEFAULT_SOCKS_PORT = 7898
+        // 移除硬编码端口，改为从JSON配置中动态解析
+        // private const val DEFAULT_SOCKS_PORT = 7898  // 删除：不再硬编码端口
         
         // 流量统计配置
         // 优化4: 流量统计优化 - 减少查询频率
@@ -1002,12 +1003,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 建立VPN隧道 - 极简版本
-     * 所有路由决策完全交给V2Ray的routing规则处理
-     * VPN层只负责建立隧道，不做任何路由判断
+     * 建立VPN隧道 - 与v2rayNG一致的版本
+     * VPN层只负责建立隧道和基本路由，具体的路由决策由V2Ray配置处理
      */
     private fun establishVpn() {
-        VpnFileLogger.d(TAG, "开始建立VPN隧道（极简版 - 所有路由由V2Ray决定）")
+        VpnFileLogger.d(TAG, "开始建立VPN隧道（与v2rayNG一致）")
         
         // 关闭旧接口
         mInterface?.let {
@@ -1028,7 +1028,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         builder.setSession(appName)
         builder.setMtu(VPN_MTU)
         
-        // IPv4地址（与v2rayNG保持一致）
+        // IPv4地址（使用v2rayNG默认地址）
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
         VpnFileLogger.d(TAG, "添加IPv4地址: $PRIVATE_VLAN4_CLIENT/30")
         
@@ -1042,30 +1042,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // ===== DNS配置 =====
+        // ===== DNS配置（与v2rayNG一致） =====
         VpnFileLogger.d(TAG, "===== 配置DNS =====")
         
         // 使用可靠的公共DNS
         try {
             builder.addDnsServer("1.1.1.1")  // Cloudflare主DNS
-            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1")
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
-        }
-        
-        try {
             builder.addDnsServer("1.0.0.1")  // Cloudflare备DNS
-            VpnFileLogger.d(TAG, "添加备用DNS: 1.0.0.1")
+            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1, 1.0.0.1")
         } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "添加Cloudflare备用DNS失败", e)
+            VpnFileLogger.w(TAG, "添加DNS失败", e)
         }
         
-        // ===== 极简路由配置 =====
-        VpnFileLogger.d(TAG, "===== 配置路由（极简版） =====")
+        // ===== 简化路由配置 =====
+        VpnFileLogger.d(TAG, "===== 配置路由（简化版） =====")
         
-        // 核心理念：VPN层只建立隧道，所有路由决策由V2Ray的routing规则处理
-        // 不管globalProxy是true还是false，dart端会生成相应的V2Ray配置
-        // 全局代理模式下，dart也应该配置V2Ray不代理局域网
+        // VPN层只建立隧道，所有路由决策由V2Ray的routing规则处理
+        // 不管globalProxy是true还是false，都由V2Ray配置决定具体路由
         builder.addRoute("0.0.0.0", 0)  // IPv4全部流量进入VPN隧道
         VpnFileLogger.d(TAG, "添加IPv4全局路由: 0.0.0.0/0 (所有流量进入VPN，由V2Ray routing决定最终去向)")
         
@@ -1132,8 +1125,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化1: 启动tun2socks进程 - 添加缓冲区优化参数
-     * 修复：移除日志读取线程，只监控进程状态
+     * 修改：启动tun2socks进程 - 动态解析端口版本
+     * 从JSON配置中动态解析SOCKS端口，而不是硬编码
      */
     private fun runTun2socks() {
         if (mode != ConnectionMode.VPN_TUN) {
@@ -1141,25 +1134,27 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 优化版 =====")
+        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 动态端口版 =====")
         
-        // 从配置中提取SOCKS端口
+        // 修改：从配置中动态解析SOCKS端口而不是硬编码
         val socksPort = try {
             val config = JSONObject(configJson)
             val inbounds = config.getJSONArray("inbounds")
-            var port = DEFAULT_SOCKS_PORT
+            var port = 10808  // v2rayNG默认值
+            
             for (i in 0 until inbounds.length()) {
                 val inbound = inbounds.getJSONObject(i)
-                if (inbound.optString("tag") == "socks") {
-                    port = inbound.optInt("port", DEFAULT_SOCKS_PORT)
-                    VpnFileLogger.d(TAG, "找到SOCKS端口: $port")
+                // 查找SOCKS协议的inbound
+                if (inbound.optString("protocol") == "socks") {
+                    port = inbound.optInt("port", 10808)
+                    VpnFileLogger.d(TAG, "从配置中找到SOCKS端口: $port")
                     break
                 }
             }
             port
         } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "解析SOCKS端口失败，使用默认端口: $DEFAULT_SOCKS_PORT", e)
-            DEFAULT_SOCKS_PORT
+            VpnFileLogger.w(TAG, "解析SOCKS端口失败，使用v2rayNG默认端口: 10808", e)
+            10808  // v2rayNG的默认值
         }
         
         // 构建命令行参数（与v2rayNG完全一致）
@@ -1167,7 +1162,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             File(applicationContext.applicationInfo.nativeLibraryDir, TUN2SOCKS).absolutePath,
             "--netif-ipaddr", PRIVATE_VLAN4_ROUTER,
             "--netif-netmask", "255.255.255.252",
-            "--socks-server-addr", "127.0.0.1:$socksPort",
+            "--socks-server-addr", "127.0.0.1:$socksPort",  // 修改：使用动态解析的端口
             "--tunmtu", VPN_MTU.toString(),
             "--sock-path", "sock_path",  // 相对路径，与v2rayNG一致
             "--enable-udprelay",
@@ -1175,6 +1170,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         )
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
+        VpnFileLogger.d(TAG, "使用SOCKS端口: $socksPort (从JSON配置动态解析)")
         
         try {
             val proBuilder = ProcessBuilder(cmd)
@@ -1218,7 +1214,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             Thread.sleep(500)  // 等待tun2socks准备就绪
             sendFd()
             
-            VpnFileLogger.d(TAG, "tun2socks进程启动完成（优化版）")
+            VpnFileLogger.d(TAG, "tun2socks进程启动完成（动态端口版）")
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动tun2socks失败", e)
