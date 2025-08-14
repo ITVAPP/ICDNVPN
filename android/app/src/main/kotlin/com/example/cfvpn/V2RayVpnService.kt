@@ -43,7 +43,6 @@ import libv2ray.CoreCallbackHandler
 /**
  * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
  * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
- * 修复版本：修正流量统计标签获取和查询
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -84,7 +83,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 流量统计配置
         // 优化4: 流量统计优化 - 减少查询频率
-        private const val STATS_UPDATE_INTERVAL = 3000L  // 修改为3秒，与v2rayNG一致
+        private const val STATS_UPDATE_INTERVAL = 10000L 
         
         // tun2socks重启限制
         private const val MAX_TUN2SOCKS_RESTART_COUNT = 3
@@ -244,8 +243,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var lastStatsTime: Long = 0
     private var startTime: Long = 0
     
-    // 修复：动态存储outbound标签
-    private val outboundTags = mutableListOf<String>()
+    // 优化4: 批量查询缓存
+    private data class StatsData(
+        val tag: String,
+        var uplink: Long = 0L,
+        var downlink: Long = 0L
+    )
+    private val statsCache = mutableListOf<StatsData>()
     
     // 系统流量统计初始值（备用方案）
     private var initialUploadBytes: Long? = null
@@ -319,45 +323,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 获取WakeLock
         acquireWakeLock()
         
-        // 不在这里初始化统计缓存，改为在解析配置后初始化
+        // 优化4: 初始化统计缓存
+        initStatsCache()
         
         VpnFileLogger.d(TAG, "VPN服务onCreate完成")
     }
     
     /**
-     * 修复：从配置中提取outbound标签
+     * 优化4: 初始化流量统计缓存
      */
-    private fun extractOutboundTags(config: JSONObject) {
-        outboundTags.clear()
-        
-        try {
-            val outbounds = config.optJSONArray("outbounds")
-            if (outbounds != null) {
-                for (i in 0 until outbounds.length()) {
-                    val outbound = outbounds.getJSONObject(i)
-                    val tag = outbound.optString("tag")
-                    if (tag.isNotEmpty()) {
-                        outboundTags.add(tag)
-                        VpnFileLogger.d(TAG, "发现outbound标签: $tag")
-                    }
-                }
-            }
-            
-            // 如果没有找到任何标签，添加默认标签
-            if (outboundTags.isEmpty()) {
-                outboundTags.add("proxy")
-                outboundTags.add("direct")
-                outboundTags.add("block")
-                VpnFileLogger.w(TAG, "未找到outbound标签，使用默认标签")
-            }
-            
-            VpnFileLogger.d(TAG, "流量统计将监控${outboundTags.size}个标签: $outboundTags")
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "提取outbound标签失败", e)
-            // 使用默认标签
-            outboundTags.add("proxy")
-            outboundTags.add("direct")
-        }
+    private fun initStatsCache() {
+        statsCache.clear()
+        // 预先添加需要查询的标签
+        statsCache.add(StatsData("proxy"))
+        statsCache.add(StatsData("direct"))
+        statsCache.add(StatsData("block"))
+        statsCache.add(StatsData("proxy3"))
+        VpnFileLogger.d(TAG, "流量统计缓存初始化完成，监控${statsCache.size}个标签")
     }
     
     /**
@@ -434,9 +416,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 记录关键配置信息
             VpnFileLogger.d(TAG, "===== 配置解析 =====")
-            
-            // 修复：提取outbound标签用于流量统计
-            extractOutboundTags(config)
             
             // 检查stats配置（流量统计必需）
             val hasStats = config.has("stats")
@@ -1443,7 +1422,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     /**
      * 启动流量监控
      * 定期查询V2Ray核心的流量统计数据
-     * 修复：使用正确的outbound标签查询
      */
     private fun startSimpleTrafficMonitor() {
         VpnFileLogger.d(TAG, "启动流量监控")
@@ -1477,27 +1455,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复：真实的流量统计更新 - 使用正确的标签查询
+     * 优化4: 真实的流量统计更新 - 批量查询优化
      * 使用libv2ray.aar的queryStats方法获取实际流量数据
+     * 修复：确保流量数据正确更新
      */
     private fun updateSimpleTrafficStats() {
         try {
+            // 优化4: 批量查询所有标签的流量，减少JNI调用
             var totalUpload = 0L
             var totalDownload = 0L
             
-            // 修复：遍历所有outbound标签查询流量
-            for (tag in outboundTags) {
-                // 查询上行流量 - 正确的参数格式
-                val uplink = coreController?.queryStats(tag, "uplink") ?: 0L
-                // 查询下行流量 - 正确的参数格式
-                val downlink = coreController?.queryStats(tag, "downlink") ?: 0L
+            // 一次性查询所有缓存的标签
+            for (stats in statsCache) {
+                // 查询上行流量
+                val uplink = coreController?.queryStats(stats.tag, "uplink") ?: 0L
+                // 查询下行流量
+                val downlink = coreController?.queryStats(stats.tag, "downlink") ?: 0L
+                
+                stats.uplink = uplink
+                stats.downlink = downlink
                 
                 totalUpload += uplink
                 totalDownload += downlink
-                
-                if (uplink > 0 || downlink > 0) {
-                    VpnFileLogger.d(TAG, "标签[$tag] 流量: ↑${formatBytes(uplink)} ↓${formatBytes(downlink)}")
-                }
             }
             
             // 计算速度
@@ -1528,8 +1507,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 只在流量有变化时记录日志
             if (totalUpload > 0 || totalDownload > 0) {
-                VpnFileLogger.d(TAG, "流量统计汇总: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}, " +
-                        "速度: ↑${formatBytes(uploadSpeed)}/s ↓${formatBytes(downloadSpeed)}/s")
+                val statsLog = StringBuilder("流量统计 - ")
+                for (stats in statsCache) {
+                    if (stats.uplink > 0 || stats.downlink > 0) {
+                        statsLog.append("${stats.tag}: ↑${formatBytes(stats.uplink)} ↓${formatBytes(stats.downlink)} | ")
+                    }
+                }
+                statsLog.append("总计: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}")
+                VpnFileLogger.d(TAG, statsLog.toString())
             }
             
         } catch (e: Exception) {
@@ -1577,13 +1562,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 如果服务正在运行，尝试更新一次最新数据
         if (currentState == V2RayState.CONNECTED && coreController != null) {
             try {
-                // 修复：快速查询一次最新流量
+                // 优化4: 快速查询一次最新流量（批量查询）
                 var totalUpload = 0L
                 var totalDownload = 0L
                 
-                for (tag in outboundTags) {
-                    totalUpload += coreController?.queryStats(tag, "uplink") ?: 0L
-                    totalDownload += coreController?.queryStats(tag, "downlink") ?: 0L
+                for (stats in statsCache) {
+                    totalUpload += coreController?.queryStats(stats.tag, "uplink") ?: 0L
+                    totalDownload += coreController?.queryStats(stats.tag, "downlink") ?: 0L
                 }
                 
                 // 修复：立即更新值
