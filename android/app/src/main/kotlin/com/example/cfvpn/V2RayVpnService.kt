@@ -1597,7 +1597,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             
             VpnFileLogger.d(TAG, "流量统计 - 总计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
-            
+
+            // 添加DNS查询监控
+            if (BuildConfig.DEBUG) {
+                // 记录DNS查询统计
+                VpnFileLogger.d(TAG, "DNS查询统计 - " +
+                    "直连: ${directDnsCount}, " +
+                    "代理: ${proxyDnsCount}")
+            }
+    
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "更新流量统计失败", e)
         }
