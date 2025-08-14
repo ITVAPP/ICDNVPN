@@ -23,51 +23,6 @@
       "StatsService"
     ]
   },
-  "fakedns": [
-    {
-      "ipPool": "198.18.0.0/15",
-      "poolSize": 65535
-    },
-    {
-      "ipPool": "fc00::/18",
-      "poolSize": 65535
-    }
-  ],
-  "dns": {
-    "hosts": {
-      "dns.google": "8.8.8.8",
-      "dns.alidns.com": ["223.5.5.5", "223.6.6.6"],
-      "doh.pub": ["1.12.12.12", "120.53.53.53"],
-      "dot.pub": ["1.12.12.12", "120.53.53.53"],
-      "dns.cloudflare.com": ["1.1.1.1", "1.0.0.1"],
-      "cloudflare-dns.com": ["1.1.1.1", "1.0.0.1"],
-      "one.one.one.one": ["1.1.1.1", "1.0.0.1"],
-      "dns.quad9.net": "9.9.9.9",
-      "proxy.example.com": "127.0.0.1"
-    },
-    "servers": [
-      {
-        "address": "fakedns",
-        "domains": [
-          "geosite:geolocation-!cn"
-        ]
-      },
-      "1.1.1.1",
-      "8.8.8.8",
-      {
-        "address": "223.5.5.5",
-        "port": 53,
-        "domains": [
-          "geosite:cn",
-          "geosite:geolocation-cn"
-        ],
-        "expectIPs": [
-          "geoip:cn"
-        ],
-        "skipFallback": true
-      }
-    ]
-  },
   "inbounds": [
     {
       "tag": "socks",
@@ -77,12 +32,6 @@
         "auth": "noauth",
         "udp": true,
         "userLevel": 8
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls", "fakedns"],
-        "metadataOnly": false,
-        "routeOnly": false
       }
     },
     {
@@ -91,8 +40,7 @@
       "protocol": "http",
       "sniffing": {
         "enabled": true,
-        "destOverride": ["http", "tls", "fakedns"],
-        "metadataOnly": false,
+        "destOverride": ["http", "tls"],
         "routeOnly": false
       },
       "settings": {
@@ -108,17 +56,6 @@
       "protocol": "dokodemo-door",
       "settings": {
         "address": "127.0.0.1"
-      }
-    },
-    {
-      "tag": "dns-in",
-      "port": 53,
-      "listen": "198.18.0.2",
-      "protocol": "dokodemo-door",
-      "settings": {
-        "address": "198.18.0.2",
-        "port": 53,
-        "network": "tcp,udp"
       }
     }
   ],
@@ -182,11 +119,6 @@
       }
     },
     {
-      "tag": "dns-out",
-      "protocol": "dns",
-      "settings": {}
-    },
-    {
       "tag": "proxy3",
       "protocol": "freedom",
       "settings": {
@@ -198,6 +130,35 @@
       }
     }
   ],
+  "dns": {
+    "hosts": {
+      "dns.google": "8.8.8.8",
+      "dns.alidns.com": ["223.5.5.5", "223.6.6.6"],
+      "doh.pub": ["1.12.12.12", "120.53.53.53"],
+      "dot.pub": ["1.12.12.12", "120.53.53.53"],
+      "dns.cloudflare.com": ["1.1.1.1", "1.0.0.1"],
+      "cloudflare-dns.com": ["1.1.1.1", "1.0.0.1"],
+      "one.one.one.one": ["1.1.1.1", "1.0.0.1"],
+      "dns.quad9.net": "9.9.9.9",
+      "proxy.example.com": "127.0.0.1"
+    },
+    "servers": [
+      "1.1.1.1",
+      "8.8.8.8",
+      {
+        "address": "223.5.5.5",
+        "port": 53,
+        "domains": [
+          "geosite:cn",
+          "geosite:geolocation-cn"
+        ],
+        "expectIPs": [
+          "geoip:cn"
+        ],
+        "skipFallback": true
+      }
+    ]
+  },
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
@@ -205,18 +166,6 @@
         "type": "field",
         "inboundTag": ["api"],
         "outboundTag": "api"
-      },
-      {
-        "type": "field",
-        "inboundTag": ["dns-in"],
-        "outboundTag": "dns-out"
-      },
-      {
-        "type": "field",
-        "ip": [
-          "198.18.0.0/15"
-        ],
-        "outboundTag": "proxy"
       },
       {
         "type": "field",
