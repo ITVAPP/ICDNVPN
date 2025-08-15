@@ -146,7 +146,7 @@ class V2RayService {
   }
   
   // 获取可执行文件路径（仅Windows平台）
-  static Future<String> _getWindowsExecutablePath(String executableName) async {
+  static Future<String> getExecutablePath(String executableName) async {
     if (!Platform.isWindows) {
       throw UnsupportedError('仅Windows平台支持');
     }
@@ -160,7 +160,7 @@ class V2RayService {
     if (!Platform.isWindows) {
       throw UnsupportedError('仅Windows平台需要V2Ray路径');
     }
-    return _getWindowsExecutablePath(path.join('v2ray', _v2rayExecutableName));
+    return getExecutablePath(path.join('v2ray', _v2rayExecutableName));
   }
   
   // 设置进程退出回调（仅Windows）
