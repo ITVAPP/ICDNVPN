@@ -33,6 +33,8 @@ import java.net.URL
 import java.lang.ref.WeakReference
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.Socket
+import java.net.InetAddress
 
 // 正确的导入(基于method_summary.md)
 import go.Seq
@@ -45,6 +47,11 @@ import libv2ray.CoreCallbackHandler
  * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
  * 修复版本：修正流量统计标签获取和查询
  * 简化版本：删除不必要的shouldBypassLan逻辑，让V2Ray处理路由
+ * 
+ * 修复版本 2024-12-26：
+ * 1. 修复geo文件路径问题 - 使用assets子目录
+ * 2. 增加验证V2Ray是否正确启动
+ * 3. 增加验证tun2socks是否正确转发
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -278,6 +285,30 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
+     * 修复1：获取V2Ray资源路径（必须使用assets子目录）
+     * 这是关键修复，V2Ray期望在特定的assets目录找到geo文件
+     */
+    private fun getV2RayAssetsPath(): String {
+        // 方案1：优先使用外部存储的assets目录
+        val extDir = getExternalFilesDir("assets")
+        if (extDir != null) {
+            if (!extDir.exists()) {
+                extDir.mkdirs()
+            }
+            VpnFileLogger.d(TAG, "使用外部存储assets目录: ${extDir.absolutePath}")
+            return extDir.absolutePath
+        }
+        
+        // 方案2：使用内部存储的assets目录
+        val intDir = getDir("assets", Context.MODE_PRIVATE)
+        if (!intDir.exists()) {
+            intDir.mkdirs()
+        }
+        VpnFileLogger.d(TAG, "使用内部存储assets目录: ${intDir.absolutePath}")
+        return intDir.absolutePath
+    }
+    
+    /**
      * 服务创建时调用
      */
     override fun onCreate() {
@@ -306,20 +337,33 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.e(TAG, "注册广播接收器失败", e)
         }
         
-        // 初始化V2Ray环境
+        // 修复1：先复制资源文件到正确的assets目录
+        copyAssetFiles()
+        
+        // 修复1：使用正确的assets路径初始化V2Ray环境
         try {
-            val envPath = filesDir.absolutePath
+            val envPath = getV2RayAssetsPath()  // 关键修复：使用assets子目录
             Libv2ray.initCoreEnv(envPath, "")
-            VpnFileLogger.d(TAG, "V2Ray环境初始化成功: $envPath")
+            VpnFileLogger.d(TAG, "V2Ray环境初始化成功，路径: $envPath")
+            
+            // 验证geo文件是否存在
+            val geoipFile = File(envPath, "geoip.dat")
+            val geositeFile = File(envPath, "geosite.dat")
+            VpnFileLogger.d(TAG, "验证Geo文件:")
+            VpnFileLogger.d(TAG, "  geoip.dat - 存在: ${geoipFile.exists()}, 路径: ${geoipFile.absolutePath}, 大小: ${geoipFile.length()} bytes")
+            VpnFileLogger.d(TAG, "  geosite.dat - 存在: ${geositeFile.exists()}, 路径: ${geositeFile.absolutePath}, 大小: ${geositeFile.length()} bytes")
+            
+            // 验证geoip-only-cn-private.dat（如果使用）
+            val geoipCnFile = File(envPath, "geoip-only-cn-private.dat")
+            if (geoipCnFile.exists()) {
+                VpnFileLogger.d(TAG, "  geoip-only-cn-private.dat - 存在: true, 大小: ${geoipCnFile.length()} bytes")
+            }
             
             val version = Libv2ray.checkVersionX()
             VpnFileLogger.i(TAG, "V2Ray版本: $version")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "V2Ray环境初始化失败", e)
         }
-        
-        // 复制资源文件
-        copyAssetFiles()
         
         // 获取WakeLock
         acquireWakeLock()
@@ -608,26 +652,30 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 复制资源文件到应用目录
+     * 修复1：复制资源文件到正确的assets子目录
      */
     private fun copyAssetFiles() {
         VpnFileLogger.d(TAG, "开始复制资源文件")
         
-        val assetDir = filesDir
+        // 使用正确的assets子目录
+        val assetDir = File(getV2RayAssetsPath())
         if (!assetDir.exists()) {
             assetDir.mkdirs()
         }
+        
+        VpnFileLogger.d(TAG, "资源目标目录: ${assetDir.absolutePath}")
         
         val files = listOf("geoip.dat", "geoip-only-cn-private.dat", "geosite.dat")
         
         for (fileName in files) {
             try {
-                val targetFile = File(assetDir, fileName)
+                val targetFile = File(assetDir, fileName)  // 复制到assets子目录
                 
                 if (shouldUpdateFile(fileName, targetFile)) {
                     copyAssetFile(fileName, targetFile)
+                    VpnFileLogger.d(TAG, "文件复制成功: $fileName -> ${targetFile.absolutePath} (${targetFile.length()} bytes)")
                 } else {
-                    VpnFileLogger.d(TAG, "文件已是最新,跳过: $fileName")
+                    VpnFileLogger.d(TAG, "文件已是最新,跳过: $fileName (${targetFile.length()} bytes)")
                 }
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "处理文件失败: $fileName", e)
@@ -1020,7 +1068,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     /**
      * 建立VPN隧道 - 极简版本
      * 所有路由决策完全交给V2Ray的routing规则处理
-     * VPN层只负责建立隧道，不做任何路由判断
+     * VPN层只建立隧道，不做任何路由判断
      */
     private fun establishVpn() {
         VpnFileLogger.d(TAG, "开始建立VPN隧道（极简版 - 所有路由由V2Ray决定）")
@@ -1067,13 +1115,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1")
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
-        }
-        
-        try {
-            builder.addDnsServer("1.0.0.1")  // Cloudflare备DNS
-            VpnFileLogger.d(TAG, "添加备用DNS: 1.0.0.1")
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "添加Cloudflare备用DNS失败", e)
         }
         
         // ===== 极简路由配置 =====
@@ -1244,6 +1285,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 发送文件描述符给tun2socks（与v2rayNG完全一致）
+     * 修复3：增加tun2socks转发验证
      */
     private fun sendFd() {
         val path = File(applicationContext.filesDir, "sock_path").absolutePath
@@ -1276,6 +1318,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     localSocket.outputStream.flush()
                     
                     VpnFileLogger.d(TAG, "文件描述符发送成功")
+                    
+                    // 修复3：增加tun2socks转发验证
+                    verifyTun2socksForwarding()
+                    
                     break
                     
                 } catch (e: Exception) {
@@ -1295,6 +1341,80 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 // 忽略关闭异常
             }
         }
+    }
+    
+    /**
+     * 修复3：验证tun2socks是否正确转发流量
+     */
+    private fun verifyTun2socksForwarding() {
+        Thread {
+            Thread.sleep(2000)  // 等待tun2socks完全初始化
+            
+            try {
+                VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 =====")
+                
+                // 测试1：验证SOCKS端口连通性
+                val socksPort = try {
+                    val config = JSONObject(configJson)
+                    val inbounds = config.getJSONArray("inbounds")
+                    var port = DEFAULT_SOCKS_PORT
+                    for (i in 0 until inbounds.length()) {
+                        val inbound = inbounds.getJSONObject(i)
+                        if (inbound.optString("tag") == "socks") {
+                            port = inbound.optInt("port", DEFAULT_SOCKS_PORT)
+                            break
+                        }
+                    }
+                    port
+                } catch (e: Exception) {
+                    DEFAULT_SOCKS_PORT
+                }
+                
+                try {
+                    val socket = Socket()
+                    socket.connect(InetSocketAddress("127.0.0.1", socksPort), 2000)
+                    socket.close()
+                    VpnFileLogger.i(TAG, "✓ SOCKS5端口 $socksPort 连接正常")
+                } catch (e: Exception) {
+                    VpnFileLogger.e(TAG, "✗ SOCKS5端口 $socksPort 无法连接: ${e.message}")
+                }
+                
+                // 测试2：DNS解析测试
+                Thread.sleep(1000)
+                try {
+                    val testDomain = "www.google.com"
+                    val addr = InetAddress.getByName(testDomain)
+                    VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "✗ DNS解析失败: ${e.message}")
+                }
+                
+                // 测试3：HTTP连接测试（通过代理）
+                Thread.sleep(1000)
+                try {
+                    val testUrl = URL("http://www.google.com/generate_204")
+                    val connection = testUrl.openConnection() as HttpURLConnection
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("User-Agent", "V2Ray-Test")
+                    
+                    val responseCode = connection.responseCode
+                    if (responseCode == 204 || responseCode == 200) {
+                        VpnFileLogger.i(TAG, "✓ HTTP连接测试成功，响应码: $responseCode")
+                        VpnFileLogger.i(TAG, "===== tun2socks转发验证通过 =====")
+                    } else {
+                        VpnFileLogger.w(TAG, "✗ HTTP连接测试异常，响应码: $responseCode")
+                    }
+                    connection.disconnect()
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "✗ HTTP连接测试失败: ${e.message}")
+                }
+                
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "tun2socks转发验证异常", e)
+            }
+        }.start()
     }
     
     /**
@@ -1797,6 +1917,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     // ===== CoreCallbackHandler 接口实现 - 优化版 =====
     
+    /**
+     * 修复2：V2Ray核心启动完成回调 - 增加验证
+     */
     override fun startup(): Long {
         VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup() 被调用 ==========")
         VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
@@ -1810,12 +1933,124 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             v2rayCoreStarted = true
             startupLatch.complete(true)
             
+            // 修复2：增加V2Ray启动验证
+            verifyV2RayStartup()
+            
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
             startupLatch.complete(false)
         }
         
         return 0L
+    }
+    
+    /**
+     * 修复2：验证V2Ray是否正确启动
+     */
+    private fun verifyV2RayStartup() {
+        Thread {
+            Thread.sleep(1000)  // 等待V2Ray完全初始化
+            
+            try {
+                VpnFileLogger.d(TAG, "===== 开始验证V2Ray启动状态 =====")
+                
+                // 验证1：检查核心运行状态
+                val isRunning = coreController?.isRunning ?: false
+                VpnFileLogger.d(TAG, "V2Ray核心运行状态: $isRunning")
+                
+                if (!isRunning) {
+                    VpnFileLogger.e(TAG, "✗ V2Ray核心未运行")
+                    return@Thread
+                }
+                
+                // 验证2：检查SOCKS端口监听
+                val socksPort = try {
+                    val config = JSONObject(configJson)
+                    val inbounds = config.getJSONArray("inbounds")
+                    var port = DEFAULT_SOCKS_PORT
+                    for (i in 0 until inbounds.length()) {
+                        val inbound = inbounds.getJSONObject(i)
+                        if (inbound.optString("tag") == "socks") {
+                            port = inbound.optInt("port", DEFAULT_SOCKS_PORT)
+                            break
+                        }
+                    }
+                    port
+                } catch (e: Exception) {
+                    DEFAULT_SOCKS_PORT
+                }
+                
+                try {
+                    val socket = Socket()
+                    socket.connect(InetSocketAddress("127.0.0.1", socksPort), 2000)
+                    socket.close()
+                    VpnFileLogger.i(TAG, "✓ SOCKS5端口 $socksPort 监听正常")
+                } catch (e: Exception) {
+                    VpnFileLogger.e(TAG, "✗ SOCKS5端口 $socksPort 无法连接: ${e.message}")
+                }
+                
+                // 验证3：检查HTTP端口监听（如果配置了）
+                val httpPort = try {
+                    val config = JSONObject(configJson)
+                    val inbounds = config.getJSONArray("inbounds")
+                    var port = -1
+                    for (i in 0 until inbounds.length()) {
+                        val inbound = inbounds.getJSONObject(i)
+                        if (inbound.optString("tag") == "http") {
+                            port = inbound.optInt("port", -1)
+                            break
+                        }
+                    }
+                    port
+                } catch (e: Exception) {
+                    -1
+                }
+                
+                if (httpPort > 0) {
+                    try {
+                        val socket = Socket()
+                        socket.connect(InetSocketAddress("127.0.0.1", httpPort), 2000)
+                        socket.close()
+                        VpnFileLogger.i(TAG, "✓ HTTP端口 $httpPort 监听正常")
+                    } catch (e: Exception) {
+                        VpnFileLogger.w(TAG, "✗ HTTP端口 $httpPort 无法连接: ${e.message}")
+                    }
+                }
+                
+                // 验证4：检查API端口（如果配置了）
+                val apiPort = try {
+                    val config = JSONObject(configJson)
+                    val inbounds = config.getJSONArray("inbounds")
+                    var port = -1
+                    for (i in 0 until inbounds.length()) {
+                        val inbound = inbounds.getJSONObject(i)
+                        if (inbound.optString("tag") == "api") {
+                            port = inbound.optInt("port", -1)
+                            break
+                        }
+                    }
+                    port
+                } catch (e: Exception) {
+                    -1
+                }
+                
+                if (apiPort > 0) {
+                    try {
+                        val socket = Socket()
+                        socket.connect(InetSocketAddress("127.0.0.1", apiPort), 2000)
+                        socket.close()
+                        VpnFileLogger.i(TAG, "✓ API端口 $apiPort 监听正常")
+                    } catch (e: Exception) {
+                        VpnFileLogger.w(TAG, "✗ API端口 $apiPort 无法连接: ${e.message}")
+                    }
+                }
+                
+                VpnFileLogger.i(TAG, "===== V2Ray启动验证完成 =====")
+                
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "V2Ray启动验证异常", e)
+            }
+        }.start()
     }
     
     override fun shutdown(): Long {
