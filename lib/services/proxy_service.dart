@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:ffi';
+import 'package:ffi/ffi.dart';
+import 'package:win32/win32.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
 
@@ -10,73 +13,224 @@ class ProxyService {
   // 修改：使用AppConfig构建代理服务器地址
   static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
 
+  // ============ 从win32_registry复制的核心代码 ============
+  // 只在Windows平台编译和执行，移动端会跳过
+  
+  /// 打开注册表路径（简化版本，从win32_registry的Registry.openPath复制）
+  static int? _openRegistryKey(String path, int accessRights) {
+    if (!Platform.isWindows) return null;
+    
+    final phKey = calloc<HKEY>();
+    final lpSubKey = path.toNativeUtf16();
+    try {
+      final lStatus = RegOpenKeyEx(
+        HKEY_CURRENT_USER,  // 固定使用CURRENT_USER
+        lpSubKey,
+        0,
+        accessRights,
+        phKey,
+      );
+      if (lStatus == ERROR_SUCCESS) {
+        // 重要修正：先保存句柄值，再释放phKey指针
+        final hkeyValue = phKey.value;
+        free(phKey);  // 释放指针本身，但句柄值已保存
+        return hkeyValue;
+      } else {
+        free(phKey);  // 失败时也要释放
+        throw Exception('Failed to open registry key: $lStatus');
+      }
+    } finally {
+      free(lpSubKey);  // 始终释放字符串
+    }
+  }
+  
+  /// 设置注册表DWORD值（从win32_registry的createValue简化）
+  static void _setRegistryDwordValue(int hkey, String valueName, int value) {
+    if (!Platform.isWindows) return;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    final lpData = calloc<DWORD>()..value = value;
+    try {
+      final retcode = RegSetValueEx(
+        hkey,
+        lpValueName,
+        0,  // Reserved, must be 0
+        REG_DWORD,  // Type: DWORD
+        lpData.cast<BYTE>(),
+        sizeOf<DWORD>(),
+      );
+      if (retcode != ERROR_SUCCESS) {
+        throw Exception('Failed to set DWORD value: $retcode');
+      }
+    } finally {
+      free(lpValueName);
+      free(lpData);
+    }
+  }
+  
+  /// 设置注册表字符串值（从win32_registry的createValue简化）
+  static void _setRegistryStringValue(int hkey, String valueName, String value) {
+    if (!Platform.isWindows) return;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    final lpData = value.toNativeUtf16();
+    try {
+      // 计算字符串长度（UTF-16，每个字符2字节，加上null终止符）
+      // 这与 win32_registry 的 RegistryValueExtension.toWin32() 完全一致
+      final dataLength = (value.length + 1) * 2;
+      
+      final retcode = RegSetValueEx(
+        hkey,
+        lpValueName,
+        0,  // Reserved, must be 0
+        REG_SZ,  // Type: String
+        lpData.cast<BYTE>(),
+        dataLength,
+      );
+      if (retcode != ERROR_SUCCESS) {
+        throw Exception('Failed to set string value: $retcode');
+      }
+    } finally {
+      free(lpValueName);
+      free(lpData);
+    }
+  }
+  
+  /// 删除注册表值
+  static void _deleteRegistryValue(int hkey, String valueName) {
+    if (!Platform.isWindows) return;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    try {
+      final retcode = RegDeleteValue(hkey, lpValueName);
+      if (retcode != ERROR_SUCCESS && retcode != ERROR_FILE_NOT_FOUND) {
+        throw Exception('Failed to delete value: $retcode');
+      }
+    } finally {
+      free(lpValueName);
+    }
+  }
+  
+  /// 读取注册表DWORD值
+  static int? _getRegistryDwordValue(int hkey, String valueName) {
+    if (!Platform.isWindows) return null;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    final lpType = calloc<DWORD>();
+    final lpData = calloc<DWORD>();
+    final lpcbData = calloc<DWORD>()..value = sizeOf<DWORD>();
+    
+    try {
+      final retcode = RegQueryValueEx(
+        hkey,
+        lpValueName,
+        nullptr,
+        lpType,
+        lpData.cast<BYTE>(),
+        lpcbData,
+      );
+      
+      if (retcode == ERROR_SUCCESS && lpType.value == REG_DWORD) {
+        return lpData.value;
+      }
+      return null;
+    } finally {
+      free(lpValueName);
+      free(lpType);
+      free(lpData);
+      free(lpcbData);
+    }
+  }
+  
+  /// 读取注册表字符串值
+  static String? _getRegistryStringValue(int hkey, String valueName) {
+    if (!Platform.isWindows) return null;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    final lpType = calloc<DWORD>();
+    final lpcbData = calloc<DWORD>();
+    
+    try {
+      // 第一次调用获取所需缓冲区大小
+      var retcode = RegQueryValueEx(
+        hkey,
+        lpValueName,
+        nullptr,
+        lpType,
+        nullptr,
+        lpcbData,
+      );
+      
+      if (retcode != ERROR_SUCCESS) return null;
+      
+      // 分配缓冲区并读取数据
+      final lpData = calloc<BYTE>(lpcbData.value);
+      try {
+        retcode = RegQueryValueEx(
+          hkey,
+          lpValueName,
+          nullptr,
+          lpType,
+          lpData,
+          lpcbData,
+        );
+        
+        if (retcode == ERROR_SUCCESS && 
+            (lpType.value == REG_SZ || lpType.value == REG_EXPAND_SZ)) {
+          return lpData.cast<Utf16>().toDartString();
+        }
+        return null;
+      } finally {
+        free(lpData);
+      }
+    } finally {
+      free(lpValueName);
+      free(lpType);
+      free(lpcbData);
+    }
+  }
+  
+  /// 关闭注册表键
+  static void _closeRegistryKey(int hkey) {
+    if (!Platform.isWindows) return;
+    RegCloseKey(hkey);
+  }
+  
+  // ============ ProxyService 主要方法 ============
+  
   static Future<void> enableSystemProxy() async {
     if (!Platform.isWindows) {
       await _log.info('非Windows平台，跳过系统代理设置', tag: _logTag);
       return;
     }
 
+    int? hkey;
     try {
       await _log.info('正在启用系统代理...', tag: _logTag);
       await _log.info('目标代理服务器: $_proxyServer', tag: _logTag);
       
-      // 记录完整的注册表路径，验证字符串插值是否正确
-      final fullPath = "HKCU\\$_registryPath";
-      await _log.debug('注册表完整路径: $fullPath', tag: _logTag);
-      
-      // 使用reg命令设置代理 - 避免win32_registry依赖
-      // 修复：使用双引号进行字符串插值
-      
-      // 1. 启用代理
-      await _log.debug('执行: reg add "$fullPath" /v ProxyEnable /t REG_DWORD /d 1 /f', tag: _logTag);
-      final enableResult = await Process.run('reg', [
-        'add',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyEnable',
-        '/t', 'REG_DWORD',
-        '/d', '1',
-        '/f'
-      ]);
-      
-      if (enableResult.exitCode != 0) {
-        await _log.error('设置ProxyEnable失败: ${enableResult.stderr}', tag: _logTag);
-        throw '设置ProxyEnable失败';
+      // 打开注册表键（使用从win32_registry复制的代码）
+      hkey = _openRegistryKey(_registryPath, KEY_ALL_ACCESS);
+      if (hkey == null) {
+        throw Exception('无法打开注册表键');
       }
+      
+      // 1. 启用代理 - 设置ProxyEnable为1 (DWORD类型)
+      _setRegistryDwordValue(hkey, 'ProxyEnable', 1);
       await _log.info('ProxyEnable已设置为1', tag: _logTag);
       
-      // 2. 设置代理服务器地址
-      await _log.debug('执行: reg add "$fullPath" /v ProxyServer /t REG_SZ /d $_proxyServer /f', tag: _logTag);
-      final serverResult = await Process.run('reg', [
-        'add',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyServer',
-        '/t', 'REG_SZ',
-        '/d', _proxyServer,
-        '/f'
-      ]);
-      
-      if (serverResult.exitCode != 0) {
-        await _log.error('设置ProxyServer失败: ${serverResult.stderr}', tag: _logTag);
-        throw '设置ProxyServer失败';
-      }
+      // 2. 设置代理服务器地址 - ProxyServer (字符串类型)
+      _setRegistryStringValue(hkey, 'ProxyServer', _proxyServer);
       await _log.info('ProxyServer已设置为: $_proxyServer', tag: _logTag);
       
-      // 3. 设置代理白名单
-      await _log.debug('设置代理白名单（ProxyOverride）', tag: _logTag);
-      final overrideResult = await Process.run('reg', [
-        'add',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyOverride',
-        '/t', 'REG_SZ',
-        '/d', 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>',
-        '/f'
-      ]);
+      // 3. 设置代理白名单 - ProxyOverride (字符串类型)
+      const proxyOverride = 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>';
+      _setRegistryStringValue(hkey, 'ProxyOverride', proxyOverride);
+      await _log.info('ProxyOverride已设置', tag: _logTag);
       
-      if (overrideResult.exitCode != 0) {
-        await _log.warn('设置ProxyOverride失败（非致命）: ${overrideResult.stderr}', tag: _logTag);
-      } else {
-        await _log.info('ProxyOverride已设置', tag: _logTag);
-      }
+      // 关闭注册表键
+      _closeRegistryKey(hkey);
+      hkey = null;
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -90,6 +244,9 @@ class ProxyService {
       await _log.info('系统代理启用成功', tag: _logTag);
     } catch (e) {
       await _log.error('启用系统代理失败', tag: _logTag, error: e);
+      if (hkey != null) {
+        _closeRegistryKey(hkey);
+      }
       throw '无法设置系统代理: $e';
     }
   }
@@ -100,43 +257,37 @@ class ProxyService {
       return;
     }
 
+    int? hkey;
     try {
       await _log.info('正在禁用系统代理...', tag: _logTag);
       
-      // 记录完整的注册表路径
-      final fullPath = "HKCU\\$_registryPath";
-      await _log.debug('注册表完整路径: $fullPath', tag: _logTag);
-      
-      // 使用reg命令禁用代理
-      await _log.debug('执行: reg add "$fullPath" /v ProxyEnable /t REG_DWORD /d 0 /f', tag: _logTag);
-      final disableResult = await Process.run('reg', [
-        'add',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyEnable',
-        '/t', 'REG_DWORD',
-        '/d', '0',
-        '/f'
-      ]);
-      
-      if (disableResult.exitCode != 0) {
-        await _log.error('禁用ProxyEnable失败: ${disableResult.stderr}', tag: _logTag);
-        throw '禁用ProxyEnable失败';
+      // 打开注册表键
+      hkey = _openRegistryKey(_registryPath, KEY_ALL_ACCESS);
+      if (hkey == null) {
+        throw Exception('无法打开注册表键');
       }
+      
+      // 禁用代理 - 设置ProxyEnable为0 (DWORD类型)
+      _setRegistryDwordValue(hkey, 'ProxyEnable', 0);
       await _log.info('ProxyEnable已设置为0', tag: _logTag);
       
-      // 删除代理服务器设置（可选，不影响禁用效果）
+      // 可选：删除代理服务器设置
       try {
-        await _log.debug('尝试删除ProxyServer设置', tag: _logTag);
-        await Process.run('reg', [
-          'delete',
-          "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-          '/v', 'ProxyServer',
-          '/f'
-        ], runInShell: true);
+        _deleteRegistryValue(hkey, 'ProxyServer');
         await _log.info('ProxyServer设置已删除', tag: _logTag);
       } catch (e) {
-        await _log.debug('删除ProxyServer失败（非致命）: $e', tag: _logTag);
+        // 如果删除失败，尝试设置为空字符串
+        try {
+          _setRegistryStringValue(hkey, 'ProxyServer', '');
+          await _log.info('ProxyServer设置已清空', tag: _logTag);
+        } catch (e2) {
+          await _log.debug('清空ProxyServer失败（非致命）: $e2', tag: _logTag);
+        }
       }
+      
+      // 关闭注册表键
+      _closeRegistryKey(hkey);
+      hkey = null;
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -144,6 +295,9 @@ class ProxyService {
       await _log.info('系统代理禁用成功', tag: _logTag);
     } catch (e) {
       await _log.error('禁用系统代理失败', tag: _logTag, error: e);
+      if (hkey != null) {
+        _closeRegistryKey(hkey);
+      }
       throw '无法禁用系统代理: $e';
     }
   }
@@ -226,7 +380,7 @@ class ProxyService {
     }
   }
   
-  // 获取当前代理状态
+  // 获取当前代理状态（使用复制的注册表读取代码）
   static Future<Map<String, dynamic>> getProxyStatus() async {
     if (!Platform.isWindows) {
       return {
@@ -239,61 +393,44 @@ class ProxyService {
     
     await _log.debug('查询当前代理状态', tag: _logTag);
     
+    int? hkey;
     try {
-      // 记录完整路径用于调试
-      final fullPath = "HKCU\\$_registryPath";
-      await _log.debug('查询注册表路径: $fullPath', tag: _logTag);
-      
-      // 查询ProxyEnable
-      // 修复：使用双引号进行字符串插值
-      await _log.debug('查询ProxyEnable', tag: _logTag);
-      final enableResult = await Process.run('reg', [
-        'query',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyEnable'
-      ]);
-      
-      if (enableResult.exitCode != 0) {
-        await _log.debug('ProxyEnable不存在或查询失败', tag: _logTag);
+      // 打开注册表键（只读）
+      hkey = _openRegistryKey(_registryPath, KEY_READ);
+      if (hkey == null) {
+        throw Exception('无法打开注册表键');
       }
       
-      // 查询ProxyServer
-      await _log.debug('查询ProxyServer', tag: _logTag);
-      final serverResult = await Process.run('reg', [
-        'query',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyServer'
-      ]);
+      bool isEnabled = false;
+      String server = '';
+      String override = '';
       
-      if (serverResult.exitCode != 0) {
-        await _log.debug('ProxyServer不存在或查询失败', tag: _logTag);
+      // 读取ProxyEnable
+      final enableValue = _getRegistryDwordValue(hkey, 'ProxyEnable');
+      if (enableValue != null) {
+        isEnabled = enableValue == 1;
       }
+      await _log.debug('ProxyEnable读取结果: $isEnabled', tag: _logTag);
       
-      // 查询ProxyOverride
-      await _log.debug('查询ProxyOverride', tag: _logTag);
-      final overrideResult = await Process.run('reg', [
-        'query',
-        "HKCU\\$_registryPath",  // 修复：单引号改为双引号
-        '/v', 'ProxyOverride'
-      ]);
-      
-      if (overrideResult.exitCode != 0) {
-        await _log.debug('ProxyOverride不存在或查询失败', tag: _logTag);
+      // 读取ProxyServer
+      final serverValue = _getRegistryStringValue(hkey, 'ProxyServer');
+      if (serverValue != null) {
+        server = serverValue;
       }
+      await _log.debug('ProxyServer读取结果: $server', tag: _logTag);
       
-      // 解析结果
-      final isEnabled = enableResult.stdout.toString().contains('0x1');
-      await _log.debug('ProxyEnable解析结果: $isEnabled', tag: _logTag);
-      
-      final serverMatch = RegExp(r'ProxyServer\s+REG_SZ\s+(.+)').firstMatch(serverResult.stdout.toString());
-      final server = serverMatch?.group(1)?.trim() ?? '';
-      await _log.debug('ProxyServer解析结果: $server', tag: _logTag);
-      
-      final overrideMatch = RegExp(r'ProxyOverride\s+REG_SZ\s+(.+)').firstMatch(overrideResult.stdout.toString());
-      final override = overrideMatch?.group(1)?.trim() ?? '';
+      // 读取ProxyOverride
+      final overrideValue = _getRegistryStringValue(hkey, 'ProxyOverride');
+      if (overrideValue != null) {
+        override = overrideValue;
+      }
       if (override.isNotEmpty) {
-        await _log.debug('ProxyOverride解析结果: ${override.substring(0, override.length > 50 ? 50 : override.length)}...', tag: _logTag);
+        await _log.debug('ProxyOverride读取结果: ${override.substring(0, override.length > 50 ? 50 : override.length)}...', tag: _logTag);
       }
+      
+      // 关闭注册表键
+      _closeRegistryKey(hkey);
+      hkey = null;  // 清空引用
       
       final status = {
         'enabled': isEnabled,
@@ -306,6 +443,9 @@ class ProxyService {
       return status;
     } catch (e) {
       await _log.error('查询代理状态时发生错误', tag: _logTag, error: e);
+      if (hkey != null) {
+        _closeRegistryKey(hkey);
+      }
       return {
         'enabled': false,
         'server': '',
