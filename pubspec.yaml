@@ -21,24 +21,12 @@ dependencies:
   # 本地存储
   shared_preferences: ^2.2.2
   
-  # Windows特性 - 使用条件依赖
-  win32:
-    version: ^5.1.1
-    platforms:
-      windows:
+  # Windows特性
+  win32: ^5.1.1
+  ffi: ^2.1.0
   
-  ffi:
-    version: ^2.1.0
-    platforms:
-      windows:
-  
-  # 窗口管理 - 仅桌面平台
-  window_manager:
-    version: ^0.3.7
-    platforms:
-      windows:
-      macos:
-      linux:
+  # 窗口管理
+  window_manager: ^0.3.7
   
   # 路径处理
   path: ^1.8.3
