@@ -84,10 +84,12 @@ class ConnectionProvider with ChangeNotifier {
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
       _disconnectReason = 'unexpected_exit'; // 设置断开原因
-      // 清理系统代理设置
-      ProxyService.disableSystemProxy().catchError((e) {
-        _log.error('Error disabling system proxy after process exit', tag: _logTag, error: e);
-      });
+      // 清理系统代理设置 - 只在Windows平台
+      if (Platform.isWindows) {
+        ProxyService.disableSystemProxy().catchError((e) {
+          _log.error('Error disabling system proxy after process exit', tag: _logTag, error: e);
+        });
+      }
       if (!_isDisposed) {
         notifyListeners();
       }
@@ -270,8 +272,15 @@ class ConnectionProvider with ChangeNotifier {
 
         if (success) {
           try {
-            // 启用系统代理
-            await ProxyService.enableSystemProxy();
+            // ========== 关键修改：只在 Windows 平台启用系统代理 ==========
+            if (Platform.isWindows) {
+              await _log.info('Windows平台：启用系统代理', tag: _logTag);
+              await ProxyService.enableSystemProxy();
+            } else {
+              await _log.info('非Windows平台：跳过系统代理设置（使用VPN模式）', tag: _logTag);
+            }
+            // ==============================================================
+            
             _isConnected = true;
             _connectStartTime = DateTime.now(); // 记录连接开始时间
             if (!_isDisposed) {
@@ -279,6 +288,7 @@ class ConnectionProvider with ChangeNotifier {
             }
           } catch (e) {
             // 如果系统代理设置失败，停止V2Ray
+            await _log.error('系统代理设置失败，停止V2Ray', tag: _logTag, error: e);
             await V2RayService.stop();
             rethrow;
           }
@@ -303,8 +313,16 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> disconnect() async {
     try {
       await V2RayService.stop();
-      // 禁用系统代理
-      await ProxyService.disableSystemProxy();
+      
+      // ========== 关键修改：只在 Windows 平台禁用系统代理 ==========
+      if (Platform.isWindows) {
+        await _log.info('Windows平台：禁用系统代理', tag: _logTag);
+        await ProxyService.disableSystemProxy();
+      } else {
+        await _log.info('非Windows平台：跳过系统代理禁用', tag: _logTag);
+      }
+      // ==============================================================
+      
       _isConnected = false;
       _connectStartTime = null; // 清除连接时间
       _disconnectReason = null; // 主动断开不设置原因
