@@ -1,6 +1,6 @@
 {
   "log": {
-    "loglevel": "warning"
+    "loglevel": "info"
   },
   "stats": {},
   "policy": {
@@ -44,6 +44,9 @@
         "routeOnly": false
       },
       "settings": {
+        "auth": "noauth",
+        "udp": true,
+        "allowTransparent": false,
         "userLevel": 8
       }
     },
@@ -68,7 +71,9 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
+                "alterId": 0,
                 "email": "t@t.tt",
+                "security": "auto",
                 "encryption": "none",
                 "level": 8
               }
@@ -89,7 +94,14 @@
           "headers": {
             "Host": "pages-vless-a9f.pages.dev"
           }
+        },
+        "sockopt": {
+          "dialerProxy": "proxy3"
         }
+      },
+      "mux": {
+        "enabled": false,
+        "concurrency": -1
       }
     },
     {
@@ -105,6 +117,17 @@
           "type": "http"
         }
       }
+    },
+    {
+      "tag": "proxy3",
+      "protocol": "freedom",
+      "settings": {
+        "fragment": {
+          "packets": "tlshello",
+          "length": "100-200",
+          "interval": "10-20"
+        }
+      }
     }
   ],
   "dns": {
@@ -113,9 +136,13 @@
       "dns.cloudflare.com": "1.1.1.1",
       "cloudflare-dns.com": "1.1.1.1",
       "one.one.one.one": "1.1.1.1",
-      "dns.quad9.net": "9.9.9.9"
+      "dns.quad9.net": "9.9.9.9",
+      "proxy.example.com": "127.0.0.1"
     },
     "servers": [
+      "1.1.1.1",
+      "8.8.8.8",
+      "https://8.8.8.8/dns-query",
       {
         "address": "223.5.5.5",
         "port": 53,
@@ -127,15 +154,17 @@
           "geoip:cn"
         ],
         "skipFallback": true
-      },
-      "1.1.1.1",
-      "8.8.8.8",
-      "https://8.8.8.8/dns-query"
+      }
     ]
   },
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
       {
         "type": "field",
         "port": "53",
@@ -151,21 +180,22 @@
       },
       {
         "type": "field",
+        "outboundTag": "direct",
         "domain": [
           "geosite:cn",
           "geosite:geolocation-cn"
-        ],
-        "outboundTag": "direct"
+        ]
       },
       {
         "type": "field",
+        "outboundTag": "direct",
         "ip": [
           "geoip:cn"
-        ],
-        "outboundTag": "direct"
+        ]
       },
       {
         "type": "field",
+        "port": "0-65535",
         "outboundTag": "proxy"
       }
     ]
