@@ -78,14 +78,19 @@ class V2RayStatus {
 /// V2Ray服务管理类 - 统一Windows和移动端实现
 /// 简化版本：移除AppProxyMode，只使用allowedApps列表
 class V2RayService {
+  // ============ Windows平台专用变量 ============
   // Windows平台进程管理
   static Process? _v2rayProcess;
   
-  // 服务状态管理
-  static bool _isRunning = false;
-  
   // 回调函数
   static Function? _onProcessExit;
+  
+  // 记录是否已记录V2Ray目录信息（仅Windows）
+  static bool _hasLoggedV2RayInfo = false;
+  
+  // ============ 通用状态管理 ============
+  // 服务状态管理
+  static bool _isRunning = false;
   
   // 流量统计
   static int _uploadTotal = 0;
@@ -120,68 +125,54 @@ class V2RayService {
   static bool _isChannelInitialized = false;
   static Timer? _statusCheckTimer;  // 移动端状态检查定时器
   
-  // 记录是否已记录V2Ray目录信息
-  static bool _hasLoggedV2RayInfo = false;
+  // ============ 统一配置路径 ============
+  // 配置文件路径 - 统一使用一个配置文件
+  static const String CONFIG_PATH = 'assets/js/v2ray_config.json';
   
-  // 配置文件路径 - 根据平台选择
-  static String get _CONFIG_PATH {
-    if (Platform.isAndroid || Platform.isIOS) {
-      return 'assets/js/v2ray_config_mobile.json';  // 移动端配置
-    } else {
-      return 'assets/js/v2ray_config.json';  // 桌面端配置
-    }
-  }
-  
-  // 平台相关的可执行文件名
+  // ============ Windows平台专用方法 ============
+  // 平台相关的可执行文件名（仅Windows使用）
   static String get _v2rayExecutableName {
     if (Platform.isWindows) {
       return 'v2ray.exe';
-    } else {
-      return 'v2ray';
     }
+    throw UnsupportedError('仅Windows平台需要可执行文件');
   }
   
   static String get _v2ctlExecutableName {
     if (Platform.isWindows) {
       return 'v2ctl.exe';
-    } else {
-      return 'v2ctl';
     }
+    throw UnsupportedError('仅Windows平台需要可执行文件');
   }
   
-  // 获取可执行文件路径（仅桌面平台）
-  static Future<String> getExecutablePath(String executableName) async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      throw UnsupportedError('Mobile platforms use native V2Ray integration');
+  // 获取可执行文件路径（仅Windows平台）
+  static Future<String> _getWindowsExecutablePath(String executableName) async {
+    if (!Platform.isWindows) {
+      throw UnsupportedError('仅Windows平台支持');
     }
     
-    if (Platform.isWindows) {
-      final exePath = Platform.resolvedExecutable;
-      final directory = path.dirname(exePath);
-      return path.join(directory, executableName);
-    } else if (Platform.isMacOS || Platform.isLinux) {
-      final systemPath = path.join('/usr/local/bin', executableName);
-      if (await File(systemPath).exists()) {
-        return systemPath;
-      }
-      
-      final exePath = Platform.resolvedExecutable;
-      final directory = path.dirname(exePath);
-      return path.join(directory, executableName);
-    } else {
-      throw UnsupportedError('Platform not supported');
-    }
+    final exePath = Platform.resolvedExecutable;
+    final directory = path.dirname(exePath);
+    return path.join(directory, executableName);
   }
   
   static Future<String> _getV2RayPath() async {
-    return getExecutablePath(path.join('v2ray', _v2rayExecutableName));
+    if (!Platform.isWindows) {
+      throw UnsupportedError('仅Windows平台需要V2Ray路径');
+    }
+    return _getWindowsExecutablePath(path.join('v2ray', _v2rayExecutableName));
   }
   
   // 设置进程退出回调（仅Windows）
   static void setOnProcessExit(Function callback) {
+    if (!Platform.isWindows) {
+      _log.warn('setOnProcessExit仅在Windows平台有效', tag: _logTag);
+      return;
+    }
     _onProcessExit = callback;
   }
   
+  // ============ 通用接口方法 ============
   // 获取当前状态
   static V2RayStatus get currentStatus => _currentStatus;
   
@@ -205,6 +196,7 @@ class V2RayService {
     return 0;
   }
   
+  // ============ 移动平台方法 ============
   // 初始化原生通道监听器（移动平台）
   static void _initializeChannelListeners() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
@@ -393,6 +385,7 @@ class V2RayService {
     }
   }
   
+  // ============ 通用方法 ============
   // 更新状态并通知监听者
   static void _updateStatus(V2RayStatus status) {
     _currentStatus = status;
@@ -443,13 +436,12 @@ class V2RayService {
     }
   }
   
-  // 加载配置模板 - 优化版，根据平台选择配置
+  // 加载配置模板 - 统一使用一个配置文件
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
-      final String configPath = _CONFIG_PATH;
-      await _log.info('加载配置文件: $configPath', tag: _logTag);
+      await _log.info('加载配置文件: $CONFIG_PATH', tag: _logTag);
       
-      final String jsonString = await rootBundle.loadString(configPath);
+      final String jsonString = await rootBundle.loadString(CONFIG_PATH);
       final config = jsonDecode(jsonString);
       
       return config;
@@ -468,7 +460,7 @@ class V2RayService {
     int httpPort = 7899,
     bool globalProxy = false,
   }) async {
-    // 加载配置模板（已根据平台自动选择）
+    // 加载配置模板
     Map<String, dynamic> config = await _loadConfigTemplate();
     
     // 检查服务器群组配置（从AppConfig读取）
@@ -651,7 +643,7 @@ class V2RayService {
     int httpPort = 7899,
     bool globalProxy = false,
   }) async {
-    if (Platform.isAndroid || Platform.isIOS) return;
+    if (!Platform.isWindows) return;
     
     final v2rayPath = await _getV2RayPath();
     final configPath = path.join(path.dirname(v2rayPath), 'config.json');
@@ -721,6 +713,12 @@ class V2RayService {
     // 新增：国际化文字
     Map<String, String>? localizedStrings,
   }) async {
+    // 平台支持检查
+    if (!Platform.isWindows && !Platform.isAndroid && !Platform.isIOS) {
+      await _log.error('不支持的平台: ${Platform.operatingSystem}', tag: _logTag);
+      throw UnsupportedError('V2Ray服务仅支持Windows、Android和iOS平台');
+    }
+    
     // 并发控制
     if (_isStarting || _isStopping) {
       await _log.warn('V2Ray正在启动或停止中，忽略请求', tag: _logTag);
@@ -755,13 +753,18 @@ class V2RayService {
         );
       }
       
-      // ============ Windows/桌面平台 ============
-      return await _startDesktopPlatform(
-        serverIp: serverIp,
-        serverPort: serverPort,
-        serverName: serverName,
-        globalProxy: globalProxy,
-      );
+      // ============ Windows平台 ============
+      if (Platform.isWindows) {
+        return await _startDesktopPlatform(
+          serverIp: serverIp,
+          serverPort: serverPort,
+          serverName: serverName,
+          globalProxy: globalProxy,
+        );
+      }
+      
+      // 不应该到达这里
+      throw UnsupportedError('未知平台错误');
       
     } catch (e, stackTrace) {
       await _log.error('启动V2Ray失败', tag: _logTag, error: e, stackTrace: stackTrace);
@@ -791,7 +794,7 @@ class V2RayService {
       // 1. 初始化通道监听
       _initializeChannelListeners();
       
-      // 2. 生成配置（会自动使用移动端配置模板）
+      // 2. 生成配置
       final configMap = await _generateConfigMap(
         serverIp: serverIp,
         serverPort: serverPort,
@@ -1107,9 +1110,8 @@ class V2RayService {
       
       // 重置运行标志
       _isRunning = false;
-      _hasLoggedV2RayInfo = false;
       
-      // 移动平台停止
+      // ============ 移动平台停止 ============
       if (Platform.isAndroid || Platform.isIOS) {
         try {
           // 停止状态更新定时器
@@ -1121,8 +1123,12 @@ class V2RayService {
         } catch (e) {
           await _log.error('移动平台停止失败: $e', tag: _logTag);
         }
-      } else {
-        // Windows平台停止
+      } 
+      // ============ Windows平台停止 ============
+      else if (Platform.isWindows) {
+        // 重置Windows专用标志
+        _hasLoggedV2RayInfo = false;
+        
         // 停止计时器（仅Windows使用）
         _stopStatsTimer();
         _stopDurationTimer();
@@ -1162,14 +1168,16 @@ class V2RayService {
         }
         
         // 清理残留进程（Windows）
-        if (Platform.isWindows) {
-          try {
-            await Process.run('taskkill', ['/F', '/IM', _v2rayExecutableName], 
-              runInShell: true);
-          } catch (e) {
-            // 忽略
-          }
+        try {
+          await Process.run('taskkill', ['/F', '/IM', _v2rayExecutableName], 
+            runInShell: true);
+        } catch (e) {
+          // 忽略错误
         }
+      }
+      // ============ 其他平台 ============
+      else {
+        await _log.warn('停止V2Ray：不支持的平台 ${Platform.operatingSystem}', tag: _logTag);
       }
       
       await _log.info('V2Ray服务已停止', tag: _logTag);
@@ -1181,7 +1189,7 @@ class V2RayService {
   
   // Windows平台流量统计
   static void _startStatsTimer() {
-    if (Platform.isAndroid || Platform.isIOS) return;  // 移动端不使用
+    if (!Platform.isWindows) return;  // 仅Windows使用
     
     _stopStatsTimer();
     
@@ -1207,7 +1215,7 @@ class V2RayService {
   
   // Windows平台流量统计API调用
   static Future<void> _updateTrafficStatsFromAPI() async {
-    if (!_isRunning || Platform.isAndroid || Platform.isIOS) return;
+    if (!_isRunning || !Platform.isWindows) return;
     
     try {
       final v2rayPath = await _getV2RayPath();
@@ -1234,51 +1242,34 @@ class V2RayService {
           'pattern: "" reset: false'
         ];
         
-        if (Platform.isWindows) {
-          final processResult = await Process.run(
-            apiExe,
-            apiCmd,
-            runInShell: true,
-            workingDirectory: v2rayDir,
-          );
-          
-          if (processResult.exitCode == 0) {
-            String output;
-            if (processResult.stdout is String) {
-              output = processResult.stdout as String;
-            } else if (processResult.stdout is List<int>) {
-              output = utf8.decode(processResult.stdout as List<int>);
-            } else {
-              output = processResult.stdout.toString();
-            }
-            
-            _parseStatsOutput(output);
+        final processResult = await Process.run(
+          apiExe,
+          apiCmd,
+          runInShell: true,
+          workingDirectory: v2rayDir,
+        );
+        
+        if (processResult.exitCode == 0) {
+          String output;
+          if (processResult.stdout is String) {
+            output = processResult.stdout as String;
+          } else if (processResult.stdout is List<int>) {
+            output = utf8.decode(processResult.stdout as List<int>);
           } else {
-            String error;
-            if (processResult.stderr is String) {
-              error = processResult.stderr as String;
-            } else if (processResult.stderr is List<int>) {
-              error = utf8.decode(processResult.stderr as List<int>);
-            } else {
-              error = processResult.stderr.toString();
-            }
-            await _log.warn('获取流量统计失败: $error', tag: _logTag);
+            output = processResult.stdout.toString();
           }
+          
+          _parseStatsOutput(output);
         } else {
-          final processResult = await Process.run(
-            apiExe,
-            apiCmd,
-            runInShell: false,
-            workingDirectory: v2rayDir,
-            stdoutEncoding: utf8,
-            stderrEncoding: utf8,
-          );
-          
-          if (processResult.exitCode == 0) {
-            _parseStatsOutput(processResult.stdout.toString());
+          String error;
+          if (processResult.stderr is String) {
+            error = processResult.stderr as String;
+          } else if (processResult.stderr is List<int>) {
+            error = utf8.decode(processResult.stderr as List<int>);
           } else {
-            await _log.warn('获取流量统计失败: ${processResult.stderr}', tag: _logTag);
+            error = processResult.stderr.toString();
           }
+          await _log.warn('获取流量统计失败: $error', tag: _logTag);
         }
       } else {
         apiCmd = ['api', 'statsquery', '--server=127.0.0.1:${AppConfig.v2rayApiPort}'];
@@ -1325,16 +1316,21 @@ class V2RayService {
           final name = nameMatch.group(1)!;
           final value = valueMatch != null ? int.parse(valueMatch.group(1)!) : 0;
           
-          // 只统计proxy出站流量
+          // 只统计proxy出站流量（真正的代理流量）
+          // 不统计direct（直连）和block（屏蔽）流量
           if (name == "outbound>>>proxy>>>traffic>>>uplink") {
             proxyUplink = value;
           } else if (name == "outbound>>>proxy>>>traffic>>>downlink") {
             proxyDownlink = value;
           }
+          // 忽略其他标签如：
+          // - outbound>>>direct>>>traffic>>>* （直连流量）
+          // - outbound>>>block>>>traffic>>>* （屏蔽流量）
+          // - outbound>>>proxy3>>>traffic>>>* （fragment流量）
         }
       }
       
-      // 更新流量值
+      // 更新流量值（只包含代理流量）
       _uploadTotal = proxyUplink;
       _downloadTotal = proxyDownlink;
       
@@ -1363,7 +1359,7 @@ class V2RayService {
       if (_uploadTotal != _lastLoggedUpload || _downloadTotal != _lastLoggedDownload || 
           uploadSpeed > 0 || downloadSpeed > 0) {
         _log.info(
-          '流量: ↑${UIUtils.formatBytes(_uploadTotal)} ↓${UIUtils.formatBytes(_downloadTotal)} ' +
+          '代理流量: ↑${UIUtils.formatBytes(_uploadTotal)} ↓${UIUtils.formatBytes(_downloadTotal)} ' +
           '速度: ↑${UIUtils.formatBytes(uploadSpeed)}/s ↓${UIUtils.formatBytes(downloadSpeed)}/s',
           tag: _logTag
         );
@@ -1399,7 +1395,7 @@ class V2RayService {
     }
   }
   
-  // 获取流量统计
+  // 获取流量统计（只包含代理流量，不包含直连流量）
   static Future<Map<String, int>> getTrafficStats() async {
     if (!_isRunning) {
       return {
@@ -1411,8 +1407,8 @@ class V2RayService {
     }
     
     return {
-      'uploadTotal': _uploadTotal,
-      'downloadTotal': _downloadTotal,
+      'uploadTotal': _uploadTotal,        // 代理上传流量
+      'downloadTotal': _downloadTotal,    // 代理下载流量
       'uploadSpeed': _currentStatus.uploadSpeed,
       'downloadSpeed': _currentStatus.downloadSpeed,
     };
@@ -1426,9 +1422,13 @@ class V2RayService {
     
     // 重置状态
     _isRunning = false;
-    _hasLoggedV2RayInfo = false;
     _uploadTotal = 0;
     _downloadTotal = 0;
+    
+    // 重置Windows专用标志
+    if (Platform.isWindows) {
+      _hasLoggedV2RayInfo = false;
+    }
     
     // 清理通道监听
     _isChannelInitialized = false;
