@@ -1,6 +1,6 @@
 {
   "log": {
-    "loglevel": "warning"
+    "loglevel": "error"  
   },
   "stats": {},
   "api": {
@@ -53,6 +53,9 @@
         "routeOnly": false
       },
       "settings": {
+        "auth": "noauth",
+        "udp": true,
+        "allowTransparent": false,
         "userLevel": 8
       }
     },
@@ -78,7 +81,9 @@
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
+                "alterId": 0,
                 "email": "t@t.tt",
+                "security": "auto",
                 "encryption": "none",
                 "level": 8
               }
@@ -103,6 +108,10 @@
         "sockopt": {
           "dialerProxy": "proxy3"
         }
+      },
+      "mux": {
+        "enabled": false,
+        "concurrency": -1
       }
     },
     {
@@ -135,9 +144,13 @@
     "hosts": {
       "dns.google": "8.8.8.8",
       "dns.cloudflare.com": "1.1.1.1",
-      "cloudflare-dns.com": "1.1.1.1"
+      "cloudflare-dns.com": "1.1.1.1",
+      "proxy.example.com": "127.0.0.1"
     },
     "servers": [
+      "1.1.1.1",
+      "8.8.8.8",
+      "https://8.8.8.8/dns-query",
       {
         "address": "223.5.5.5",
         "port": 53,
@@ -149,15 +162,17 @@
           "geoip:cn"
         ],
         "skipFallback": true
-      },
-      "1.1.1.1",
-      "8.8.8.8",
-      "https://8.8.8.8/dns-query"
+      }
     ]
   },
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
       {
         "type": "field",
         "port": "53",
@@ -198,6 +213,7 @@
       },
       {
         "type": "field",
+        "port": "0-65535",
         "outboundTag": "proxy"
       }
     ]
