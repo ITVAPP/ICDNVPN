@@ -26,7 +26,7 @@ dependencies:
   ffi: ^2.1.4
   
   # 窗口管理
-  window_manager: ^0.3.7
+  window_manager: ^0.5.1
   
   # 路径处理
   path: ^1.8.3
