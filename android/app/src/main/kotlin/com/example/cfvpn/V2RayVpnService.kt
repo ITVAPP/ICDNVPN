@@ -41,8 +41,7 @@ import libv2ray.CoreController
 import libv2ray.CoreCallbackHandler
 
 /**
- * V2Ray VPN服务实现 - 与v2rayNG配置一致版本
- * 使用与v2rayNG相同的VPN接口地址和配置参数
+ * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
  * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
  * 修复版本：修正流量统计标签获取和查询
  * 简化版本：删除不必要的shouldBypassLan逻辑，让V2Ray处理路由
@@ -73,16 +72,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // WakeLock标签
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
         
-        // VPN配置常量（与v2rayNG完全一致）
+        // VPN配置常量（与v2rayNG保持一致）
         // 优化2: MTU优化 - 增加MTU值以提高吞吐量（需要测试网络兼容性）
         private const val VPN_MTU = 1500  // 可根据网络环境调整，某些网络支持9000
-        private const val PRIVATE_VLAN4_CLIENT = "10.10.14.1"      // 修改：使用v2rayNG默认地址
-        private const val PRIVATE_VLAN4_ROUTER = "10.10.14.2"      // 修改：使用v2rayNG默认地址
-        private const val PRIVATE_VLAN6_CLIENT = "fc00::10:10:14:1" // 修改：使用v2rayNG默认IPv6地址
-        private const val PRIVATE_VLAN6_ROUTER = "fc00::10:10:14:2" // 修改：使用v2rayNG默认IPv6地址
+        private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"
+        private const val PRIVATE_VLAN4_ROUTER = "26.26.26.2"
+        private const val PRIVATE_VLAN6_CLIENT = "da26:2626::1"
+        private const val PRIVATE_VLAN6_ROUTER = "da26:2626::2"
         
-        // 移除硬编码端口，改为从JSON配置中动态解析
-        // private const val DEFAULT_SOCKS_PORT = 7898  // 删除：不再硬编码端口
+        // V2Ray端口默认值
+        private const val DEFAULT_SOCKS_PORT = 7898
         
         // 流量统计配置
         // 优化4: 流量统计优化 - 减少查询频率
@@ -190,7 +189,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         /**
          * 获取流量统计 - 简化版
-         * 返回当前通知栏显示的实时流量数据
+         * 返回当前的代理流量数据（不包含直连流量）
          */
         @JvmStatic
         fun getTrafficStats(): Map<String, Long> {
@@ -246,8 +245,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var lastStatsTime: Long = 0
     private var startTime: Long = 0
     
-    // 修复：动态存储outbound标签
+    // 修复：只统计真正的代理流量标签（不包括direct、block等）
     private val outboundTags = mutableListOf<String>()
+    
+    // 修复：添加累计流量变量（因为queryStats会重置计数器）
+    private var totalUploadBytes: Long = 0
+    private var totalDownloadBytes: Long = 0
     
     // 系统流量统计初始值（备用方案）
     private var initialUploadBytes: Long? = null
@@ -327,7 +330,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复：从配置中提取outbound标签
+     * 修复：从配置中提取outbound标签 - 只统计真正的代理流量
+     * 不统计direct（直连）、block（屏蔽）、fragment相关标签
      */
     private fun extractOutboundTags(config: JSONObject) {
         outboundTags.clear()
@@ -338,27 +342,37 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 for (i in 0 until outbounds.length()) {
                     val outbound = outbounds.getJSONObject(i)
                     val tag = outbound.optString("tag")
-                    if (tag.isNotEmpty()) {
-                        outboundTags.add(tag)
-                        VpnFileLogger.d(TAG, "发现outbound标签: $tag")
+                    val protocol = outbound.optString("protocol")
+                    
+                    // 修复：只统计真正的代理协议流量
+                    // 排除：freedom（直连）、blackhole（屏蔽）
+                    if (tag.isNotEmpty() && protocol !in listOf("freedom", "blackhole")) {
+                        // 再次检查是否是fragment相关
+                        val settings = outbound.optJSONObject("settings")
+                        val hasFragment = settings?.has("fragment") == true
+                        
+                        if (!hasFragment) {
+                            // 只统计代理协议：vless、vmess、trojan、shadowsocks、socks、http
+                            if (protocol in listOf("vless", "vmess", "trojan", "shadowsocks", "socks", "http")) {
+                                outboundTags.add(tag)
+                                VpnFileLogger.d(TAG, "添加代理流量统计标签: $tag (protocol=$protocol)")
+                            }
+                        }
                     }
                 }
             }
             
-            // 如果没有找到任何标签，添加默认标签
+            // 如果没有找到任何代理标签，默认添加proxy
             if (outboundTags.isEmpty()) {
                 outboundTags.add("proxy")
-                outboundTags.add("direct")
-                outboundTags.add("block")
-                VpnFileLogger.w(TAG, "未找到outbound标签，使用默认标签")
+                VpnFileLogger.w(TAG, "未找到代理outbound标签，使用默认标签: proxy")
             }
             
-            VpnFileLogger.d(TAG, "流量统计将监控${outboundTags.size}个标签: $outboundTags")
+            VpnFileLogger.i(TAG, "流量统计将只监控代理流量，标签数: ${outboundTags.size}, 标签: $outboundTags")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "提取outbound标签失败", e)
             // 使用默认标签
             outboundTags.add("proxy")
-            outboundTags.add("direct")
         }
     }
     
@@ -452,6 +466,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     val statsOutboundUplink = system.optBoolean("statsOutboundUplink", false)
                     val statsOutboundDownlink = system.optBoolean("statsOutboundDownlink", false)
                     VpnFileLogger.d(TAG, "出站流量统计: 上行=$statsOutboundUplink, 下行=$statsOutboundDownlink")
+                    VpnFileLogger.d(TAG, "注意：只统计代理流量(proxy)，不统计直连(direct)和屏蔽(block)流量")
                 }
             }
             
@@ -1003,11 +1018,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 建立VPN隧道 - 与v2rayNG一致的版本
-     * VPN层只负责建立隧道和基本路由，具体的路由决策由V2Ray配置处理
+     * 建立VPN隧道 - 极简版本
+     * 所有路由决策完全交给V2Ray的routing规则处理
+     * VPN层只负责建立隧道，不做任何路由判断
      */
     private fun establishVpn() {
-        VpnFileLogger.d(TAG, "开始建立VPN隧道（与v2rayNG一致）")
+        VpnFileLogger.d(TAG, "开始建立VPN隧道（极简版 - 所有路由由V2Ray决定）")
         
         // 关闭旧接口
         mInterface?.let {
@@ -1028,7 +1044,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         builder.setSession(appName)
         builder.setMtu(VPN_MTU)
         
-        // IPv4地址（使用v2rayNG默认地址）
+        // IPv4地址（与v2rayNG保持一致）
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
         VpnFileLogger.d(TAG, "添加IPv4地址: $PRIVATE_VLAN4_CLIENT/30")
         
@@ -1042,23 +1058,30 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // ===== DNS配置（与v2rayNG一致） =====
+        // ===== DNS配置 =====
         VpnFileLogger.d(TAG, "===== 配置DNS =====")
         
         // 使用可靠的公共DNS
         try {
             builder.addDnsServer("1.1.1.1")  // Cloudflare主DNS
-            builder.addDnsServer("1.0.0.1")  // Cloudflare备DNS
-            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1, 1.0.0.1")
+            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1")
         } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "添加DNS失败", e)
+            VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
         }
         
-        // ===== 简化路由配置 =====
-        VpnFileLogger.d(TAG, "===== 配置路由（简化版） =====")
+        try {
+            builder.addDnsServer("1.0.0.1")  // Cloudflare备DNS
+            VpnFileLogger.d(TAG, "添加备用DNS: 1.0.0.1")
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "添加Cloudflare备用DNS失败", e)
+        }
         
-        // VPN层只建立隧道，所有路由决策由V2Ray的routing规则处理
-        // 不管globalProxy是true还是false，都由V2Ray配置决定具体路由
+        // ===== 极简路由配置 =====
+        VpnFileLogger.d(TAG, "===== 配置路由（极简版） =====")
+        
+        // 核心理念：VPN层只建立隧道，所有路由决策由V2Ray的routing规则处理
+        // 不管globalProxy是true还是false，dart端会生成相应的V2Ray配置
+        // 全局代理模式下，dart也应该配置V2Ray不代理局域网
         builder.addRoute("0.0.0.0", 0)  // IPv4全部流量进入VPN隧道
         VpnFileLogger.d(TAG, "添加IPv4全局路由: 0.0.0.0/0 (所有流量进入VPN，由V2Ray routing决定最终去向)")
         
@@ -1125,8 +1148,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修改：启动tun2socks进程 - 动态解析端口版本
-     * 从JSON配置中动态解析SOCKS端口，而不是硬编码
+     * 优化1: 启动tun2socks进程 - 添加缓冲区优化参数
+     * 修复：移除日志读取线程，只监控进程状态
      */
     private fun runTun2socks() {
         if (mode != ConnectionMode.VPN_TUN) {
@@ -1134,27 +1157,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 动态端口版 =====")
+        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 优化版 =====")
         
-        // 修改：从配置中动态解析SOCKS端口而不是硬编码
+        // 从配置中提取SOCKS端口
         val socksPort = try {
             val config = JSONObject(configJson)
             val inbounds = config.getJSONArray("inbounds")
-            var port = 10808  // v2rayNG默认值
-            
+            var port = DEFAULT_SOCKS_PORT
             for (i in 0 until inbounds.length()) {
                 val inbound = inbounds.getJSONObject(i)
-                // 查找SOCKS协议的inbound
-                if (inbound.optString("protocol") == "socks") {
-                    port = inbound.optInt("port", 10808)
-                    VpnFileLogger.d(TAG, "从配置中找到SOCKS端口: $port")
+                if (inbound.optString("tag") == "socks") {
+                    port = inbound.optInt("port", DEFAULT_SOCKS_PORT)
+                    VpnFileLogger.d(TAG, "找到SOCKS端口: $port")
                     break
                 }
             }
             port
         } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "解析SOCKS端口失败，使用v2rayNG默认端口: 10808", e)
-            10808  // v2rayNG的默认值
+            VpnFileLogger.w(TAG, "解析SOCKS端口失败，使用默认端口: $DEFAULT_SOCKS_PORT", e)
+            DEFAULT_SOCKS_PORT
         }
         
         // 构建命令行参数（与v2rayNG完全一致）
@@ -1162,7 +1183,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             File(applicationContext.applicationInfo.nativeLibraryDir, TUN2SOCKS).absolutePath,
             "--netif-ipaddr", PRIVATE_VLAN4_ROUTER,
             "--netif-netmask", "255.255.255.252",
-            "--socks-server-addr", "127.0.0.1:$socksPort",  // 修改：使用动态解析的端口
+            "--socks-server-addr", "127.0.0.1:$socksPort",
             "--tunmtu", VPN_MTU.toString(),
             "--sock-path", "sock_path",  // 相对路径，与v2rayNG一致
             "--enable-udprelay",
@@ -1170,7 +1191,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         )
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
-        VpnFileLogger.d(TAG, "使用SOCKS端口: $socksPort (从JSON配置动态解析)")
         
         try {
             val proBuilder = ProcessBuilder(cmd)
@@ -1214,7 +1234,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             Thread.sleep(500)  // 等待tun2socks准备就绪
             sendFd()
             
-            VpnFileLogger.d(TAG, "tun2socks进程启动完成（动态端口版）")
+            VpnFileLogger.d(TAG, "tun2socks进程启动完成（优化版）")
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动tun2socks失败", e)
@@ -1350,12 +1370,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     /**
      * 启动流量监控
      * 定期查询V2Ray核心的流量统计数据
-     * 修复：使用正确的outbound标签查询
+     * 重要：只统计代理流量（proxy），不统计直连（direct）和屏蔽（block）流量
+     * 因为用户关心的是消耗的VPN流量，而不是所有网络流量
      */
     private fun startSimpleTrafficMonitor() {
-        VpnFileLogger.d(TAG, "启动流量监控")
+        VpnFileLogger.d(TAG, "启动流量监控（只统计代理流量）")
         
         statsJob?.cancel()
+        
+        // 初始化累计流量
+        totalUploadBytes = 0
+        totalDownloadBytes = 0
         
         // 初始化系统流量统计基准值（备用方案）
         try {
@@ -1384,48 +1409,61 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复：真实的流量统计更新 - 使用正确的标签查询
-     * 使用libv2ray.aar的queryStats方法获取实际流量数据
+     * 修复：真实的流量统计更新 - 只统计代理流量
+     * 使用libv2ray.aar的queryStats方法获取实际代理流量数据
+     * 
+     * 重要说明：
+     * - 只统计proxy等代理标签的流量（用户实际消耗的VPN流量）
+     * - 不统计direct标签（直连国内网站，不消耗VPN流量）
+     * - 不统计block标签（广告屏蔽，本地拦截）
+     * - 不统计fragment相关标签（技术实现用途）
      */
     private fun updateSimpleTrafficStats() {
         try {
-            var totalUpload = 0L
-            var totalDownload = 0L
+            var newUpload = 0L
+            var newDownload = 0L
             
-            // 修复：遍历所有outbound标签查询流量
+            // 修复：只遍历代理outbound标签查询流量
             for (tag in outboundTags) {
-                // 查询上行流量 - 正确的参数格式
+                // 查询上行流量 - queryStats会返回自上次查询以来的增量并重置计数器
                 val uplink = coreController?.queryStats(tag, "uplink") ?: 0L
-                // 查询下行流量 - 正确的参数格式
+                // 查询下行流量 - queryStats会返回自上次查询以来的增量并重置计数器
                 val downlink = coreController?.queryStats(tag, "downlink") ?: 0L
                 
-                totalUpload += uplink
-                totalDownload += downlink
+                // 安全检查：忽略负值
+                if (uplink < 0 || downlink < 0) {
+                    VpnFileLogger.w(TAG, "异常流量值 [$tag]: ↑$uplink ↓$downlink")
+                    continue
+                }
+                
+                newUpload += uplink
+                newDownload += downlink
                 
                 if (uplink > 0 || downlink > 0) {
-                    VpnFileLogger.d(TAG, "标签[$tag] 流量: ↑${formatBytes(uplink)} ↓${formatBytes(downlink)}")
+                    VpnFileLogger.d(TAG, "代理标签[$tag] 新增流量: ↑${formatBytes(uplink)} ↓${formatBytes(downlink)}")
                 }
             }
+            
+            // 修复：累加到总流量（因为queryStats会重置计数器）
+            totalUploadBytes += newUpload
+            totalDownloadBytes += newDownload
             
             // 计算速度
             val currentTime = System.currentTimeMillis()
             val timeDiff = (currentTime - lastStatsTime) / 1000.0
             
             if (timeDiff > 0 && lastStatsTime > 0) {
-                val uploadDiff = totalUpload - lastUploadBytes
-                val downloadDiff = totalDownload - lastDownloadBytes
+                uploadSpeed = (newUpload / timeDiff).toLong()
+                downloadSpeed = (newDownload / timeDiff).toLong()
                 
-                if (uploadDiff >= 0 && downloadDiff >= 0) {
-                    uploadSpeed = (uploadDiff / timeDiff).toLong()
-                    downloadSpeed = (downloadDiff / timeDiff).toLong()
-                }
+                // 防止负数速度
+                if (uploadSpeed < 0) uploadSpeed = 0
+                if (downloadSpeed < 0) downloadSpeed = 0
             }
             
-            // 修复：更新流量值（这是关键修复点）
-            uploadBytes = totalUpload
-            downloadBytes = totalDownload
-            lastUploadBytes = totalUpload
-            lastDownloadBytes = totalDownload
+            // 修复：更新显示值为累计流量
+            uploadBytes = totalUploadBytes
+            downloadBytes = totalDownloadBytes
             lastStatsTime = currentTime
             
             // 更新通知栏显示（显示总流量）
@@ -1434,8 +1472,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             
             // 只在流量有变化时记录日志
-            if (totalUpload > 0 || totalDownload > 0) {
-                VpnFileLogger.d(TAG, "流量统计汇总: ↑${formatBytes(totalUpload)} ↓${formatBytes(totalDownload)}, " +
+            if (newUpload > 0 || newDownload > 0) {
+                VpnFileLogger.d(TAG, "代理流量更新 - 本次增量: ↑${formatBytes(newUpload)} ↓${formatBytes(newDownload)}, " +
+                        "累计代理流量: ↑${formatBytes(totalUploadBytes)} ↓${formatBytes(totalDownloadBytes)}, " +
                         "速度: ↑${formatBytes(uploadSpeed)}/s ↓${formatBytes(downloadSpeed)}/s")
             }
             
@@ -1477,40 +1516,26 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 获取当前流量统计（供dart端查询）
-     * 返回当前通知栏显示的实时流量数据
-     * 修复：确保能立即返回有效数据
+     * 返回当前的代理流量数据（不包含直连流量）
+     * 修复：返回累计流量而不是瞬时值
      */
     fun getCurrentTrafficStats(): Map<String, Long> {
         // 如果服务正在运行，尝试更新一次最新数据
         if (currentState == V2RayState.CONNECTED && coreController != null) {
             try {
-                // 修复：快速查询一次最新流量
-                var totalUpload = 0L
-                var totalDownload = 0L
-                
-                for (tag in outboundTags) {
-                    totalUpload += coreController?.queryStats(tag, "uplink") ?: 0L
-                    totalDownload += coreController?.queryStats(tag, "downlink") ?: 0L
-                }
-                
-                // 修复：立即更新值
-                if (totalUpload > 0 || totalDownload > 0) {
-                    uploadBytes = totalUpload
-                    downloadBytes = totalDownload
-                }
-                
-                VpnFileLogger.d(TAG, "实时查询流量: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
+                // 不执行查询，直接返回缓存值，避免重置计数器
+                VpnFileLogger.d(TAG, "返回缓存代理流量统计: ↑${formatBytes(uploadBytes)} ↓${formatBytes(downloadBytes)}")
             } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "实时查询流量失败，返回缓存数据", e)
+                VpnFileLogger.w(TAG, "获取流量统计异常，返回缓存数据", e)
             }
         }
         
         return mapOf(
-            "uploadTotal" to uploadBytes,
-            "downloadTotal" to downloadBytes,
-            "uploadSpeed" to uploadSpeed,
-            "downloadSpeed" to downloadSpeed,
-            "startTime" to startTime  // 添加启动时间，供计算连接时长
+            "uploadTotal" to uploadBytes,      // 累计代理上传流量
+            "downloadTotal" to downloadBytes,  // 累计代理下载流量
+            "uploadSpeed" to uploadSpeed,      // 当前上传速度
+            "downloadSpeed" to downloadSpeed,  // 当前下载速度
+            "startTime" to startTime           // 连接开始时间
         )
     }
     
