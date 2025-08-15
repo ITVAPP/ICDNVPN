@@ -228,7 +228,6 @@ class AppLocalizations {
   
   // 简化后的注册表修改提示（修改）
   String get systemProxySettings => _get('systemProxySettings');
-  String get systemProxySettingsError => _get('systemProxySettingsError');
   
   // 国家/地区名称
   String get countryChina => _get('countryChina');
