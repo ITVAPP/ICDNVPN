@@ -58,13 +58,12 @@ HBITMAP IconToBitmap(HICON hIcon, int size = 16) {
     return hBitmap;
 }
 
-// 窗口圆角选项（Windows 11）
-enum DWM_WINDOW_CORNER_PREFERENCE {
-    DWMWCP_DEFAULT = 0,
-    DWMWCP_DONOTROUND = 1,
-    DWMWCP_ROUND = 2,
-    DWMWCP_ROUNDSMALL = 3
-};
+// 窗口圆角选项值（Windows 11）
+// 使用直接的常量值而不是枚举，避免名称冲突
+constexpr int CORNER_PREF_DEFAULT = 0;
+constexpr int CORNER_PREF_DONOTROUND = 1;
+constexpr int CORNER_PREF_ROUND = 2;
+constexpr int CORNER_PREF_ROUNDSMALL = 3;
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
@@ -333,8 +332,8 @@ void Win32Window::ApplyRoundedCorners(HWND hwnd, int width, int height) {
         }
         
         if (pSetWindowAttribute) {
-            // 尝试设置Windows 11圆角
-            auto corner_preference = DWMWCP_ROUND;
+            // 尝试设置Windows 11圆角，使用直接的数值而不是枚举名称
+            int corner_preference = CORNER_PREF_ROUND;  // 使用常量值2
             HRESULT hr = pSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
                                            &corner_preference, sizeof(corner_preference));
             
