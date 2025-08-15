@@ -293,7 +293,7 @@ class V2RayService {
     _updateStatus(_currentStatus.copyWith(state: newState));
   }
   
-  // 启动移动端状态定时器
+  // 启动移动端状态定时器 - 修复：使用AppConfig.trafficStatsInterval
   static void _startMobileStatusTimer() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     
@@ -302,8 +302,8 @@ class V2RayService {
     // 立即更新一次
     _updateMobileStatus();
     
-    // 定期更新状态
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    // 定期更新状态 - 修复：使用AppConfig的配置而不是硬编码
+    _statusCheckTimer = Timer.periodic(AppConfig.trafficStatsInterval, (_) {
       if (_isRunning) {
         _updateMobileStatus();
       }
@@ -1000,7 +1000,7 @@ class V2RayService {
     }
   }
   
-  // 桌面平台启动逻辑（Windows）
+  // 桌面平台启动逻辑（Windows） - 修复：不设置connected状态
   static Future<bool> _startDesktopPlatform({
     required String serverIp,
     required int serverPort,
@@ -1079,7 +1079,9 @@ class V2RayService {
       _lastUploadBytes = 0;
       _lastDownloadBytes = 0;
       
-      _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+      // 修复：保持connecting状态，不设置为connected
+      // 让ConnectionProvider在设置系统代理后再更新为connected
+      // _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));  // 删除这行
       _startStatsTimer();
       _startDurationTimer();
       

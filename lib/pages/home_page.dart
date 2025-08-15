@@ -88,7 +88,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
       final serverProvider = Provider.of<ServerProvider>(context, listen: false);
       
-      // 删除：不再在这里设置国际化文字，已移到 MainScreen 的 didChangeDependencies
+      // 新增：设置对话框上下文，供Windows平台显示注册表修改提示
+      connectionProvider.setDialogContext(context);
       
       connectionProvider.addListener(_onConnectionChanged);
       serverProvider.addListener(_onServerListChanged);
@@ -324,6 +325,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           top: false,
           child: Consumer2<ConnectionProvider, ServerProvider>(
             builder: (context, connectionProvider, serverProvider, child) {
+              // 重要：每次重建时更新对话框上下文
+              connectionProvider.setDialogContext(context);
+              
               final isConnected = connectionProvider.isConnected;
               final currentServer = connectionProvider.currentServer;
               

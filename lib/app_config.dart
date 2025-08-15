@@ -25,7 +25,7 @@ class AppConfig {
   // ===== V2Ray服务配置 =====
   static const Duration v2rayStartupWait = Duration(seconds: 3); // V2Ray启动后等待时间
   static const Duration v2rayCheckDelay = Duration(seconds: 2); // V2Ray状态检查延迟
-  static const Duration portCheckTimeout = Duration(seconds: 1); // 端口检查超时时间
+  static const Duration portCheckTimeout = Duration(seconds: 2); // 端口检查超时时间
   static const int v2rayTerminateRetries = 6; // V2Ray进程终止重试次数
   static const Duration v2rayTerminateInterval = Duration(milliseconds: 500); // 终止重试间隔
   
@@ -127,7 +127,7 @@ class AppConfig {
   
   // ===== 服务器管理配置 =====
   static const int autoSelectLatencyThreshold = 200; // 自动选择服务器的延迟阈值(ms)
-  static const int autoSelectRangeThreshold = 30; // 自动选择服务器的延迟范围(ms)
+  static const int autoSelectRangeThreshold = 50; // 自动选择服务器的延迟范围(ms)
   static const int goodNodeLatencyThreshold = 300; // 优质节点延迟阈值(ms)
   static const double goodNodeLossRateThreshold = 0.1; // 优质节点丢包率阈值(10%)
   static const int earlyStopGoodNodeCount = 10; // 提前结束测试的优质节点数量

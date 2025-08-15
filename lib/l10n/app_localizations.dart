@@ -226,6 +226,10 @@ class AppLocalizations {
   String get notificationChannelDesc => _get('notificationChannelDesc');
   String get trafficStats => _get('trafficStats');
   
+  // 简化后的注册表修改提示（修改）
+  String get systemProxySettings => _get('systemProxySettings');
+  String get systemProxySettingsError => _get('systemProxySettingsError');
+  
   // 国家/地区名称
   String get countryChina => _get('countryChina');
   String get countryHongKong => _get('countryHongKong');
@@ -367,6 +371,12 @@ class AppLocalizations {
   String newVersionFormat(String version) {
     final template = _get('newVersion');
     return template.replaceAll('%s', version);
+  }
+  
+  // 修改：新的注册表错误提示方法
+  String systemProxySettingsError(String appName) {
+    final template = _get('systemProxySettingsError');
+    return template.replaceAll('%appName', appName);
   }
 }
 
@@ -618,6 +628,10 @@ const Map<String, String> _zhCnTranslations = {
   'notificationChannelDesc': 'VPN连接状态通知',
   'trafficStats': '流量: ↑%upload ↓%download',  // 修复：使用正确的占位符
   
+  // 简化后的注册表修改提示（修改）
+  'systemProxySettings': '系统代理设置',
+  'systemProxySettingsError': '启用系统代理功能需要修改注册表，当前设置系统代理功能失败，可能是你的安全软件阻止了操作，请在安全软件中信任 %appName',
+  
   // 国家/地区名称
   'countryChina': '中国',
   'countryHongKong': '香港',
@@ -688,29 +702,51 @@ const Map<String, String> _zhCnTranslations = {
 // 英语翻译
 const Map<String, String> _enTranslations = {
   'home': 'Home',
+  'servers': 'Servers',
+  'settings': 'Settings',
+  'disconnect': 'Disconnect',
+  'connected': 'Connected',
+  'disconnected': 'Disconnected',
+  'connecting': 'Connecting...',
+  'disconnecting': 'Disconnecting...',
+  'close': 'Close',
+  'cancel': 'Cancel',
+  'ok': 'OK',
+  'systemProxySettings': 'System Proxy Settings',
+  'systemProxySettingsError': 'Failed to set system proxy. Registry modification is required but was blocked. Please trust %appName in your security software.',
   // 其他英语翻译待完善
 };
 
 // 繁体中文
 const Map<String, String> _zhTwTranslations = {
   'home': '首頁',
+  'servers': '伺服器',
+  'settings': '設定',
+  'systemProxySettings': '系統代理設定',
+  'systemProxySettingsError': '啟用系統代理功能需要修改登錄檔，當前設定系統代理功能失敗，可能是你的安全軟體阻止了操作，請在安全軟體中信任 %appName',
   // 其他繁体中文翻译待完善
 };
 
 // 西班牙语
 const Map<String, String> _esTranslations = {
   'home': 'Inicio',
+  'systemProxySettings': 'Configuración del proxy del sistema',
+  'systemProxySettingsError': 'Error al configurar el proxy del sistema. Se requiere modificación del registro pero fue bloqueada. Por favor confíe en %appName en su software de seguridad.',
   // 其他西班牙语翻译待完善
 };
 
 // 俄语
 const Map<String, String> _ruTranslations = {
   'home': 'Главная',
+  'systemProxySettings': 'Настройки системного прокси',
+  'systemProxySettingsError': 'Не удалось настроить системный прокси. Требуется изменение реестра, но оно было заблокировано. Пожалуйста, доверьте %appName в вашем антивирусе.',
   // 其他俄语翻译待完善
 };
 
 // 阿拉伯语
 const Map<String, String> _arTranslations = {
   'home': 'الرئيسية',
+  'systemProxySettings': 'إعدادات الوكيل النظام',
+  'systemProxySettingsError': 'فشل تعيين وكيل النظام. مطلوب تعديل السجل ولكن تم حظره. يرجى الوثوق بـ %appName في برنامج الأمان الخاص بك.',
   // 其他阿拉伯语翻译待完善
 };

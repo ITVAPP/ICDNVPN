@@ -12,7 +12,7 @@ import '../models/server_model.dart';
 import '../services/v2ray_service.dart';
 import '../services/proxy_service.dart';
 import '../services/cloudflare_test_service.dart';
-import '../services/version_service.dart';  // 导入版本服务，使用其中的VersionInfo类
+import '../services/version_service.dart';  // 导入版本服务，使用其中的 VersionInfo类
 import '../utils/log_service.dart';  // 导入日志服务
 import '../app_config.dart';
 import '../l10n/app_localizations.dart';  // 添加国际化导入
@@ -34,11 +34,14 @@ class ConnectionProvider with ChangeNotifier {
   // 新增：存储国际化文字
   Map<String, String>? _localizedStrings;
   
+  // 新增：存储BuildContext用于显示对话框
+  BuildContext? _dialogContext;
+  
   bool get isConnected => _isConnected;
   ServerModel? get currentServer => _currentServer;
   bool get autoConnect => _autoConnect;
-  DateTime? get connectStartTime => _connectStartTime; // 添加getter
-  String? get disconnectReason => _disconnectReason; // 添加getter
+  DateTime? get connectStartTime => _connectStartTime; // 添加 getter
+  String? get disconnectReason => _disconnectReason; // 添加 getter
   bool get globalProxy => _globalProxy;  // 修改：getter名称
   
   ConnectionProvider() {
@@ -73,6 +76,11 @@ class ConnectionProvider with ChangeNotifier {
       'disconnectButtonName': l10n.disconnect,
       'trafficStatsFormat': l10n.trafficStats,
     };
+  }
+  
+  // 新增：设置对话框上下文
+  void setDialogContext(BuildContext context) {
+    _dialogContext = context;
   }
   
   // 处理V2Ray进程意外退出
@@ -123,7 +131,8 @@ class ConnectionProvider with ChangeNotifier {
         try {
           final List<dynamic> decoded = jsonDecode(serversJson);
           if (decoded.isNotEmpty) {
-            await connect();
+            // 自动连接时不需要显示对话框，直接连接
+            await _connectWithoutDialog();
           } else {
             await _log.info('自动连接失败：没有可用的服务器', tag: _logTag);
           }
@@ -206,7 +215,65 @@ class ConnectionProvider with ChangeNotifier {
     return bestServer;
   }
   
+  // 修改：Windows平台的注册表修改失败提示对话框
+  Future<void> _showRegistryErrorDialog(String error) async {
+    if (!Platform.isWindows || _dialogContext == null) return;
+    
+    final l10n = AppLocalizations.of(_dialogContext!);
+    
+    await showDialog(
+      context: _dialogContext!,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red),
+            SizedBox(width: 8),
+            Text(l10n.systemProxySettings),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.systemProxySettingsError(AppConfig.appName)),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Text(
+                error,
+                style: TextStyle(fontSize: 12, color: Colors.red[700]),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l10n.close),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // 新增：内部连接方法（不显示对话框）
+  Future<void> _connectWithoutDialog() async {
+    await _connectInternal();
+  }
+  
+  // 修改：原connect方法改为调用内部方法
   Future<void> connect() async {
+    await _connectInternal();
+  }
+  
+  // 修改：内部连接实现（移除showWarning参数，因为不再需要预警对话框）
+  Future<void> _connectInternal() async {
     if (_isDisposed) return;
     
     // 清除之前的断开原因
@@ -263,6 +330,7 @@ class ConnectionProvider with ChangeNotifier {
     
     if (serverToConnect != null) {
       try {
+        // 启动V2Ray服务
         final success = await V2RayService.start(
           serverIp: serverToConnect.ip,
           serverPort: serverToConnect.port,
@@ -276,21 +344,44 @@ class ConnectionProvider with ChangeNotifier {
             if (Platform.isWindows) {
               await _log.info('Windows平台：启用系统代理', tag: _logTag);
               await ProxyService.enableSystemProxy();
+              
+              // Windows平台：系统代理设置完成后才更新为已连接
+              _isConnected = true;
+              _connectStartTime = DateTime.now(); // 记录连接开始时间
+              if (!_isDisposed) {
+                notifyListeners();
+              }
             } else {
+              // 移动平台：V2Ray启动成功即为已连接（V2RayService内部已更新状态）
+              _isConnected = true;
+              _connectStartTime = DateTime.now(); // 记录连接开始时间
+              if (!_isDisposed) {
+                notifyListeners();
+              }
               await _log.info('非Windows平台：跳过系统代理设置（使用VPN模式）', tag: _logTag);
             }
             // ==============================================================
             
-            _isConnected = true;
-            _connectStartTime = DateTime.now(); // 记录连接开始时间
-            if (!_isDisposed) {
-              notifyListeners();
-            }
           } catch (e) {
             // 如果系统代理设置失败，停止V2Ray
-            await _log.error('系统代理设置失败，停止V2Ray', tag: _logTag, error: e);
+            await _log.error('系统代理设置失败', tag: _logTag, error: e);
             await V2RayService.stop();
-            rethrow;
+            
+            // Windows平台显示错误提示对话框
+            if (Platform.isWindows && _dialogContext != null) {
+              // 显示详细的错误对话框，不再重新抛出异常避免重复提示
+              await _showRegistryErrorDialog(e.toString());
+              // 确保状态一致性
+              _isConnected = false;
+              _connectStartTime = null;
+              if (!_isDisposed) {
+                notifyListeners();
+              }
+              return;  // 直接返回，不再抛出异常
+            }
+            
+            // 非Windows平台或没有对话框上下文时，继续抛出异常
+            throw e;
           }
         } else {
           throw Exception('Failed to start V2Ray service');
