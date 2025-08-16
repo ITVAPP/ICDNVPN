@@ -47,11 +47,12 @@ class MainActivity: FlutterActivity() {
     // 保存待处理的VPN启动请求（增加国际化文字参数）
     private data class PendingVpnRequest(
         val config: String,
-        val mode: String,
         val globalProxy: Boolean,
         val allowedApps: List<String>?,
         val bypassSubnets: List<String>?,
         val localizedStrings: Map<String, String>,  // 新增：国际化文字
+        val enableVirtualDns: Boolean,  // 新增：虚拟DNS开关
+        val virtualDnsPort: Int,  // 新增：虚拟DNS端口
         val result: MethodChannel.Result
     )
     private var pendingRequest: PendingVpnRequest? = null
@@ -130,12 +131,15 @@ class MainActivity: FlutterActivity() {
                     
                     // 启动VPN（增强版：支持国际化文字）
                     val config = call.argument<String>("config")
-                    val mode = call.argument<String>("mode") ?: "VPN_TUN"
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
                     
                     // 简化：只接收Dart端实际传递的参数
                     val allowedApps = call.argument<List<String>>("allowedApps")
                     val bypassSubnets = call.argument<List<String>>("bypassSubnets")
+                    
+                    // 新增：提取虚拟DNS配置
+                    val enableVirtualDns = call.argument<Boolean>("enableVirtualDns") ?: false
+                    val virtualDnsPort = call.argument<Int>("virtualDnsPort") ?: 10853
                     
                     // 新增：接收国际化文字
                     val localizedStrings = mutableMapOf<String, String>()
@@ -158,7 +162,7 @@ class MainActivity: FlutterActivity() {
                             }
                         }
                         
-                        startVpn(config, mode, globalProxy, allowedApps, bypassSubnets, localizedStrings, result)
+                        startVpn(config, globalProxy, allowedApps, bypassSubnets, localizedStrings, enableVirtualDns, virtualDnsPort, result)
                     } else {
                         result.error("INVALID_CONFIG", "配置为空", null)
                     }
@@ -270,11 +274,10 @@ class MainActivity: FlutterActivity() {
                 "saveAutoStartConfig" -> {
                     // 保存自启动配置
                     val config = call.argument<String>("config")
-                    val mode = call.argument<String>("mode") ?: "VPN_TUN"
                     val globalProxy = call.argument<Boolean>("globalProxy") ?: false
                     
                     if (config != null) {
-                        AutoStartManager.saveAutoStartConfig(this, config, mode, globalProxy)
+                        AutoStartManager.saveAutoStartConfig(this, config, "VPN_TUN", globalProxy)
                         result.success(true)
                     } else {
                         result.error("INVALID_CONFIG", "配置为空", null)
@@ -327,11 +330,12 @@ class MainActivity: FlutterActivity() {
      */
     private fun startVpn(
         config: String,
-        mode: String,
         globalProxy: Boolean,
         allowedApps: List<String>?,
         bypassSubnets: List<String>?,
         localizedStrings: Map<String, String>,  // 新增：国际化文字
+        enableVirtualDns: Boolean,  // 新增：虚拟DNS开关
+        virtualDnsPort: Int,  // 新增：虚拟DNS端口
         result: MethodChannel.Result
     ) {
         mainScope.launch {
@@ -347,55 +351,17 @@ class MainActivity: FlutterActivity() {
                     delay(500)
                 }
                 
-                // PROXY_ONLY模式不需要VPN权限
-                if (mode == "PROXY_ONLY") {
-                    VpnFileLogger.d(TAG, "仅代理模式，无需VPN权限")
-                    
-                    // 修复：使用同步锁保护设置pendingStartResult
-                    synchronized(pendingResultLock) {
-                        pendingStartResult = result
-                        
-                        // 设置超时保护
-                        startTimeoutJob = mainScope.launch {
-                            delay(VPN_START_TIMEOUT)
-                            synchronized(pendingResultLock) {
-                                pendingStartResult?.let {
-                                    VpnFileLogger.e(TAG, "VPN启动超时")
-                                    it.error("TIMEOUT", "VPN启动超时", null)
-                                    pendingStartResult = null
-                                }
-                            }
-                        }
-                    }
-                    
-                    // 启动服务（传递国际化文字）
-                    V2RayVpnService.startVpnService(
-                        this@MainActivity,
-                        config,
-                        V2RayVpnService.ConnectionMode.PROXY_ONLY,
-                        globalProxy,
-                        null,  // blockedApps始终为null（简化）
-                        allowedApps,
-                        V2RayVpnService.Companion.AppProxyMode.EXCLUDE,  // appProxyMode使用固定值（简化）
-                        bypassSubnets,
-                        true,  // enableAutoStats
-                        localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                        localizedStrings  // 传递国际化文字
-                    )
-                    
-                    // 等待Service通过广播返回结果
-                    return@launch
-                }
-                
                 // VPN_TUN模式需要VPN权限
                 val intent = VpnService.prepare(this@MainActivity)
                 if (intent != null) {
                     VpnFileLogger.d(TAG, "需要请求VPN权限")
                     
                     pendingRequest = PendingVpnRequest(
-                        config, mode, globalProxy, 
+                        config, globalProxy, 
                         allowedApps, bypassSubnets, 
                         localizedStrings,  // 保存国际化文字
+                        enableVirtualDns,  // 保存虚拟DNS开关
+                        virtualDnsPort,  // 保存虚拟DNS端口
                         result
                     )
                     
@@ -426,11 +392,10 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     
-                    // 启动服务（传递国际化文字）
+                    // 启动服务（传递虚拟DNS配置）
                     V2RayVpnService.startVpnService(
                         this@MainActivity,
                         config,
-                        V2RayVpnService.ConnectionMode.valueOf(mode),
                         globalProxy,
                         null,  // blockedApps始终为null（简化）
                         allowedApps,
@@ -438,7 +403,9 @@ class MainActivity: FlutterActivity() {
                         bypassSubnets,
                         true,  // enableAutoStats
                         localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                        localizedStrings  // 传递国际化文字
+                        localizedStrings,  // 传递国际化文字
+                        enableVirtualDns,  // 传递虚拟DNS开关
+                        virtualDnsPort  // 传递虚拟DNS端口
                     )
                     
                     // 等待Service通过广播返回结果
@@ -631,11 +598,10 @@ class MainActivity: FlutterActivity() {
                                 }
                             }
                             
-                            // 启动服务（传递国际化文字）
+                            // 启动服务（传递虚拟DNS配置）
                             V2RayVpnService.startVpnService(
                                 this@MainActivity,
                                 request.config,
-                                V2RayVpnService.ConnectionMode.valueOf(request.mode),
                                 request.globalProxy,
                                 null,  // blockedApps始终为null（简化）
                                 request.allowedApps,
@@ -643,7 +609,9 @@ class MainActivity: FlutterActivity() {
                                 request.bypassSubnets,
                                 true,  // enableAutoStats
                                 request.localizedStrings["disconnectButtonName"] ?: "Disconnect",
-                                request.localizedStrings  // 传递国际化文字
+                                request.localizedStrings,  // 传递国际化文字
+                                request.enableVirtualDns,  // 传递虚拟DNS开关
+                                request.virtualDnsPort  // 传递虚拟DNS端口
                             )
                             
                             // 等待Service通过广播返回结果
