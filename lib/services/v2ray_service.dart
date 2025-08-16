@@ -430,12 +430,53 @@ class V2RayService {
     }
   }
   
-  // 加载配置模板 - 统一使用一个配置文件
+  // 清理JSON注释（修复关键函数）
+  static String _removeJsonComments(String jsonString) {
+    // 保存字符串内的内容，避免误删
+    final stringPattern = RegExp(r'"(?:[^"\\]|\\.)*"');
+    final strings = <String>[];
+    var placeholder = '__STRING_PLACEHOLDER_';
+    var index = 0;
+    
+    // 替换所有字符串为占位符
+    String processed = jsonString.replaceAllMapped(stringPattern, (match) {
+      final key = '$placeholder${index++}__';
+      strings.add(match.group(0)!);
+      return key;
+    });
+    
+    // 移除单行注释
+    processed = processed.replaceAll(RegExp(r'//[^\n\r]*'), '');
+    
+    // 移除多行注释
+    processed = processed.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+    
+    // 恢复字符串
+    for (var i = 0; i < strings.length; i++) {
+      processed = processed.replaceFirst('$placeholder${i}__', strings[i]);
+    }
+    
+    // 移除尾部逗号（JSON标准不允许）
+    processed = processed.replaceAllMapped(
+      RegExp(r',(\s*[}\]])'),
+      (match) => match.group(1)!,
+    );
+    
+    return processed;
+  }
+  
+  // 加载配置模板 - 修复：添加注释清理
   static Future<Map<String, dynamic>> _loadConfigTemplate() async {
     try {
       await _log.info('加载配置文件: $CONFIG_PATH', tag: _logTag);
       
-      final String jsonString = await rootBundle.loadString(CONFIG_PATH);
+      // 读取原始文件内容
+      String jsonString = await rootBundle.loadString(CONFIG_PATH);
+      
+      // 关键修复：清理JSON注释
+      jsonString = _removeJsonComments(jsonString);
+      
+      // 解析清理后的JSON
       final config = jsonDecode(jsonString);
       
       return config;
