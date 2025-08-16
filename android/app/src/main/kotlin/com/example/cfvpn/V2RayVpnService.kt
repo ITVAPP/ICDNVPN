@@ -92,7 +92,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 流量统计配置
         // 优化4: 流量统计优化 - 减少查询频率
-        private const val STATS_UPDATE_INTERVAL = 3000L  // 修改为3秒，与v2rayNG一致
+        private const val STATS_UPDATE_INTERVAL = 5000L  // 修改为3秒，与v2rayNG一致
         
         // tun2socks重启限制
         private const val MAX_TUN2SOCKS_RESTART_COUNT = 3
@@ -102,7 +102,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val TUN2SOCKS = "libtun2socks.so"
         
         // 连接检查间隔
-        // 优化3: 连接保持优化 - 调整检查间隔为60秒
         private const val CONNECTION_CHECK_INTERVAL = 30000L 
         
         // 服务状态
@@ -235,6 +234,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var allowedApps: List<String> = emptyList()  // 简化：只保留允许列表
     private var bypassSubnets: List<String> = emptyList()
     private var enableAutoStats: Boolean = true
+    
+    // SOCKS端口（从配置中提取）- 修复：添加成员变量
+    private var socksPort: Int = DEFAULT_SOCKS_PORT
     
     // 实例级的国际化文字存储
     private val instanceLocalizedStrings = mutableMapOf<String, String>()
@@ -1200,8 +1202,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 优化版 =====")
         
-        // 从配置中提取SOCKS端口
-        val socksPort = try {
+        // 从配置中提取SOCKS端口 - 修复：赋值给成员变量
+        socksPort = try {
             val config = JSONObject(configJson)
             val inbounds = config.getJSONArray("inbounds")
             var port = DEFAULT_SOCKS_PORT
@@ -1345,90 +1347,83 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 修复3：验证tun2socks是否正确转发流量
+     * 修复：移除广播调用，只记录日志
      */
-private fun verifyTun2socksForwarding() {
-    VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 =====")
-    Thread {
-        // 测试SOCKS5连接
-        try {
-            val socket = Socket()
-            socket.connect(InetSocketAddress("127.0.0.1", socksPort), 2000)
-            socket.close()
-            VpnFileLogger.i(TAG, "✓ SOCKS5端口 $socksPort 连接正常")
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "✗ SOCKS5端口 $socksPort 无法连接: ${e.message}")
-            sendVerifyResultBroadcast(false, "SOCKS5端口连接失败: ${e.message}")
-            return@Thread
-        }
-
-        // 测试DNS解析，优先使用IPv4
-        try {
-            val testDomain = "www.google.com"
-            val addresses = InetAddress.getAllByName(testDomain)
-            addresses.forEach { addr ->
-                VpnFileLogger.d(TAG, "DNS解析结果: $testDomain -> ${addr.hostAddress} (${if (addr is java.net.Inet4Address) "IPv4" else "IPv6"})")
-            }
-            val addr = addresses.firstOrNull { it is java.net.Inet4Address }
-            if (addr != null) {
-                VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
-            } else {
-                VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到 IPv4 地址")
-                // 尝试备用域名
-                val fallbackDomain = "example.com"
-                try {
-                    val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
-                    fallbackAddresses.forEach { addr ->
-                        VpnFileLogger.d(TAG, "DNS解析结果(备用): $fallbackDomain -> ${addr.hostAddress} (${if (addr is java.net.Inet4Address) "IPv4" else "IPv6"})")
-                    }
-                    val fallbackAddr = fallbackAddresses.firstOrNull { it is java.net.Inet4Address }
-                    if (fallbackAddr != null) {
-                        VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
-                    } else {
-                        VpnFileLogger.w(TAG, "✗ DNS解析失败(备用): 未找到 IPv4 地址")
-                        sendVerifyResultBroadcast(false, "DNS解析失败: 未找到 IPv4 地址")
-                        return@Thread
-                    }
-                } catch (e: Exception) {
-                    VpnFileLogger.w(TAG, "✗ DNS解析失败(备用): ${e.message}")
-                    sendVerifyResultBroadcast(false, "DNS解析失败: ${e.message}")
-                    return@Thread
-                }
-            }
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "✗ DNS解析失败: ${e.message}")
-            sendVerifyResultBroadcast(false, "DNS解析失败: ${e.message}")
-            return@Thread
-        }
-
-        // 测试HTTP连接，使用SOCKS代理
-        try {
-            val socksPort = this.socksPort // 使用从配置中提取的SOCKS端口
-            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
-            val testUrl = URL("http://www.google.com/generate_204") // 使用专为测试设计的端点
-            val connection = testUrl.openConnection(proxy) as HttpURLConnection
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.instanceFollowRedirects = false
-            connection.setRequestProperty("User-Agent", "V2Ray-Test")
-            val responseCode = connection.responseCode
-            if (responseCode == 204 || responseCode == 200) {
-                VpnFileLogger.i(TAG, "✓ HTTP连接测试成功，响应码: $responseCode")
-            } else {
-                VpnFileLogger.w(TAG, "✗ HTTP连接测试异常，响应码: $responseCode")
-                sendVerifyResultBroadcast(false, "HTTP连接测试异常，响应码: $responseCode")
+    private fun verifyTun2socksForwarding() {
+        VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 =====")
+        Thread {
+            // 测试SOCKS5连接
+            try {
+                val socket = Socket()
+                socket.connect(InetSocketAddress("127.0.0.1", socksPort), 2000)
+                socket.close()
+                VpnFileLogger.i(TAG, "✓ SOCKS5端口 $socksPort 连接正常")
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "✗ SOCKS5端口 $socksPort 无法连接: ${e.message}")
                 return@Thread
             }
-            connection.disconnect()
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "✗ HTTP连接测试失败: ${e.message}")
-            sendVerifyResultBroadcast(false, "HTTP连接测试失败: ${e.message}")
-            return@Thread
-        }
 
-        VpnFileLogger.d(TAG, "===== tun2socks转发验证完成 =====")
-        sendVerifyResultBroadcast(true, "tun2socks转发验证通过")
-    }.start()
-}
+            // 测试DNS解析，优先使用IPv4
+            try {
+                val testDomain = "www.google.com"
+                val addresses = InetAddress.getAllByName(testDomain)
+                addresses.forEach { addr ->
+                    VpnFileLogger.d(TAG, "DNS解析结果: $testDomain -> ${addr.hostAddress} (${if (addr is java.net.Inet4Address) "IPv4" else "IPv6"})")
+                }
+                val addr = addresses.firstOrNull { it is java.net.Inet4Address }
+                if (addr != null) {
+                    VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
+                } else {
+                    VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到 IPv4 地址")
+                    // 尝试备用域名
+                    val fallbackDomain = "example.com"
+                    try {
+                        val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
+                        fallbackAddresses.forEach { fallbackAddr ->
+                            VpnFileLogger.d(TAG, "DNS解析结果(备用): $fallbackDomain -> ${fallbackAddr.hostAddress} (${if (fallbackAddr is java.net.Inet4Address) "IPv4" else "IPv6"})")
+                        }
+                        val fallbackAddr = fallbackAddresses.firstOrNull { it is java.net.Inet4Address }
+                        if (fallbackAddr != null) {
+                            VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                        } else {
+                            VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): 未找到 IPv4 地址")
+                            return@Thread
+                        }
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): ${e.message}")
+                        return@Thread
+                    }
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "✗ DNS解析失败: ${e.message}")
+                return@Thread
+            }
+
+            // 测试HTTP连接，使用SOCKS代理
+            try {
+                val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
+                val testUrl = URL("http://www.google.com/generate_204") // 使用专为测试设计的端点
+                val connection = testUrl.openConnection(proxy) as HttpURLConnection
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.instanceFollowRedirects = false
+                connection.setRequestProperty("User-Agent", "V2Ray-Test")
+                val responseCode = connection.responseCode
+                if (responseCode == 204 || responseCode == 200) {
+                    VpnFileLogger.i(TAG, "✓ HTTP连接测试成功，响应码: $responseCode")
+                } else {
+                    VpnFileLogger.w(TAG, "✗ HTTP连接测试异常，响应码: $responseCode")
+                    return@Thread
+                }
+                connection.disconnect()
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "✗ HTTP连接测试失败: ${e.message}")
+                return@Thread
+            }
+
+            VpnFileLogger.i(TAG, "===== tun2socks转发验证完成 - 全部测试通过 =====")
+        }.start()
+    }
     
     /**
      * 检查是否应该重启tun2socks
