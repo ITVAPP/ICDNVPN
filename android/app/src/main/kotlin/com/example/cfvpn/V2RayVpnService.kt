@@ -1098,8 +1098,26 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
         VpnFileLogger.d(TAG, "添加IPv4地址: $PRIVATE_VLAN4_CLIENT/30")
         
+        // IPv6地址(可选)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                builder.addAddress(PRIVATE_VLAN6_CLIENT, 126)
+                VpnFileLogger.d(TAG, "添加IPv6地址: $PRIVATE_VLAN6_CLIENT/126")
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "添加IPv6地址失败", e)
+            }
+        }
+        
         // ===== DNS配置 =====
         VpnFileLogger.d(TAG, "===== 配置DNS =====")
+        
+        // 使用可靠的公共DNS
+        try {
+            builder.addDnsServer("1.1.1.1")  // Cloudflare主DNS
+            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1")
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
+        }
         
         // ===== 极简路由配置 =====
         VpnFileLogger.d(TAG, "===== 配置路由（极简版） =====")
