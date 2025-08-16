@@ -17,10 +17,10 @@
   "policy": {
     "levels": {
       "0": {  // 用户级别0的策略
-        "handshake": 3,        // 握手超时时间（秒）
+        "handshake": 5,        // 握手超时时间（秒）
         "connIdle": 300,       // 连接空闲超时时间（秒）
-        "uplinkOnly": 1,       // 仅上行连接超时时间（秒）
-        "downlinkOnly": 2,     // 仅下行连接超时时间（秒）
+        "uplinkOnly": 2,       // 仅上行连接超时时间（秒）
+        "downlinkOnly": 3,     // 仅下行连接超时时间（秒）
         "statsUserUplink": true,   // 启用用户上行流量统计
         "statsUserDownlink": true, // 启用用户下行流量统计
         "bufferSize": 512      // 缓冲区大小（KB）
@@ -43,6 +43,14 @@
         "type": "field",
         "inboundTag": ["api"],     // 来自API入站的流量
         "outboundTag": "api"       // 路由到API出站
+      },
+        // 特定DNS服务器通过代理
+      {
+        "type": "field",
+        "outboundTag": "proxy",
+        "ip": ["1.1.1.1", "8.8.8.8"],
+        "port": "53",
+        "network": "udp"
       },
       {
         // 阻止UDP 443端口（通常用于QUIC）
@@ -223,8 +231,8 @@
       "settings": {
         "fragment": {            // 数据包分片设置
           "packets": "tlshello", // 对TLS握手包进行分片
-          "length": "100-200",   // 分片长度范围
-          "interval": "10-20"    // 分片间隔（毫秒）
+          "length": "200-300",   // 分片长度范围
+          "interval": "20-50"    // 分片间隔（毫秒）
         }
       }
     }
