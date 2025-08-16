@@ -69,7 +69,7 @@
         "vnext": [
           {
             "address": "SERVER_IP",
-            "port": 443,
+            "port": 80,
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
