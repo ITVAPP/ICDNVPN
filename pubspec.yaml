@@ -1,65 +1,78 @@
-name: proxy_app
-description: A proxy application.
-publish_to: 'none'
-version: 1.0.0+1
+# Flutter项目配置文件
+name: proxy_app                    # 项目名称，用于包名和标识
+description: A proxy application.  # 项目描述
+publish_to: 'none'                # 不发布到pub.dev，用于私有项目
+version: 1.0.0+1                  # 版本号格式：major.minor.patch+build
 
+# 环境要求配置
 environment:
-  sdk: ">=3.8.0 <4.0.0"  # Dart SDK的版本
-  flutter: ">=3.27.0"
+  sdk: ">=3.8.0 <4.0.0"          # Dart SDK版本范围
+  flutter: ">=3.27.0"            # Flutter框架最低版本要求
 
+# 项目依赖包
 dependencies:
+  # Flutter核心框架
   flutter:
-    sdk: flutter
+    sdk: flutter                  # 使用Flutter SDK
+  
+  # 国际化支持
   flutter_localizations:
-    sdk: flutter
-  path_provider: ^2.1.2
-  http: ^1.1.0 
+    sdk: flutter                  # Flutter官方国际化包
+  
+  # 文件系统和路径
+  path_provider: ^2.1.2          # 获取应用目录路径（文档、缓存等）
+  path: ^1.8.3                   # 路径操作工具类
+  
+  # 网络请求
+  http: ^1.1.0                   # HTTP客户端，用于网络请求
   
   # 状态管理
-  provider: ^6.1.1
+  provider: ^6.1.1               # 轻量级状态管理解决方案
   
-  # 本地存储
-  shared_preferences: ^2.2.2
+  # 本地数据存储
+  shared_preferences: ^2.2.2     # 键值对存储，用于保存用户设置
   
-  # Windows特性
-  win32: ^5.14.0
-  ffi: ^2.1.4
+  # Windows平台特定功能
+  win32: ^5.14.0                 # Windows API绑定
+  ffi: ^2.1.4                    # 外部函数接口，用于调用原生代码
   
-  # 窗口管理
-  window_manager: ^0.5.1
+  # 桌面窗口管理
+  window_manager: ^0.5.1         # 窗口管理（大小、位置、状态等）
   
-  # 路径处理
-  path: ^1.8.3
+  # 外部应用启动
+  url_launcher: ^6.2.2           # 启动浏览器、邮件客户端等外部应用
   
-  # URL启动
-  url_launcher: ^6.2.2
+  # UI图标
+  cupertino_icons: ^1.0.6        # iOS风格图标集合
   
-  # 图标
-  cupertino_icons: ^1.0.6
-  
-  # 新增：设备信息获取
-  device_info_plus: ^11.2.0
+  # 设备信息
+  device_info_plus: ^11.2.0      # 获取设备硬件和系统信息
 
+# 开发依赖包（仅在开发时使用）
 dev_dependencies:
+  # 测试框架
   flutter_test:
-    sdk: flutter
-  flutter_lints: ^3.0.1
+    sdk: flutter                  # Flutter官方测试框架
+  
+  # 代码规范检查
+  flutter_lints: ^3.0.1          # Dart/Flutter代码风格和质量检查
 
+# Flutter项目配置
 flutter:
-  uses-material-design: true
+  uses-material-design: true      # 启用Material Design组件和图标
   
-  # 应用图标和资源
+  # 静态资源配置
   assets:
-    - assets/images/
-    - assets/js/
-    - assets/geoip.dat
-    - assets/geoip-only-cn-private.dat
-    - assets/geosite.dat
+    - assets/images/              # 图片资源目录
+    - assets/js/                  # JavaScript文件目录
+    - assets/geoip.dat           # GeoIP数据库文件（IP地理位置）
+    - assets/geoip-only-cn-private.dat  # 仅中国大陆和私有IP的GeoIP数据
+    - assets/geosite.dat         # GeoSite数据库文件（域名分类）
   
-  # 字体配置（如果需要）
+  # 自定义字体配置（当前已注释）
   # fonts:
-  #   - family: CustomFont
+  #   - family: CustomFont        # 字体家族名称
   #     fonts:
-  #       - asset: fonts/CustomFont-Regular.ttf
-  #       - asset: fonts/CustomFont-Bold.ttf
-  #         weight: 700
+  #       - asset: fonts/CustomFont-Regular.ttf    # 常规字重字体文件
+  #       - asset: fonts/CustomFont-Bold.ttf       # 粗体字体文件
+  #         weight: 700           # 字体权重（700表示粗体）
