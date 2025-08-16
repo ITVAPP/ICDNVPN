@@ -45,19 +45,21 @@
         "outboundTag": "api"       // 路由到API出站
       },
       {
+        // 特定DNS服务器通过代理
+        "type": "field",
+        "outboundTag": "proxy",
+        "ip": [
+          "1.1.1.1",  // Cloudflare DNS
+          "8.8.8.8"   // Google DNS
+        ]
+      },
+      {
         // 阻止UDP 443端口（通常用于QUIC）
         "type": "field",
         "port": "443",
         "network": "udp",
         "outboundTag": "block"     // 阻止该流量
       },
-      {
-        // DNS查询通过代理
-        "type": "field",
-        "port": "53",              // DNS端口
-        "network": "udp",
-        "outboundTag": "proxy"     // 通过代理转发
-      },    
       {
         // 中国大陆域名直连
         "type": "field",
@@ -84,15 +86,6 @@
           "114.114.115.115", // 114DNS
           "geoip:private",   // 私有IP地址
           "geoip:cn"         // 中国大陆IP
-        ]
-      },
-      {
-        // 特定DNS服务器通过代理
-        "type": "field",
-        "outboundTag": "proxy",
-        "ip": [
-          "1.1.1.1",  // Cloudflare DNS
-          "8.8.8.8"   // Google DNS
         ]
       },
       {
