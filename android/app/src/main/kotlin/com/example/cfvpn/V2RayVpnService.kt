@@ -35,6 +35,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.Socket
 import java.net.InetAddress
+import java.net.Inet4Address
 
 // 正确的导入(基于method_summary.md)
 import go.Seq
@@ -68,6 +69,11 @@ import libv2ray.CoreCallbackHandler
  * 2. 统一网络连接测试逻辑
  * 3. 合并通知构建重复代码
  * 4. 分解复杂的流量统计方法
+ * 
+ * IPv6和通知栏修复版本：
+ * 1. 添加ENABLE_IPV6常量统一控制IPv6策略
+ * 2. 修复通知栏过早显示"已连接"的问题
+ * 3. DNS解析遵循IPv6策略
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -88,6 +94,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // WakeLock标签
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
+        
+        // ===== IPv6统一控制开关 =====
+        // 设置为false时，完全禁用IPv6相关功能
+        // 设置为true时，启用IPv6支持（需要网络环境支持）
+        private const val ENABLE_IPV6 = false
         
         // VPN配置常量（与v2rayNG保持一致）
         // 优化2: MTU优化 - 增加MTU值以提高吞吐量（需要测试网络兼容性）
@@ -157,7 +168,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             enableVirtualDns: Boolean = false,  // 新增：虚拟DNS开关
             virtualDnsPort: Int = 10853  // 新增：虚拟DNS端口
         ) {
-            VpnFileLogger.d(TAG, "准备启动服务, 全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns")
+            VpnFileLogger.d(TAG, "准备启动服务, 全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns, IPv6: $ENABLE_IPV6")
             VpnFileLogger.d(TAG, "允许应用: ${allowedApps?.size ?: "全部"}")
             
             // 保存国际化文字
@@ -369,18 +380,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    // ===== 🎯 新增：通知构建工具方法 =====
+    // ===== 🎯 修复：通知构建工具方法 - 支持连接中状态 =====
     
     /**
      * 构建通知 - 统一的通知构建逻辑
+     * @param isConnecting 是否为连接中状态
      */
-    private fun buildNotification(isUpdate: Boolean = false): android.app.Notification? {
+    private fun buildNotification(isConnecting: Boolean = false): android.app.Notification? {
         return try {
             val channelName = instanceLocalizedStrings["notificationChannelName"] ?: "VPN服务"
             val channelDesc = instanceLocalizedStrings["notificationChannelDesc"] ?: "VPN连接状态通知"
             
-            // 创建通知渠道（仅在首次创建时）
-            if (!isUpdate && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 创建通知渠道（Android O及以上）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
                     NOTIFICATION_CHANNEL_ID,
                     channelName,
@@ -419,19 +431,27 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             )
             
-            // 构建标题和内容
-            val modeText = if (globalProxy) {
-                instanceLocalizedStrings["globalProxyMode"] ?: "全局代理模式"
+            // 构建标题和内容 - 修复：根据连接状态显示不同内容
+            val appName = instanceLocalizedStrings["appName"] ?: "CFVPN"
+            val title = if (isConnecting) {
+                "$appName - ......"
             } else {
-                instanceLocalizedStrings["smartProxyMode"] ?: "智能代理模式"
+                val modeText = if (globalProxy) {
+                    instanceLocalizedStrings["globalProxyMode"] ?: "全局代理模式"
+                } else {
+                    instanceLocalizedStrings["smartProxyMode"] ?: "智能代理模式"
+                }
+                "$appName - $modeText"
             }
             
-            val appName = instanceLocalizedStrings["appName"] ?: "CFVPN"
-            val title = "$appName - $modeText"
-            val content = formatTrafficStatsForNotification(uploadBytes, downloadBytes)
+            val content = if (isConnecting) {
+                "......"
+            } else {
+                formatTrafficStatsForNotification(uploadBytes, downloadBytes)
+            }
             
             // 构建通知
-            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setSmallIcon(getAppIconResource())
@@ -439,12 +459,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 .setOngoing(true)
                 .setShowWhen(false)
                 .setContentIntent(mainPendingIntent)
-                .addAction(
+            
+            // 连接中状态不显示断开按钮
+            if (!isConnecting) {
+                builder.addAction(
                     android.R.drawable.ic_menu_close_clear_cancel, 
                     instanceLocalizedStrings["disconnectButtonName"] ?: "断开",
                     stopPendingIntent
                 )
-                .build()
+            }
+            
+            builder.build()
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "构建通知失败", e)
             // 降级方案
@@ -490,7 +515,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         super.onCreate()
         
         VpnFileLogger.init(applicationContext)
-        VpnFileLogger.d(TAG, "VPN服务onCreate开始")
+        VpnFileLogger.d(TAG, "VPN服务onCreate开始, IPv6支持: $ENABLE_IPV6")
         
         instanceRef = WeakReference(this)
         
@@ -757,6 +782,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.d(TAG, "================== onStartCommand START ==================")
         VpnFileLogger.d(TAG, "Action: ${intent?.action}")
         VpnFileLogger.d(TAG, "Flags: $flags, StartId: $startId")
+        VpnFileLogger.d(TAG, "IPv6支持状态: $ENABLE_IPV6")
         
         if (intent == null || intent.action != "START_VPN") {
             VpnFileLogger.e(TAG, "无效的启动意图: intent=$intent, action=${intent?.action}")
@@ -898,12 +924,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.d(TAG, "配置参数: 全局代理=$globalProxy, " +
                 "允许应用=${allowedApps.size}个, 绕过子网=${bypassSubnets.size}个, 虚拟DNS=$enableVirtualDns")
         
-        // 启动前台服务
+        // 修复：先显示"正在连接"的通知，而不是"已连接"
         try {
-            val notification = buildNotification(false)
-            if (notification != null) {
-                startForeground(NOTIFICATION_ID, notification)
-                VpnFileLogger.d(TAG, "前台服务已启动")
+            val connectingNotification = buildNotification(isConnecting = true)
+            if (connectingNotification != null) {
+                startForeground(NOTIFICATION_ID, connectingNotification)
+                VpnFileLogger.d(TAG, "前台服务已启动（显示正在连接状态）")
             } else {
                 VpnFileLogger.e(TAG, "无法创建通知")
                 currentState = V2RayState.DISCONNECTED
@@ -1075,6 +1101,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             currentState = V2RayState.CONNECTED
             startTime = System.currentTimeMillis()
             
+            // 修复：连接成功后，更新通知为"已连接"状态
+            updateNotificationToConnected()
+            
             VpnFileLogger.i(TAG, "================== V2Ray服务(VPN模式)完全启动成功 ==================")
             
             sendStartResultBroadcast(true)
@@ -1111,6 +1140,22 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             cleanupResources()
             sendStartResultBroadcast(false, e.message)
             throw e
+        }
+    }
+    
+    /**
+     * 修复：更新通知为已连接状态
+     */
+    private fun updateNotificationToConnected() {
+        try {
+            val connectedNotification = buildNotification(isConnecting = false)
+            if (connectedNotification != null) {
+                val notificationManager = getSystemService(NotificationManager::class.java)
+                notificationManager.notify(NOTIFICATION_ID, connectedNotification)
+                VpnFileLogger.d(TAG, "通知已更新为已连接状态")
+            }
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "更新通知失败", e)
         }
     }
     
@@ -1294,12 +1339,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 建立VPN隧道 - 极简版本（支持虚拟DNS配置）
+     * 建立VPN隧道 - 极简版本（支持虚拟DNS配置和IPv6控制）
      * 所有路由决策完全交给V2Ray的routing规则处理
      * VPN层只建立隧道，不做任何路由判断
      */
     private fun establishVpn() {
-        VpnFileLogger.d(TAG, "开始建立VPN隧道（虚拟DNS: ${if(enableVirtualDns) "启用" else "禁用"}）")
+        VpnFileLogger.d(TAG, "开始建立VPN隧道（虚拟DNS: ${if(enableVirtualDns) "启用" else "禁用"}, IPv6: $ENABLE_IPV6）")
         
         // 关闭旧接口
         mInterface?.let {
@@ -1351,7 +1396,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         
         // ===== 极简路由配置 =====
-        VpnFileLogger.d(TAG, "===== 配置路由（极简版） =====")
+        VpnFileLogger.d(TAG, "===== 配置路由（极简版，IPv6: $ENABLE_IPV6） =====")
         
         // 核心理念：VPN层只建立隧道，所有路由决策由V2Ray的routing规则处理
         // 不管globalProxy是true还是false，dart端会生成相应的V2Ray配置
@@ -1359,13 +1404,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         builder.addRoute("0.0.0.0", 0)  // IPv4全部流量进入VPN隧道
         VpnFileLogger.d(TAG, "添加IPv4全局路由: 0.0.0.0/0 (所有流量进入VPN，由V2Ray routing决定最终去向)")
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        // 修复：根据ENABLE_IPV6常量决定是否启用IPv6
+        if (ENABLE_IPV6 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
-                //  builder.addRoute("::", 0)  // IPv6全部流量进入VPN隧道
-                //  VpnFileLogger.d(TAG, "添加IPv6全局路由: ::/0")
+                builder.addRoute("::", 0)  // IPv6全部流量进入VPN隧道
+                VpnFileLogger.d(TAG, "添加IPv6全局路由: ::/0 (IPv6已启用)")
             } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "添加IPv6路由失败", e)
+                VpnFileLogger.w(TAG, "添加IPv6路由失败: ${e.message}")
             }
+        } else {
+            VpnFileLogger.d(TAG, "IPv6支持已禁用 (ENABLE_IPV6=$ENABLE_IPV6)")
         }
         
         // globalProxy仅用于通知栏显示，不影响实际路由
@@ -1566,9 +1614,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 🎯 优化：统一的网络验证方法 - 合并重复的验证逻辑
+     * 修复：根据ENABLE_IPV6常量控制DNS解析
      */
     private fun verifyTun2socksForwarding() {
-        VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 =====")
+        VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 (IPv6: $ENABLE_IPV6) =====")
         Thread {
             // 验证SOCKS5连接
             if (!testTcpConnection("127.0.0.1", socksPort, 2000, "SOCKS5")) {
@@ -1582,40 +1631,47 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }
 
-            // 测试DNS解析，优先使用IPv4
+            // 测试DNS解析，根据ENABLE_IPV6决定处理方式
             try {
                 val testDomain = "www.google.com"
-                val addresses = InetAddress.getAllByName(testDomain)
-                addresses.forEach { addr ->
-                    VpnFileLogger.d(TAG, "DNS解析结果: $testDomain -> ${addr.hostAddress} (${if (addr is java.net.Inet4Address) "IPv4" else "IPv6"})")
-                }
-                val addr = addresses.firstOrNull { it is java.net.Inet4Address }
-                if (addr != null) {
-                    VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
-                } else {
-                    VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到 IPv4 地址")
-                    // 尝试备用域名
-                    val fallbackDomain = "example.com"
-                    try {
-                        val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
-                        fallbackAddresses.forEach { fallbackAddr ->
-                            VpnFileLogger.d(TAG, "DNS解析结果(备用): $fallbackDomain -> ${fallbackAddr.hostAddress} (${if (fallbackAddr is java.net.Inet4Address) "IPv4" else "IPv6"})")
-                        }
-                        val fallbackAddr = fallbackAddresses.firstOrNull { it is java.net.Inet4Address }
-                        if (fallbackAddr != null) {
-                            VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
-                        } else {
-                            VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): 未找到 IPv4 地址")
-                            return@Thread
-                        }
-                    } catch (e: Exception) {
-                        VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): ${e.message}")
-                        return@Thread
+                
+                if (ENABLE_IPV6) {
+                    // IPv6启用时，获取所有地址
+                    val addresses = InetAddress.getAllByName(testDomain)
+                    addresses.forEach { addr ->
+                        VpnFileLogger.d(TAG, "DNS解析结果: $testDomain -> ${addr.hostAddress} (${if (addr is Inet4Address) "IPv4" else "IPv6"})")
                     }
+                    // 优先使用IPv4，但也接受IPv6
+                    val addr = addresses.firstOrNull { it is Inet4Address } ?: addresses.firstOrNull()
+                    if (addr != null) {
+                        VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
+                    } else {
+                        VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到有效地址")
+                    }
+                } else {
+                    // IPv6禁用时，只获取IPv4地址
+                    val addr = Inet4Address.getByName(testDomain)
+                    VpnFileLogger.i(TAG, "✓ DNS解析成功(仅IPv4): $testDomain -> ${addr.hostAddress}")
                 }
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "✗ DNS解析失败: ${e.message}")
-                return@Thread
+                // 尝试备用域名
+                try {
+                    val fallbackDomain = "example.com"
+                    if (ENABLE_IPV6) {
+                        val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
+                        val fallbackAddr = fallbackAddresses.firstOrNull { it is Inet4Address } ?: fallbackAddresses.firstOrNull()
+                        if (fallbackAddr != null) {
+                            VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                        }
+                    } else {
+                        val fallbackAddr = Inet4Address.getByName(fallbackDomain)
+                        VpnFileLogger.i(TAG, "✓ DNS解析成功(备用,仅IPv4): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                    }
+                } catch (e2: Exception) {
+                    VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): ${e2.message}")
+                    return@Thread
+                }
             }
 
             // 测试HTTP连接，使用SOCKS代理
@@ -1641,6 +1697,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             VpnFileLogger.i(TAG, "===== tun2socks转发验证完成 - 全部测试通过 =====")
+            VpnFileLogger.i(TAG, "IPv6支持: ${if (ENABLE_IPV6) "已启用" else "已禁用"}")
             if (enableVirtualDns && localDnsPort > 0) {
                 VpnFileLogger.i(TAG, "✓ 虚拟DNS服务运行正常，DNS防泄露已启用")
             } else {
@@ -1991,14 +2048,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 🎯 重构：统一的通知创建方法
-     * 修复：初始显示时也显示流量（如果有的话）
-     */
-    private fun createNotification(): android.app.Notification? {
-        return buildNotification(false)
-    }
-    
-    /**
      * 获取应用图标资源ID
      */
     private fun getAppIconResource(): Int {
@@ -2026,7 +2075,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun updateNotification() {
         try {
-            val notification = buildNotification(true)
+            val notification = buildNotification(isConnecting = false)
             if (notification != null) {
                 val notificationManager = getSystemService(NotificationManager::class.java)
                 notificationManager.notify(NOTIFICATION_ID, notification)
