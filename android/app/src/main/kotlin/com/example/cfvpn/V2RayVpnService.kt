@@ -1082,13 +1082,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 保存自启动配置
             try {
                 if (AutoStartManager.isAutoStartEnabled(this@V2RayVpnService)) {
+                    // 修改：传递虚拟DNS配置
                     AutoStartManager.saveAutoStartConfig(
                         this@V2RayVpnService,
                         configJson,
-                        "VPN_TUN",
-                        globalProxy
+                        "VPN_TUN",  // 保留mode参数以兼容
+                        globalProxy,
+                        enableVirtualDns,  // 添加虚拟DNS开关
+                        configuredVirtualDnsPort  // 添加虚拟DNS端口
                     )
-                    VpnFileLogger.d(TAG, "已更新自启动配置")
+                    VpnFileLogger.d(TAG, "已更新自启动配置，虚拟DNS: $enableVirtualDns")
                 }
             } catch (e: Exception) {
                 VpnFileLogger.w(TAG, "保存自启动配置失败", e)
