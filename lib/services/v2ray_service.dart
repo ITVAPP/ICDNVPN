@@ -8,12 +8,6 @@ import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
 import '../app_config.dart';
 
-/// V2Ray连接模式
-enum V2RayConnectionMode {
-  vpnTun,      // VPN隧道模式（全局）
-  proxyOnly    // 仅代理模式（局部，不创建VPN）
-}
-
 /// V2Ray连接状态
 enum V2RayConnectionState {
   disconnected,
@@ -699,19 +693,20 @@ class V2RayService {
     _connectionStartTime = null;
   }
   
-  // 启动V2Ray服务（增强版，支持新功能） - 简化版本
+  // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
     int serverPort = 443,
     String? serverName,
     bool globalProxy = false,
     // 新增参数（移动端特有）
-    V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
     List<String>? allowedApps,  // 简化：只保留允许列表
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
     // 新增：国际化文字
     Map<String, String>? localizedStrings,
+    // 新增：虚拟DNS开关
+    bool enableVirtualDns = false,
   }) async {
     // 平台支持检查
     if (!Platform.isWindows && !Platform.isAndroid && !Platform.isIOS) {
@@ -733,7 +728,7 @@ class V2RayService {
         await Future.delayed(const Duration(seconds: 1));
       }
       
-      await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy, 模式: $mode', tag: _logTag);
+      await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns', tag: _logTag);
       
       // 更新状态为连接中
       _updateStatus(V2RayStatus(state: V2RayConnectionState.connecting));
@@ -745,11 +740,11 @@ class V2RayService {
           serverPort: serverPort,
           serverName: serverName,
           globalProxy: globalProxy,
-          mode: mode,
           allowedApps: allowedApps,
           bypassSubnets: bypassSubnets,
           disconnectButtonName: disconnectButtonName,
           localizedStrings: localizedStrings,
+          enableVirtualDns: enableVirtualDns,  // 传递虚拟DNS参数
         );
       }
       
@@ -782,13 +777,13 @@ class V2RayService {
     required int serverPort,
     String? serverName,
     bool globalProxy = false,
-    V2RayConnectionMode mode = V2RayConnectionMode.vpnTun,
     List<String>? allowedApps,
     List<String>? bypassSubnets,
     String disconnectButtonName = '停止',
     Map<String, String>? localizedStrings,
+    bool enableVirtualDns = false,  // 新增参数
   }) async {
-    await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy, 模式: $mode)', tag: _logTag);
+    await _log.info('移动平台：启动V2Ray (全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns)', tag: _logTag);
     
     try {
       // 1. 初始化通道监听
@@ -814,7 +809,7 @@ class V2RayService {
         await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
         await _log.debug('  - ServerName: $serverName', tag: _logTag);
         await _log.debug('  - 全局代理: $globalProxy', tag: _logTag);
-        await _log.debug('  - 连接模式: $mode', tag: _logTag);
+        await _log.debug('  - 虚拟DNS: $enableVirtualDns', tag: _logTag);
         if (allowedApps != null && allowedApps.isNotEmpty) {
           await _log.debug('  - 允许应用: ${allowedApps.length}个', tag: _logTag);
         }
@@ -833,14 +828,15 @@ class V2RayService {
         }
       }
       
-      // 3. 准备调用参数（简化版）
+      // 3. 准备调用参数（简化版） - 添加虚拟DNS参数
       final params = <String, dynamic>{
         'config': configJson,
-        'mode': mode == V2RayConnectionMode.vpnTun ? 'VPN_TUN' : 'PROXY_ONLY',
         'globalProxy': globalProxy,
         'allowedApps': allowedApps,  // 简化：只传递允许列表
         'bypassSubnets': bypassSubnets,
         'disconnectButtonName': disconnectButtonName,
+        'enableVirtualDns': enableVirtualDns,  // 传递虚拟DNS开关
+        'virtualDnsPort': AppConfig.virtualDnsPort,  // 传递虚拟DNS端口配置
       };
       
       // 添加国际化文字（如果提供）
@@ -854,11 +850,8 @@ class V2RayService {
       if (result == true) {
         await _log.info('V2Ray启动命令已发送，等待连接建立', tag: _logTag);
         
-        // 4. 等待连接建立（PROXY_ONLY模式可能更快）
-        final waitTime = mode == V2RayConnectionMode.proxyOnly 
-            ? const Duration(seconds: 1) 
-            : AppConfig.v2rayCheckDelay;
-        await Future.delayed(waitTime);
+        // 4. 等待连接建立
+        await Future.delayed(AppConfig.v2rayCheckDelay);
         
         // 5. 检查连接状态
         final isConnected = await _channel.invokeMethod<bool>('isVpnConnected') ?? false;

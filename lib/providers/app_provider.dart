@@ -267,13 +267,13 @@ class ConnectionProvider with ChangeNotifier {
     await _connectInternal();
   }
   
-  // 修改：原connect方法改为调用内部方法
-  Future<void> connect() async {
-    await _connectInternal();
+  // 修改：添加enableVirtualDns参数
+  Future<void> connect({bool? enableVirtualDns}) async {
+    await _connectInternal(enableVirtualDns: enableVirtualDns);
   }
   
-  // 修改：内部连接实现（移除showWarning参数，因为不再需要预警对话框）
-  Future<void> _connectInternal() async {
+  // 修改：内部连接实现，添加enableVirtualDns参数
+  Future<void> _connectInternal({bool? enableVirtualDns}) async {
     if (_isDisposed) return;
     
     // 清除之前的断开原因
@@ -330,12 +330,13 @@ class ConnectionProvider with ChangeNotifier {
     
     if (serverToConnect != null) {
       try {
-        // 启动V2Ray服务
+        // 启动V2Ray服务，传递虚拟DNS配置
         final success = await V2RayService.start(
           serverIp: serverToConnect.ip,
           serverPort: serverToConnect.port,
           globalProxy: _globalProxy,  // 修改：传递全局代理参数
           localizedStrings: _localizedStrings,  // 传递国际化文字
+          enableVirtualDns: enableVirtualDns ?? AppConfig.enableVirtualDns,  // 添加虚拟DNS参数
         );
 
         if (success) {
