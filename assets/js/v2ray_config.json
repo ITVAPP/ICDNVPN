@@ -45,15 +45,6 @@
         "outboundTag": "api"       // 路由到API出站
       },
       {
-        // 特定DNS服务器通过代理
-        "type": "field",
-        "outboundTag": "proxy",
-        "ip": [
-          "1.1.1.1",  // Cloudflare DNS
-          "8.8.8.8"   // Google DNS
-        ]
-      },
-      {
         // 阻止UDP 443端口（通常用于QUIC）
         "type": "field",
         "port": "443",
@@ -95,6 +86,33 @@
         "outboundTag": "proxy"     // 通过代理
       }
     ]
+  }, 
+  
+  // DNS配置
+  "dns": {
+    "hosts": {                   // 静态DNS映射
+      "dns.google": "8.8.8.8",
+      "dns.cloudflare.com": "1.1.1.1",
+      "cloudflare-dns.com": "1.1.1.1"
+    },
+    "servers": [
+      {
+        // 中国大陆域名使用阿里DNS
+        "address": "223.5.5.5",
+        "domains": [
+          "geosite:cn",           // 中国大陆网站
+          "geosite:geolocation-cn" // 中国大陆地理位置网站
+        ],
+        "expectIPs": [
+          "geoip:cn"              // 期望返回中国IP
+        ],
+        "skipFallback": false     // 不跳过备用DNS
+      },
+      "1.1.1.1",                 // Cloudflare DNS
+      "8.8.8.8"                  // Google DNS
+    ],
+    "disableCache": false,       // 启用DNS缓存
+    "disableFallback": false     // 启用备用DNS
   }, 
   
   // 入站连接配置
@@ -210,32 +228,6 @@
         }
       }
     }
-  ],
-  
-  // DNS配置
-  "dns": {
-    "hosts": {                   // 静态DNS映射
-      "dns.google": "8.8.8.8",
-      "dns.cloudflare.com": "1.1.1.1",
-      "cloudflare-dns.com": "1.1.1.1"
-    },
-    "servers": [
-      {
-        // 中国大陆域名使用阿里DNS
-        "address": "223.5.5.5",
-        "domains": [
-          "geosite:cn",           // 中国大陆网站
-          "geosite:geolocation-cn" // 中国大陆地理位置网站
-        ],
-        "expectIPs": [
-          "geoip:cn"              // 期望返回中国IP
-        ],
-        "skipFallback": false     // 不跳过备用DNS
-      },
-      "1.1.1.1",                 // Cloudflare DNS
-      "8.8.8.8"                  // Google DNS
-    ],
-    "disableCache": false,       // 启用DNS缓存
-    "disableFallback": false     // 启用备用DNS
-  }
+  ]
 }
+
