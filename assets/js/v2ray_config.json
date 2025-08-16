@@ -1,218 +1,248 @@
 {
+  // 日志配置
   "log": {
-    "loglevel": "error"
+    "loglevel": "error"  // 日志级别：error级别，只记录错误信息
   },
-  "stats": {},
+  
+  // 统计信息配置
+  "stats": {},  // 空对象，启用基础统计功能
+  
+  // API配置
   "api": {
     "tag": "api",
-    "services": ["StatsService"]
+    "services": ["StatsService"]  // 启用统计服务API
   },
+  
+  // 本地策略配置
   "policy": {
     "levels": {
-      "0": {
-        "handshake": 3,
-        "connIdle": 300,
-        "uplinkOnly": 1,
-        "downlinkOnly": 2,
-        "statsUserUplink": true,
-        "statsUserDownlink": true,
-        "bufferSize": 512
+      "0": {  // 用户级别0的策略
+        "handshake": 3,        // 握手超时时间（秒）
+        "connIdle": 300,       // 连接空闲超时时间（秒）
+        "uplinkOnly": 1,       // 仅上行连接超时时间（秒）
+        "downlinkOnly": 2,     // 仅下行连接超时时间（秒）
+        "statsUserUplink": true,   // 启用用户上行流量统计
+        "statsUserDownlink": true, // 启用用户下行流量统计
+        "bufferSize": 512      // 缓冲区大小（KB）
       }
     },
     "system": {
-      "statsInboundUplink": true,
-      "statsInboundDownlink": true,
-      "statsOutboundUplink": true,
-      "statsOutboundDownlink": true
+      "statsInboundUplink": true,    // 启用入站上行流量统计
+      "statsInboundDownlink": true,  // 启用入站下行流量统计
+      "statsOutboundUplink": true,   // 启用出站上行流量统计
+      "statsOutboundDownlink": true  // 启用出站下行流量统计
     }
   },
+  
+  // 路由配置
   "routing": {
-    "domainStrategy": "AsIs",
+    "domainStrategy": "AsIs",  // 域名解析策略：保持原样
     "rules": [
       {
+        // API路由规则
         "type": "field",
-        "inboundTag": ["api"],
-        "outboundTag": "api"
+        "inboundTag": ["api"],     // 来自API入站的流量
+        "outboundTag": "api"       // 路由到API出站
       },
       {
+        // 阻止UDP 443端口（通常用于QUIC）
         "type": "field",
         "port": "443",
         "network": "udp",
-        "outboundTag": "block"
+        "outboundTag": "block"     // 阻止该流量
       },
       {
+        // DNS查询通过代理
         "type": "field",
-        "port": "53",
+        "port": "53",              // DNS端口
         "network": "udp",
-        "outboundTag": "proxy"
+        "outboundTag": "proxy"     // 通过代理转发
       },    
       {
+        // 中国大陆域名直连
         "type": "field",
-        "outboundTag": "direct",
+        "outboundTag": "direct",   // 直连
         "domain": [
-          "domain:dns.alidns.com",
-          "domain:doh.pub",
-          "domain:dot.pub",
-          "domain:doh.360.cn",
-          "domain:dot.360.cn",
-          "geosite:cn",
-          "geosite:geolocation-cn"
+          "domain:dns.alidns.com",    // 阿里DNS
+          "domain:doh.pub",           // 腾讯DNS
+          "domain:dot.pub",           // 腾讯DNS
+          "domain:doh.360.cn",        // 360DNS
+          "domain:dot.360.cn",        // 360DNS
+          "geosite:cn",               // 中国大陆网站
+          "geosite:geolocation-cn"    // 中国大陆地理位置网站
         ]
       },
       {
+        // 中国大陆IP直连
         "type": "field",
         "outboundTag": "direct",
         "ip": [
-          "223.5.5.5",
-          "223.6.6.6",
-          "119.29.29.29",
-          "114.114.114.114",
-          "114.114.115.115",
-          "geoip:private",
-          "geoip:cn"
+          "223.5.5.5",      // 阿里DNS
+          "223.6.6.6",      // 阿里DNS
+          "119.29.29.29",   // 腾讯DNS
+          "114.114.114.114", // 114DNS
+          "114.114.115.115", // 114DNS
+          "geoip:private",   // 私有IP地址
+          "geoip:cn"         // 中国大陆IP
         ]
       },
       {
+        // 特定DNS服务器通过代理
         "type": "field",
         "outboundTag": "proxy",
         "ip": [
-          "1.1.1.1",
-          "8.8.8.8"
+          "1.1.1.1",  // Cloudflare DNS
+          "8.8.8.8"   // Google DNS
         ]
       },
       {
+        // 默认规则：其他所有流量通过代理
         "type": "field",
-        "port": "0-65535",
-        "outboundTag": "proxy"
+        "port": "0-65535",         // 所有端口
+        "outboundTag": "proxy"     // 通过代理
       }
     ]
   }, 
+  
+  // 入站连接配置
   "inbounds": [
     {
+      // SOCKS5代理服务器
       "tag": "socks",
-      "port": 7898,
-      "protocol": "socks",
+      "port": 7898,              // 监听端口
+      "protocol": "socks",       // SOCKS协议
       "settings": {
-        "auth": "noauth",
-        "udp": true
+        "auth": "noauth",        // 无需认证
+        "udp": true              // 支持UDP转发
       }
     },
     {
+      // HTTP代理服务器
       "tag": "http",
-      "port": 7899,
-      "protocol": "http",
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls"],
-        "routeOnly": false
+      "port": 7899,              // 监听端口
+      "protocol": "http",        // HTTP协议
+      "sniffing": {              // 流量探测配置
+        "enabled": true,         // 启用探测
+        "destOverride": ["http", "tls"], // 探测HTTP和TLS流量
+        "routeOnly": false       // 不仅仅用于路由
       },
       "settings": {
-        "auth": "noauth",
-        "udp": true,
-        "allowTransparent": false
+        "auth": "noauth",        // 无需认证
+        "udp": true,             // 支持UDP
+        "allowTransparent": false // 不允许透明代理
       }
     },
     {
+      // API管理接口
       "tag": "api",
-      "port": 10085,
-      "listen": "127.0.0.1",
-      "protocol": "dokodemo-door",
+      "port": 10085,             // API端口
+      "listen": "127.0.0.1",     // 仅本地访问
+      "protocol": "dokodemo-door", // 任意门协议
       "settings": {
-        "address": "127.0.0.1"
+        "address": "127.0.0.1"   // 目标地址
       }
     }
   ],
+  
+  // 出站连接配置
   "outbounds": [
     {
+      // 主代理出站
       "tag": "proxy",
-      "protocol": "vless",
+      "protocol": "vless",       // VLESS协议
       "settings": {
         "vnext": [
           {
-            "address": "SERVER_IP",
-            "port": 80,
+            "address": "SERVER_IP",  // 服务器IP地址（需要替换为实际IP）
+            "port": 80,              // 服务器端口
             "users": [
               {
-                "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
-                "alterId": 0,
-                "email": "t@t.tt",
-                "security": "auto",
-                "encryption": "none"
+                "id": "bc24baea-3e5c-4107-a231-416cf00504fe", // 用户UUID
+                "alterId": 0,        // 额外ID（VLESS中为0）
+                "email": "t@t.tt",   // 用户邮箱（标识）
+                "security": "auto",  // 加密方式
+                "encryption": "none" // VLESS加密设置
               }
             ]
           }
         ]
       },
       "streamSettings": {
-        "network": "ws",
-        "security": "tls",
+        "network": "ws",           // WebSocket传输
+        "security": "tls",         // TLS加密
         "tlsSettings": {
-          "serverName": "pages-vless-a9f.pages.dev",
-          "fingerprint": "randomized"
+          "serverName": "pages-vless-a9f.pages.dev", // TLS服务器名称
+          "fingerprint": "randomized" // 随机化TLS指纹
         },
         "wsSettings": {
-          "path": "/",
+          "path": "/",             // WebSocket路径
           "headers": {
-            "Host": "pages-vless-a9f.pages.dev"
+            "Host": "pages-vless-a9f.pages.dev" // Host头
           }
         },
         "sockopt": {
-          "dialerProxy": "proxy3"
+          "dialerProxy": "proxy3"  // 使用proxy3作为底层代理
         }
       },
       "mux": {
-        "enabled": false,
-        "concurrency": -1
+        "enabled": false,        // 禁用多路复用
+        "concurrency": -1        // 并发连接数
       }
     },
     {
+      // 直连出站
       "tag": "direct",
-      "protocol": "freedom",
+      "protocol": "freedom",     // 自由协议（直连）
       "settings": {}
     },
     {
+      // 阻断出站
       "tag": "block",
-      "protocol": "blackhole",
+      "protocol": "blackhole",   // 黑洞协议（阻断）
       "settings": {
         "response": {
-          "type": "http"
+          "type": "http"         // 返回HTTP响应
         }
       }
     },
     {
+      // 辅助代理出站（用于分片）
       "tag": "proxy3",
-      "protocol": "freedom",
+      "protocol": "freedom",     // 自由协议
       "settings": {
-        "fragment": {
-          "packets": "tlshello",
-          "length": "100-200",
-          "interval": "10-20"
+        "fragment": {            // 数据包分片设置
+          "packets": "tlshello", // 对TLS握手包进行分片
+          "length": "100-200",   // 分片长度范围
+          "interval": "10-20"    // 分片间隔（毫秒）
         }
       }
     }
   ],
+  
+  // DNS配置
   "dns": {
-    "hosts": {
+    "hosts": {                   // 静态DNS映射
       "dns.google": "8.8.8.8",
       "dns.cloudflare.com": "1.1.1.1",
       "cloudflare-dns.com": "1.1.1.1"
     },
     "servers": [
       {
+        // 中国大陆域名使用阿里DNS
         "address": "223.5.5.5",
         "domains": [
-          "geosite:cn",
-          "geosite:geolocation-cn"
+          "geosite:cn",           // 中国大陆网站
+          "geosite:geolocation-cn" // 中国大陆地理位置网站
         ],
         "expectIPs": [
-          "geoip:cn"
+          "geoip:cn"              // 期望返回中国IP
         ],
-        "skipFallback": false
+        "skipFallback": false     // 不跳过备用DNS
       },
-      "1.1.1.1",
-      "8.8.8.8"
+      "1.1.1.1",                 // Cloudflare DNS
+      "8.8.8.8"                  // Google DNS
     ],
-    "disableCache": false,
-    "disableFallback": false
+    "disableCache": false,       // 启用DNS缓存
+    "disableFallback": false     // 启用备用DNS
   }
 }
