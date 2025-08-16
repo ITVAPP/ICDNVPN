@@ -31,7 +31,7 @@ class AppConfig {
   
   // ===== 虚拟DNS配置 =====
   // 是否启用虚拟DNS（防DNS泄露）
-  static const bool enableVirtualDns = false; // 默认关闭虚拟DNS
+  static const bool enableVirtualDns = true; // 默认关闭虚拟DNS
   
   // 虚拟DNS服务端口
   static const int virtualDnsPort = 10853; // 本地DNS服务监听端口
