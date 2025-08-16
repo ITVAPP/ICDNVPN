@@ -26,6 +26,67 @@
       "statsOutboundDownlink": true
     }
   },
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "port": "443",
+        "network": "udp",
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "port": "53",
+        "network": "udp",
+        "outboundTag": "proxy"
+      },    
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "domain:dns.alidns.com",
+          "domain:doh.pub",
+          "domain:dot.pub",
+          "domain:doh.360.cn",
+          "domain:dot.360.cn",
+          "geosite:cn",
+          "geosite:geolocation-cn"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "ip": [
+          "223.5.5.5",
+          "223.6.6.6",
+          "119.29.29.29",
+          "114.114.114.114",
+          "114.114.115.115",
+          "geoip:private",
+          "geoip:cn"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "proxy",
+        "ip": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      },
+      {
+        "type": "field",
+        "port": "0-65535",
+        "outboundTag": "proxy"
+      }
+    ]
+  }, 
   "inbounds": [
     {
       "tag": "socks",
@@ -153,66 +214,5 @@
     ],
     "disableCache": false,
     "disableFallback": false
-  },
-  "routing": {
-    "domainStrategy": "AsIs",
-    "rules": [
-      {
-        "type": "field",
-        "inboundTag": ["api"],
-        "outboundTag": "api"
-      },
-      {
-        "type": "field",
-        "port": "443",
-        "network": "udp",
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "port": "53",
-        "network": "udp",
-        "outboundTag": "proxy"
-      },    
-      {
-        "type": "field",
-        "outboundTag": "direct",
-        "domain": [
-          "domain:dns.alidns.com",
-          "domain:doh.pub",
-          "domain:dot.pub",
-          "domain:doh.360.cn",
-          "domain:dot.360.cn",
-          "geosite:cn",
-          "geosite:geolocation-cn"
-        ]
-      },
-      {
-        "type": "field",
-        "outboundTag": "direct",
-        "ip": [
-          "223.5.5.5",
-          "223.6.6.6",
-          "119.29.29.29",
-          "114.114.114.114",
-          "114.114.115.115",
-          "geoip:private",
-          "geoip:cn"
-        ]
-      },
-      {
-        "type": "field",
-        "outboundTag": "proxy",
-        "ip": [
-          "1.1.1.1",
-          "8.8.8.8"
-        ]
-      },
-      {
-        "type": "field",
-        "port": "0-65535",
-        "outboundTag": "proxy"
-      }
-    ]
   }
 }
