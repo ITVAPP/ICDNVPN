@@ -1373,8 +1373,26 @@ private fun verifyTun2socksForwarding() {
                 VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
             } else {
                 VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到 IPv4 地址")
-                sendVerifyResultBroadcast(false, "DNS解析失败: 未找到 IPv4 地址")
-                return@Thread
+                // 尝试备用域名
+                val fallbackDomain = "example.com"
+                try {
+                    val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
+                    fallbackAddresses.forEach { addr ->
+                        VpnFileLogger.d(TAG, "DNS解析结果(备用): $fallbackDomain -> ${addr.hostAddress} (${if (addr is java.net.Inet4Address) "IPv4" else "IPv6"})")
+                    }
+                    val fallbackAddr = fallbackAddresses.firstOrNull { it is java.net.Inet4Address }
+                    if (fallbackAddr != null) {
+                        VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                    } else {
+                        VpnFileLogger.w(TAG, "✗ DNS解析失败(备用): 未找到 IPv4 地址")
+                        sendVerifyResultBroadcast(false, "DNS解析失败: 未找到 IPv4 地址")
+                        return@Thread
+                    }
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "✗ DNS解析失败(备用): ${e.message}")
+                    sendVerifyResultBroadcast(false, "DNS解析失败: ${e.message}")
+                    return@Thread
+                }
             }
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "✗ DNS解析失败: ${e.message}")
@@ -1386,7 +1404,7 @@ private fun verifyTun2socksForwarding() {
         try {
             val socksPort = this.socksPort // 使用从配置中提取的SOCKS端口
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
-            val testUrl = URL("http://www.google.com")
+            val testUrl = URL("http://www.google.com/generate_204") // 使用专为测试设计的端点
             val connection = testUrl.openConnection(proxy) as HttpURLConnection
             connection.connectTimeout = 5000
             connection.readTimeout = 5000
