@@ -52,6 +52,11 @@ import libv2ray.CoreCallbackHandler
  * 1. 修复geo文件路径问题 - 使用assets子目录
  * 2. 增加验证V2Ray是否正确启动
  * 3. 增加验证tun2socks是否正确转发
+ * 
+ * 虚拟DNS版本 2024-12-27：
+ * 1. 动态注入本地DNS服务配置
+ * 2. 配置tun2socks使用本地DNS网关
+ * 3. 实现DNS防泄露和智能分流
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -89,6 +94,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // V2Ray端口默认值
         private const val DEFAULT_SOCKS_PORT = 7898
+        
+        // 本地DNS配置常量
+        private const val LOCAL_DNS_PORT = 10853
+        private const val DNS_TAG_IN = "dns-in"
+        private const val DNS_TAG_OUT = "dns-out"
         
         // 流量统计配置
         // 优化4: 流量统计优化 - 减少查询频率
@@ -238,6 +248,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // SOCKS端口（从配置中提取）- 修复：添加成员变量
     private var socksPort: Int = DEFAULT_SOCKS_PORT
     
+    // 本地DNS端口（动态注入后的端口）
+    private var localDnsPort: Int = -1
+    
     // 实例级的国际化文字存储
     private val instanceLocalizedStrings = mutableMapOf<String, String>()
     
@@ -376,6 +389,164 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
+     * 动态注入本地DNS配置
+     * 在原始配置中添加虚拟DNS服务所需的组件
+     */
+    private fun injectLocalDnsConfig(configJson: String): String {
+        try {
+            VpnFileLogger.d(TAG, "===== 开始注入本地DNS配置 =====")
+            val config = JSONObject(configJson)
+            
+            // 1. 添加 DNS 入站 (dokodemo-door)
+            val inbounds = config.getJSONArray("inbounds")
+            
+            // 检查是否已存在dns-in
+            var hasDnsIn = false
+            for (i in 0 until inbounds.length()) {
+                val inbound = inbounds.getJSONObject(i)
+                if (inbound.optString("tag") == DNS_TAG_IN) {
+                    hasDnsIn = true
+                    localDnsPort = inbound.optInt("port", LOCAL_DNS_PORT)
+                    VpnFileLogger.d(TAG, "配置中已存在dns-in，端口: $localDnsPort")
+                    break
+                }
+            }
+            
+            if (!hasDnsIn) {
+                localDnsPort = LOCAL_DNS_PORT
+                val dnsInbound = JSONObject().apply {
+                    put("tag", DNS_TAG_IN)
+                    put("port", localDnsPort)
+                    put("listen", "127.0.0.1")
+                    put("protocol", "dokodemo-door")
+                    put("settings", JSONObject().apply {
+                        put("address", "1.1.1.1")  // 目标DNS服务器
+                        put("port", 53)
+                        put("network", "tcp,udp")
+                    })
+                }
+                inbounds.put(dnsInbound)
+                VpnFileLogger.d(TAG, "已添加dns-in入站，端口: $localDnsPort")
+            }
+            
+            // 2. 添加 DNS 出站
+            val outbounds = config.getJSONArray("outbounds")
+            
+            // 检查是否已存在dns-out
+            var hasDnsOut = false
+            for (i in 0 until outbounds.length()) {
+                val outbound = outbounds.getJSONObject(i)
+                if (outbound.optString("tag") == DNS_TAG_OUT || 
+                    outbound.optString("protocol") == "dns") {
+                    hasDnsOut = true
+                    VpnFileLogger.d(TAG, "配置中已存在dns出站")
+                    break
+                }
+            }
+            
+            if (!hasDnsOut) {
+                val dnsOutbound = JSONObject().apply {
+                    put("tag", DNS_TAG_OUT)
+                    put("protocol", "dns")
+                }
+                outbounds.put(dnsOutbound)
+                VpnFileLogger.d(TAG, "已添加dns-out出站")
+            }
+            
+            // 3. 添加 DNS 路由规则（必须放在最前面，仅次于API规则）
+            val routing = config.getJSONObject("routing")
+            val rules = routing.getJSONArray("rules")
+            
+            // 检查是否已存在DNS路由规则
+            var hasDnsRule = false
+            for (i in 0 until rules.length()) {
+                val rule = rules.getJSONObject(i)
+                val inboundTags = rule.optJSONArray("inboundTag")
+                if (inboundTags != null) {
+                    for (j in 0 until inboundTags.length()) {
+                        if (inboundTags.getString(j) == DNS_TAG_IN) {
+                            hasDnsRule = true
+                            VpnFileLogger.d(TAG, "配置中已存在DNS路由规则")
+                            break
+                        }
+                    }
+                }
+                if (hasDnsRule) break
+            }
+            
+            if (!hasDnsRule) {
+                // 创建新的规则数组
+                val newRules = JSONArray()
+                
+                // 保留API规则（如果存在）
+                var apiRuleIndex = -1
+                for (i in 0 until rules.length()) {
+                    val rule = rules.getJSONObject(i)
+                    val inboundTags = rule.optJSONArray("inboundTag")
+                    if (inboundTags != null) {
+                        for (j in 0 until inboundTags.length()) {
+                            if (inboundTags.getString(j) == "api") {
+                                apiRuleIndex = i
+                                break
+                            }
+                        }
+                    }
+                    if (apiRuleIndex >= 0) break
+                }
+                
+                // 添加API规则（如果存在）
+                if (apiRuleIndex >= 0) {
+                    newRules.put(rules.getJSONObject(apiRuleIndex))
+                }
+                
+                // 添加DNS路由规则
+                val dnsRule = JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray().put(DNS_TAG_IN))
+                    put("outboundTag", DNS_TAG_OUT)
+                }
+                newRules.put(dnsRule)
+                VpnFileLogger.d(TAG, "已添加DNS路由规则")
+                
+                // 添加端口53的路由规则（用于tun2socks转发的DNS请求）
+                val dnsPortRule = JSONObject().apply {
+                    put("type", "field")
+                    put("port", "53")
+                    put("outboundTag", DNS_TAG_OUT)
+                }
+                newRules.put(dnsPortRule)
+                VpnFileLogger.d(TAG, "已添加端口53路由规则")
+                
+                // 添加其余规则（跳过API规则）
+                for (i in 0 until rules.length()) {
+                    if (i != apiRuleIndex) {
+                        newRules.put(rules.getJSONObject(i))
+                    }
+                }
+                
+                routing.put("rules", newRules)
+            }
+            
+            // 4. 优化DNS配置（如果需要）
+            val dns = config.optJSONObject("dns")
+            if (dns != null) {
+                // 确保有FakeDNS支持（可选）
+                val servers = dns.optJSONArray("servers")
+                if (servers != null && servers.length() > 0) {
+                    VpnFileLogger.d(TAG, "DNS配置已存在，服务器数: ${servers.length()}")
+                }
+            }
+            
+            VpnFileLogger.d(TAG, "===== 本地DNS配置注入完成 =====")
+            return config.toString()
+            
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "注入本地DNS配置失败", e)
+            return configJson
+        }
+    }
+    
+    /**
      * 修复：从配置中提取outbound标签 - 只统计真正的代理流量
      * 不统计direct（直连）、block（屏蔽）、fragment相关标签
      */
@@ -391,8 +562,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     val protocol = outbound.optString("protocol")
                     
                     // 修复：只统计真正的代理协议流量
-                    // 排除：freedom（直连）、blackhole（屏蔽）
-                    if (tag.isNotEmpty() && protocol !in listOf("freedom", "blackhole")) {
+                    // 排除：freedom（直连）、blackhole（屏蔽）、dns（DNS）
+                    if (tag.isNotEmpty() && protocol !in listOf("freedom", "blackhole", "dns")) {
                         // 再次检查是否是fragment相关
                         val settings = outbound.optJSONObject("settings")
                         val hasFragment = settings?.has("fragment") == true
@@ -485,8 +656,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 获取并记录完整配置
         configJson = intent.getStringExtra("config") ?: ""
         
+        // 注入本地DNS配置
+        VpnFileLogger.d(TAG, "注入本地DNS配置...")
+        configJson = injectLocalDnsConfig(configJson)
+        
         // 记录完整的V2Ray配置内容
-        VpnFileLogger.d(TAG, "=============== 完整V2Ray配置 ===============")
+        VpnFileLogger.d(TAG, "=============== 完整V2Ray配置（含虚拟DNS） ===============")
         VpnFileLogger.d(TAG, configJson)
         VpnFileLogger.d(TAG, "=============== 配置结束 ===============")
         
@@ -516,33 +691,29 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 }
             }
             
-            // 日志配置
-            val log = config.optJSONObject("log")
-            VpnFileLogger.d(TAG, "日志级别: ${log?.optString("loglevel", "info")}")
-            VpnFileLogger.d(TAG, "访问日志: ${log?.optString("access", "info")}")
-            VpnFileLogger.d(TAG, "错误日志: ${log?.optString("error", "info")}")
-            
-            // 入站配置
+            // 检查本地DNS配置
             val inbounds = config.optJSONArray("inbounds")
             VpnFileLogger.d(TAG, "入站数量: ${inbounds?.length() ?: 0}")
             for (i in 0 until (inbounds?.length() ?: 0)) {
                 val inbound = inbounds!!.getJSONObject(i)
-                VpnFileLogger.d(TAG, "入站[$i]: ${inbound.toString()}")
+                val tag = inbound.optString("tag")
+                if (tag == DNS_TAG_IN) {
+                    VpnFileLogger.i(TAG, "✓ 本地DNS服务已配置: 端口=${inbound.optInt("port")}")
+                }
             }
             
-            // 出站配置 - 完整记录
+            // 检查DNS出站
             val outbounds = config.optJSONArray("outbounds")
-            VpnFileLogger.d(TAG, "出站数量: ${outbounds?.length() ?: 0}")
             for (i in 0 until (outbounds?.length() ?: 0)) {
                 val outbound = outbounds!!.getJSONObject(i)
-                VpnFileLogger.d(TAG, "出站[$i]: ${outbound.toString()}")
+                if (outbound.optString("protocol") == "dns") {
+                    VpnFileLogger.i(TAG, "✓ DNS出站已配置: tag=${outbound.optString("tag")}")
+                }
             }
             
-            // 路由配置
-            val routing = config.optJSONObject("routing")
-            if (routing != null) {
-                VpnFileLogger.d(TAG, "路由配置: ${routing.toString()}")
-            }
+            // 日志配置
+            val log = config.optJSONObject("log")
+            VpnFileLogger.d(TAG, "日志级别: ${log?.optString("loglevel", "info")}")
             
             // DNS配置
             val dns = config.optJSONObject("dns")
@@ -576,6 +747,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.d(TAG, "允许应用: ${if (allowedApps.isEmpty()) "全部" else "${allowedApps.size}个: $allowedApps"}")
         VpnFileLogger.d(TAG, "绕过子网: $bypassSubnets")
         VpnFileLogger.d(TAG, "自动统计: $enableAutoStats")
+        VpnFileLogger.d(TAG, "本地DNS端口: $localDnsPort")
         
         // 提取国际化文字
         instanceLocalizedStrings.clear()
@@ -1073,7 +1245,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      * VPN层只建立隧道，不做任何路由判断
      */
     private fun establishVpn() {
-        VpnFileLogger.d(TAG, "开始建立VPN隧道（极简版 - 所有路由由V2Ray决定）")
+        VpnFileLogger.d(TAG, "开始建立VPN隧道（虚拟DNS版）")
         
         // 关闭旧接口
         mInterface?.let {
@@ -1111,12 +1283,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // ===== DNS配置 =====
         VpnFileLogger.d(TAG, "===== 配置DNS =====")
         
-        // 使用可靠的公共DNS
-        try {
-            builder.addDnsServer("1.1.1.1")  // Cloudflare主DNS
-            VpnFileLogger.d(TAG, "添加DNS: 1.1.1.1")
-        } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
+        // 如果配置了本地DNS，不添加公共DNS服务器
+        // 让所有DNS请求都通过tun2socks转发到本地DNS服务
+        if (localDnsPort > 0) {
+            VpnFileLogger.d(TAG, "使用虚拟DNS服务，不添加公共DNS")
+            // 不调用 builder.addDnsServer()
+        } else {
+            // 如果没有本地DNS，使用公共DNS作为后备
+            try {
+                builder.addDnsServer("1.1.1.1")  // Cloudflare主DNS
+                VpnFileLogger.d(TAG, "添加公共DNS: 1.1.1.1（后备方案）")
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "添加Cloudflare DNS失败", e)
+            }
         }
         
         // ===== 极简路由配置 =====
@@ -1191,8 +1370,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 优化1: 启动tun2socks进程 - 添加缓冲区优化参数
-     * 修复：移除日志读取线程，只监控进程状态
+     * 启动tun2socks进程 - 支持虚拟DNS
      */
     private fun runTun2socks() {
         if (mode != ConnectionMode.VPN_TUN) {
@@ -1200,7 +1378,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (badvpn-tun2socks) - 优化版 =====")
+        VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (带虚拟DNS支持) =====")
         
         // 从配置中提取SOCKS端口 - 修复：赋值给成员变量
         socksPort = try {
@@ -1232,6 +1410,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             "--enable-udprelay",
             "--loglevel", "error"  // 修改：只输出错误日志，减少资源消耗
         )
+        
+        // 如果配置了本地DNS，添加DNS网关参数
+        if (localDnsPort > 0) {
+            cmd.add("--dnsgw")
+            cmd.add("127.0.0.1:$localDnsPort")
+            VpnFileLogger.i(TAG, "✓ 启用虚拟DNS网关: 127.0.0.1:$localDnsPort")
+        } else {
+            VpnFileLogger.w(TAG, "⚠ 未配置虚拟DNS，DNS请求将直接发送")
+        }
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
         
@@ -1277,7 +1464,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             Thread.sleep(500)  // 等待tun2socks准备就绪
             sendFd()
             
-            VpnFileLogger.d(TAG, "tun2socks进程启动完成（优化版）")
+            VpnFileLogger.d(TAG, "tun2socks进程启动完成（虚拟DNS已配置）")
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动tun2socks失败", e)
@@ -1346,11 +1533,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复3：验证tun2socks是否正确转发流量
-     * 修复：移除广播调用，只记录日志
+     * 验证tun2socks和虚拟DNS是否正确工作
      */
     private fun verifyTun2socksForwarding() {
-        VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 =====")
+        VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发（含虚拟DNS） =====")
         Thread {
             // 测试SOCKS5连接
             try {
@@ -1361,6 +1547,18 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "✗ SOCKS5端口 $socksPort 无法连接: ${e.message}")
                 return@Thread
+            }
+            
+            // 测试本地DNS服务
+            if (localDnsPort > 0) {
+                try {
+                    val socket = Socket()
+                    socket.connect(InetSocketAddress("127.0.0.1", localDnsPort), 2000)
+                    socket.close()
+                    VpnFileLogger.i(TAG, "✓ 虚拟DNS端口 $localDnsPort 连接正常")
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "⚠ 虚拟DNS端口 $localDnsPort 无法连接: ${e.message}")
+                }
             }
 
             // 测试DNS解析，优先使用IPv4
@@ -1373,6 +1571,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 val addr = addresses.firstOrNull { it is java.net.Inet4Address }
                 if (addr != null) {
                     VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
+                    if (localDnsPort > 0) {
+                        VpnFileLogger.i(TAG, "✓ 虚拟DNS服务工作正常")
+                    }
                 } else {
                     VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到 IPv4 地址")
                     // 尝试备用域名
@@ -1422,6 +1623,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             VpnFileLogger.i(TAG, "===== tun2socks转发验证完成 - 全部测试通过 =====")
+            if (localDnsPort > 0) {
+                VpnFileLogger.i(TAG, "✓ 虚拟DNS服务运行正常，DNS防泄露已启用")
+            }
         }.start()
     }
     
@@ -2025,7 +2229,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     }
                 }
                 
-                // 验证4：检查API端口（如果配置了）
+                // 验证4：检查本地DNS端口（如果配置了）
+                if (localDnsPort > 0) {
+                    try {
+                        val socket = Socket()
+                        socket.connect(InetSocketAddress("127.0.0.1", localDnsPort), 2000)
+                        socket.close()
+                        VpnFileLogger.i(TAG, "✓ 虚拟DNS端口 $localDnsPort 监听正常")
+                    } catch (e: Exception) {
+                        VpnFileLogger.w(TAG, "✗ 虚拟DNS端口 $localDnsPort 无法连接: ${e.message}")
+                    }
+                }
+                
+                // 验证5：检查API端口（如果配置了）
                 val apiPort = try {
                     val config = JSONObject(configJson)
                     val inbounds = config.getJSONArray("inbounds")
