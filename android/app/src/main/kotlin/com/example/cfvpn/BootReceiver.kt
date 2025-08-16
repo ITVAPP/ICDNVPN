@@ -81,17 +81,18 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
         
-        // 获取运行模式和代理设置
-        val mode = prefs.getString("last_mode", "VPN_TUN") ?: "VPN_TUN"
+        // 获取代理设置和虚拟DNS配置
         val globalProxy = prefs.getBoolean("last_global_proxy", false)
+        val enableVirtualDns = prefs.getBoolean("last_enable_virtual_dns", false)
+        val virtualDnsPort = prefs.getInt("last_virtual_dns_port", 10853)
         
-        VpnFileLogger.d(TAG, "准备启动VPN，模式: $mode")
+        VpnFileLogger.d(TAG, "准备启动VPN，全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns")
         
         // 等待系统完全启动
         waitForSystemReady(context)
         
-        // 检查VPN权限（仅TUN模式）
-        if (mode == "VPN_TUN" && !checkVpnPermission(context)) {
+        // 检查VPN权限
+        if (!checkVpnPermission(context)) {
             VpnFileLogger.w(TAG, "缺少VPN权限")
             sendNotification(context, "VPN自动连接失败", "请手动连接VPN")
             return
@@ -109,7 +110,7 @@ class BootReceiver : BroadcastReceiver() {
                 }
                 
                 // 启动VPN服务
-                startVpnService(context, lastConfig, mode, globalProxy)
+                startVpnService(context, lastConfig, globalProxy, enableVirtualDns, virtualDnsPort)
                 
                 // 等待服务响应
                 delay(3000)
@@ -171,26 +172,32 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
     
-    // 启动VPN服务并配置参数
-    private fun startVpnService(context: Context, config: String, mode: String, globalProxy: Boolean) {
+    // 启动VPN服务并配置参数（修改以适配新API）
+    private fun startVpnService(
+        context: Context, 
+        config: String, 
+        globalProxy: Boolean,
+        enableVirtualDns: Boolean,
+        virtualDnsPort: Int
+    ) {
         try {
-            // 解析连接模式
-            val connectionMode = try {
-                V2RayVpnService.ConnectionMode.valueOf(mode)
-            } catch (e: Exception) {
-                V2RayVpnService.ConnectionMode.VPN_TUN
-            }
-            
-            // 发起VPN服务
+            // 发起VPN服务（使用新的API签名）
             V2RayVpnService.startVpnService(
                 context = context,
                 config = config,
-                mode = connectionMode,
                 globalProxy = globalProxy,
-                enableAutoStats = false
+                blockedApps = null,  // 不使用
+                allowedApps = null,  // 自启动时使用默认设置
+                appProxyMode = V2RayVpnService.Companion.AppProxyMode.EXCLUDE,
+                bypassSubnets = null,  // 使用默认设置
+                enableAutoStats = false,  // 自启动时禁用流量统计
+                disconnectButtonName = "停止",
+                localizedStrings = emptyMap(),  // 自启动时使用默认文字
+                enableVirtualDns = enableVirtualDns,  // 传递虚拟DNS设置
+                virtualDnsPort = virtualDnsPort  // 传递虚拟DNS端口
             )
             
-            VpnFileLogger.d(TAG, "VPN服务启动命令发送")
+            VpnFileLogger.d(TAG, "VPN服务启动命令发送，虚拟DNS: $enableVirtualDns")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "VPN服务启动失败", e)
             throw e
@@ -219,22 +226,37 @@ object AutoStartManager {
     private const val TAG = "AutoStartManager"
     private const val PREFS_NAME = "vpn_settings"
     
-    // 保存VPN配置信息
+    // 保存VPN配置信息（修改以包含虚拟DNS配置）
     @JvmStatic
-    fun saveAutoStartConfig(context: Context, config: String, mode: String, globalProxy: Boolean) {
+    fun saveAutoStartConfig(
+        context: Context, 
+        config: String, 
+        mode: String,  // 保留参数以保持兼容性，但不再使用
+        globalProxy: Boolean,
+        enableVirtualDns: Boolean = false,
+        virtualDnsPort: Int = 10853
+    ) {
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit().apply {
                 putString("last_vpn_config", config)
-                putString("last_mode", mode)
+                putString("last_mode", mode)  // 保留以兼容旧版本
                 putBoolean("last_global_proxy", globalProxy)
+                putBoolean("last_enable_virtual_dns", enableVirtualDns)
+                putInt("last_virtual_dns_port", virtualDnsPort)
                 putLong("last_save_time", System.currentTimeMillis())
                 apply()
             }
-            VpnFileLogger.d(TAG, "保存自启动配置: 模式=$mode")
+            VpnFileLogger.d(TAG, "保存自启动配置: 全局代理=$globalProxy, 虚拟DNS=$enableVirtualDns")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "保存配置失败", e)
         }
+    }
+    
+    // 保存VPN配置信息（重载方法，保持向后兼容）
+    @JvmStatic
+    fun saveAutoStartConfig(context: Context, config: String, mode: String, globalProxy: Boolean) {
+        saveAutoStartConfig(context, config, mode, globalProxy, false, 10853)
     }
     
     // 设置开机自启动状态
@@ -288,6 +310,8 @@ object AutoStartManager {
                 remove("last_vpn_config")
                 remove("last_mode")
                 remove("last_global_proxy")
+                remove("last_enable_virtual_dns")
+                remove("last_virtual_dns_port")
                 remove("last_save_time")
                 apply()
             }
@@ -305,6 +329,19 @@ object AutoStartManager {
             prefs.getLong("last_save_time", 0L)
         } catch (e: Exception) {
             0L
+        }
+    }
+    
+    // 获取上次保存的虚拟DNS配置
+    @JvmStatic
+    fun getLastVirtualDnsConfig(context: Context): Pair<Boolean, Int> {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val enabled = prefs.getBoolean("last_enable_virtual_dns", false)
+            val port = prefs.getInt("last_virtual_dns_port", 10853)
+            Pair(enabled, port)
+        } catch (e: Exception) {
+            Pair(false, 10853)
         }
     }
 }
