@@ -152,8 +152,7 @@
       "8.8.8.8"
     ],
     "disableCache": false,
-    "disableFallback": false,
-    "disableIPv6": true // 禁用 IPv6 DNS 解析
+    "disableFallback": false
   },
   "routing": {
     "domainStrategy": "AsIs",
