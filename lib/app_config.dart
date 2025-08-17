@@ -36,19 +36,6 @@ class AppConfig {
   // 虚拟DNS服务端口
   static const int virtualDnsPort = 10853; // 本地DNS服务监听端口
   
-  // 虚拟DNS标签（内部使用）
-  static const String virtualDnsInTag = 'dns-in';
-  static const String virtualDnsOutTag = 'dns-out';
-  
-  // 公共DNS服务器（不启用虚拟DNS时使用）
-  static const List<String> publicDnsServers = [
-    '8.8.8.8',    // Google DNS主服务器
-    '1.1.1.1',    // Cloudflare DNS主服务器
-  ];
-  
-  // DNS查询超时时间（毫秒）
-  static const int dnsQueryTimeout = 2000;
-  
   // ===== V2Ray服务器群组配置 =====
   // 服务器群组用于指定多个后端服务器，实现域前置的灵活切换
   // 注意：address和port字段会被忽略，TCP连接始终使用Cloudflare CDN IP
