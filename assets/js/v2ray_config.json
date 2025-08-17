@@ -191,6 +191,7 @@
         "security": "tls",         // TLS加密
         "tlsSettings": {
           "serverName": "pages-vless-a9f.pages.dev", // TLS服务器名称
+          "allowInsecure": true,  // 不检查远端主机所提供的 TLS 证书的有效性
           "fingerprint": "randomized" // 随机化TLS指纹
         },
         "wsSettings": {
