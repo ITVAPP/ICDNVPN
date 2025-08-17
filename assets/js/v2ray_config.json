@@ -125,9 +125,7 @@
       },
       "1.1.1.1",                 // Cloudflare DNS
       "8.8.8.8"                  // Google DNS
-    ],
-    "disableCache": false,       // 启用 DNS 缓存
-    "disableFallback": false     // 启用备用 DNS
+    ]
   },
   
   // 入站连接配置
