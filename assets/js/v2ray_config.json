@@ -59,14 +59,6 @@
         "outboundTag": "dns-out"
       },
       {
-        // 特定 DNS 服务器通过代理
-        "type": "field",
-        "outboundTag": "proxy",
-        "ip": ["1.1.1.1", "8.8.8.8"],
-        "port": 53,
-        "network": "udp"
-      },
-      {
         // 中国大陆域名直连
         "type": "field",
         "outboundTag": "direct",
@@ -214,16 +206,13 @@
         "tlsSettings": {
           "serverName": "pages-vless-a9f.pages.dev", // TLS 服务器名称
           "allowInsecure": true,  // 不检查远端主机所提供的 TLS 证书的有效性
-          "fingerprint": "randomized" // 随机化 TLS 指纹
+          "fingerprint": "chrome" // 随机化 TLS 指纹
         },
         "wsSettings": {
           "path": "/",             // WebSocket 路径
           "headers": {
             "Host": "pages-vless-a9f.pages.dev" // Host 头
           }
-        },
-        "sockopt": {
-          "dialerProxy": "proxy3"  // 使用 proxy3 作为底层代理
         }
       },
       "mux": {
@@ -244,18 +233,6 @@
       "settings": {
         "response": {
           "type": "http"         // 返回 HTTP 响应
-        }
-      }
-    },
-    {
-      // 辅助代理出站（用于分片）
-      "tag": "proxy3",
-      "protocol": "freedom",     // 自由协议
-      "settings": {
-        "fragment": {            // 数据包分片设置
-          "packets": "tlshello", // 对 TLS 握手包进行分片
-          "length": "200-300",   // 分片长度范围
-          "interval": "20-50"    // 分片间隔（毫秒）
         }
       }
     }
