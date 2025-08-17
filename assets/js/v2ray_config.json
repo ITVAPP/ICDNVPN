@@ -44,18 +44,32 @@
         "inboundTag": ["api"],     // 来自API入站的流量
         "outboundTag": "api"       // 路由到API出站
       },
-        // 特定DNS服务器通过代理
       {
+        // 虚拟 DNS：DNS 入站流量路由到 dns-out
+        "type": "field",
+        "inboundTag": ["dns-in"],
+        "outboundTag": "dns-out"
+      },
+      {
+        // 非虚拟 DNS：SOCKS 入站的 DNS 流量（UDP 53）路由到 dns-out
+        "type": "field",
+        "inboundTag": ["socks"],
+        "port": 53,
+        "network": "udp",
+        "outboundTag": "dns-out"
+      },
+      {
+        // 特定 DNS 服务器通过代理
         "type": "field",
         "outboundTag": "proxy",
         "ip": ["1.1.1.1", "8.8.8.8"],
-        "port": "53",
+        "port": 53,
         "network": "udp"
       },
       {
         // 中国大陆域名直连
         "type": "field",
-        "outboundTag": "direct",   // 直连
+        "outboundTag": "direct",
         "domain": [
           "domain:dns.alidns.com",    // 阿里DNS
           "domain:doh.pub",           // 腾讯DNS
@@ -67,7 +81,7 @@
         ]
       },
       {
-        // 中国大陆IP直连
+        // 中国大陆 IP 直连
         "type": "field",
         "outboundTag": "direct",
         "ip": [
@@ -76,78 +90,90 @@
           "119.29.29.29",   // 腾讯DNS
           "114.114.114.114", // 114DNS
           "114.114.115.115", // 114DNS
-          "geoip:private",   // 私有IP地址
-          "geoip:cn"         // 中国大陆IP
+          "geoip:private",   // 私有 IP 地址
+          "geoip:cn"         // 中国大陆 IP
         ]
       },
       {
         // 默认规则：其他所有流量通过代理
         "type": "field",
-        "port": "0-65535",         // 所有端口
-        "outboundTag": "proxy"     // 通过代理
+        "port": "0-65535",
+        "outboundTag": "proxy"
       }
     ]
-  }, 
+  },
   
-  // DNS配置
+  // DNS 配置
   "dns": {
-    "hosts": {                   // 静态DNS映射
+    "hosts": {                   // 静态 DNS 映射
       "dns.google": "8.8.8.8",
       "dns.cloudflare.com": "1.1.1.1",
       "cloudflare-dns.com": "1.1.1.1"
     },
     "servers": [
       {
-        // 中国大陆域名使用阿里DNS
+        // 中国大陆域名使用阿里 DNS
         "address": "223.5.5.5",
         "domains": [
           "geosite:cn",           // 中国大陆网站
           "geosite:geolocation-cn" // 中国大陆地理位置网站
         ],
         "expectIPs": [
-          "geoip:cn"              // 期望返回中国IP
+          "geoip:cn"              // 期望返回中国 IP
         ],
-        "skipFallback": false     // 不跳过备用DNS
+        "skipFallback": false     // 不跳过备用 DNS
       },
       "1.1.1.1",                 // Cloudflare DNS
       "8.8.8.8"                  // Google DNS
     ],
-    "disableCache": false,       // 启用DNS缓存
-    "disableFallback": false     // 启用备用DNS
-  }, 
+    "disableCache": false,       // 启用 DNS 缓存
+    "disableFallback": false     // 启用备用 DNS
+  },
   
   // 入站连接配置
   "inbounds": [
     {
-      // SOCKS5代理服务器
-      "tag": "socks",
-      "port": 7898,              // 监听端口
-      "protocol": "socks",       // SOCKS协议
+      // 虚拟 DNS 入站
+      "tag": "dns-in",
+      "port": 10853,
+      "listen": "127.0.0.1",
+      "protocol": "dokodemo-door",
       "settings": {
-        "auth": "noauth",        // 无需认证
-        "udp": true              // 支持UDP转发
+        "address": "1.1.1.1",
+        "port": 53,
+        "network": "tcp,udp"
       }
     },
     {
-      // HTTP代理服务器
+      // SOCKS5 代理服务器
+      "tag": "socks",
+      "port": 7898,              // 监听端口
+      "protocol": "socks",       // SOCKS 协议
+      "settings": {
+        "auth": "noauth",        // 无需认证
+        "udp": true              // 支持 UDP 转发
+      }
+    },
+    {
+      // HTTP 代理服务器
       "tag": "http",
       "port": 7899,              // 监听端口
-      "protocol": "http",        // HTTP协议
+      "protocol": "http",        // HTTP 协议
       "sniffing": {              // 流量探测配置
         "enabled": true,         // 启用探测
-        "destOverride": ["http", "tls"], // 探测HTTP和TLS流量
+        "destOverride": ["http", "tls"], // 探测 HTTP 和 TLS 流量
         "routeOnly": false       // 不仅仅用于路由
       },
       "settings": {
         "auth": "noauth",        // 无需认证
-        "udp": true,             // 支持UDP
+        "udp": true,             // 支持 UDP
         "allowTransparent": false // 不允许透明代理
       }
     },
     {
-      // API管理接口
+      // API 管理接口
       "tag": "api",
-      "port": 10085,             // API端口
+      "port": 10085,             // API 端口
       "listen": "127.0.0.1",     // 仅本地访问
       "protocol": "dokodemo-door", // 任意门协议
       "settings": {
@@ -159,42 +185,47 @@
   // 出站连接配置
   "outbounds": [
     {
+      // DNS 出站
+      "tag": "dns-out",
+      "protocol": "dns"
+    },
+    {
       // 主代理出站
       "tag": "proxy",
-      "protocol": "vless",       // VLESS协议
+      "protocol": "vless",       // VLESS 协议
       "settings": {
         "vnext": [
           {
-            "address": "SERVER_IP",  // 服务器IP地址（需要替换为实际IP）
+            "address": "SERVER_IP",  // 服务器 IP 地址（需要替换为实际 IP）
             "port": 443,             // 服务器端口
             "users": [
               {
-                "id": "bc24baea-3e5c-4107-a231-416cf00504fe", // 用户UUID
-                "alterId": 0,        // 额外ID（VLESS中为0）
+                "id": "bc24baea-3e5c-4107-a231-416cf00504fe", // 用户 UUID
+                "alterId": 0,        // 额外 ID（VLESS 中为 0）
                 "email": "t@t.tt",   // 用户邮箱（标识）
                 "security": "auto",  // 加密方式
-                "encryption": "none" // VLESS加密设置
+                "encryption": "none" // VLESS 加密设置
               }
             ]
           }
         ]
       },
       "streamSettings": {
-        "network": "ws",           // WebSocket传输
-        "security": "tls",         // TLS加密
+        "network": "ws",           // WebSocket 传输
+        "security": "tls",         // TLS 加密
         "tlsSettings": {
-          "serverName": "pages-vless-a9f.pages.dev", // TLS服务器名称
+          "serverName": "pages-vless-a9f.pages.dev", // TLS 服务器名称
           "allowInsecure": true,  // 不检查远端主机所提供的 TLS 证书的有效性
-          "fingerprint": "randomized" // 随机化TLS指纹
+          "fingerprint": "randomized" // 随机化 TLS 指纹
         },
         "wsSettings": {
-          "path": "/",             // WebSocket路径
+          "path": "/",             // WebSocket 路径
           "headers": {
-            "Host": "pages-vless-a9f.pages.dev" // Host头
+            "Host": "pages-vless-a9f.pages.dev" // Host 头
           }
         },
         "sockopt": {
-          "dialerProxy": "proxy3"  // 使用proxy3作为底层代理
+          "dialerProxy": "proxy3"  // 使用 proxy3 作为底层代理
         }
       },
       "mux": {
@@ -214,7 +245,7 @@
       "protocol": "blackhole",   // 黑洞协议（阻断）
       "settings": {
         "response": {
-          "type": "http"         // 返回HTTP响应
+          "type": "http"         // 返回 HTTP 响应
         }
       }
     },
@@ -224,7 +255,7 @@
       "protocol": "freedom",     // 自由协议
       "settings": {
         "fragment": {            // 数据包分片设置
-          "packets": "tlshello", // 对TLS握手包进行分片
+          "packets": "tlshello", // 对 TLS 握手包进行分片
           "length": "200-300",   // 分片长度范围
           "interval": "20-50"    // 分片间隔（毫秒）
         }
@@ -232,4 +263,3 @@
     }
   ]
 }
-
