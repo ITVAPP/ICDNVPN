@@ -122,13 +122,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geosite.dat")
     COMPONENT Runtime)
 endif()
 
-# 如果有额外的 geoip-only-cn-private.dat 文件
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip-only-cn-private.dat")
-  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/geoip-only-cn-private.dat"
-    DESTINATION "${CMAKE_INSTALL_PREFIX}/v2ray"
-    COMPONENT Runtime)
-endif()
-
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")
