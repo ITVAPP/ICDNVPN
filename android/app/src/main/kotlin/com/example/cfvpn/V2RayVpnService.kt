@@ -553,12 +553,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.d(TAG, "  geoip.dat - 存在: ${geoipFile.exists()}, 路径: ${geoipFile.absolutePath}, 大小: ${geoipFile.length()} bytes")
             VpnFileLogger.d(TAG, "  geosite.dat - 存在: ${geositeFile.exists()}, 路径: ${geositeFile.absolutePath}, 大小: ${geositeFile.length()} bytes")
             
-            // 验证geoip-only-cn-private.dat（如果使用）
-            val geoipCnFile = File(envPath, "geoip-only-cn-private.dat")
-            if (geoipCnFile.exists()) {
-                VpnFileLogger.d(TAG, "  geoip-only-cn-private.dat - 存在: true, 大小: ${geoipCnFile.length()} bytes")
-            }
-            
             val version = Libv2ray.checkVersionX()
             VpnFileLogger.i(TAG, "V2Ray版本: $version")
         } catch (e: Exception) {
@@ -860,7 +854,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         VpnFileLogger.d(TAG, "资源目标目录: ${assetDir.absolutePath}")
         
-        val files = listOf("geoip.dat", "geoip-only-cn-private.dat", "geosite.dat")
+        val files = listOf("geoip.dat", "geosite.dat")
         
         for (fileName in files) {
             try {
