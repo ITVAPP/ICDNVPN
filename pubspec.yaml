@@ -66,7 +66,6 @@ flutter:
     - assets/images/              # 图片资源目录
     - assets/js/                  # JavaScript文件目录
     - assets/geoip.dat           # GeoIP数据库文件（IP地理位置）
-    - assets/geoip-only-cn-private.dat  # 仅中国大陆和私有IP的GeoIP数据
     - assets/geosite.dat         # GeoSite数据库文件（域名分类）
   
   # 自定义字体配置（当前已注释）
