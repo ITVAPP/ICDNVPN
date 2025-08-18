@@ -52,7 +52,6 @@
       // SOCKS5 代理服务器
       "tag": "socks",
       "port": 7898,              // 监听端口
-      "listen": "127.0.0.1",     // 限制为本地访问
       "protocol": "socks",       // SOCKS 协议
       "settings": {
         "auth": "noauth",        // 无需认证
@@ -63,7 +62,6 @@
       // HTTP 代理服务器
       "tag": "http",
       "port": 7899,              // 监听端口
-      "listen": "127.0.0.1",     // 限制为本地访问
       "protocol": "http",        // HTTP 协议
       "sniffing": {              // 流量探测配置
         "enabled": true,         // 启用探测
@@ -103,7 +101,7 @@
         "vnext": [
           {
             "address": "SERVER_IP",  // 服务器 IP 地址（需要替换为实际 IP）
-            "port": 80,              // 服务器端口改为80
+            "port": 443,             // 服务器端口
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe", // 用户 UUID
@@ -118,7 +116,12 @@
       },
       "streamSettings": {
         "network": "ws",           // WebSocket 传输
-        "security": "none",        // 无 TLS 加密（端口 80 通常为 HTTP）
+        "security": "tls",         // TLS 加密
+        "tlsSettings": {
+          "serverName": "pages-vless-a9f.pages.dev", // TLS 服务器名称
+          "allowInsecure": true,  // 不检查远端主机所提供的 TLS 证书的有效性
+          "fingerprint": "chrome" // 随机化 TLS 指纹
+        },
         "wsSettings": {
           "path": "/",             // WebSocket 路径
           "headers": {
@@ -191,7 +194,7 @@
         "type": "field",
         "inboundTag": ["socks"],
         "port": 53,
-        "network": "udp",
+        "network": "tcp,udp"
         "outboundTag": "dns-out"
       },
       {
@@ -200,7 +203,7 @@
         "outboundTag": "proxy",
         "ip": ["1.1.1.1", "8.8.8.8"],
         "port": 53,
-        "network": "udp"
+        "network": "tcp,udp"
       },
       {
         // 直连 123 端口 UDP 流量（NTP 协议）
