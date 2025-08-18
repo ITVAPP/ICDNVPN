@@ -67,14 +67,6 @@ jobs:
             exit 1
         }
         
-        # 复制 geoip-only-cn-private.dat（如果存在）
-        if (Test-Path "$assetsPath\geoip-only-cn-private.dat") {
-            Copy-Item "$assetsPath\geoip-only-cn-private.dat" -Destination "$buildPath\" -Force
-            Write-Host "✓ Copied geoip-only-cn-private.dat from assets"
-        } else {
-            Write-Host "⚠ geoip-only-cn-private.dat not found (optional)"
-        }
-        
         Write-Host "All required files copied successfully"
     
     - name: Clean duplicate geo files from flutter_assets
@@ -87,7 +79,7 @@ jobs:
             Write-Host "清理 flutter_assets 中的重复 geo 文件..."
             
             # 定义要删除的 geo 文件列表
-            $geoFiles = @("geoip.dat", "geosite.dat", "geoip-only-cn-private.dat")
+            $geoFiles = @("geoip.dat", "geosite.dat")
             $totalSaved = 0
             
             foreach ($file in $geoFiles) {
@@ -200,3 +192,4 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
