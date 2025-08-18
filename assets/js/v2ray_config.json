@@ -59,6 +59,14 @@
         "outboundTag": "dns-out"
       },
       {
+        // 特定 DNS 服务器通过代理
+        "type": "field",
+        "outboundTag": "proxy",
+        "ip": ["1.1.1.1", "8.8.8.8"],
+        "port": 53,
+        "network": "udp"
+      },
+      {
         // 中国大陆域名直连
         "type": "field",
         "outboundTag": "direct",
