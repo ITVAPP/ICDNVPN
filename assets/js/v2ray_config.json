@@ -170,7 +170,7 @@
   
   // 路由配置
   "routing": {
-    "domainStrategy": "IPOnDemand",  
+    "domainStrategy": "AsIs",  
     "rules": [
       {
         // API路由规则
