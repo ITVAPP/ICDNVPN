@@ -1,4 +1,9 @@
 {
+  // 日志配置
+  "log": {
+    "loglevel": "error"  // 日志级别：error级别，只记录错误信息
+  },
+  
   // 统计信息配置
   "stats": {},  // 空对象，启用基础统计功能
   
@@ -28,7 +33,88 @@
       "statsOutboundDownlink": true  // 启用出站下行流量统计
     }
   },
-
+  
+  // 路由配置
+  "routing": {
+    "domainStrategy": "AsIs",  // 域名解析策略：保持原样
+    "rules": [
+      {
+        // API路由规则
+        "type": "field",
+        "inboundTag": ["api"],     // 来自API入站的流量
+        "outboundTag": "api"       // 路由到API出站
+      },
+      {
+        // 虚拟 DNS：DNS 入站流量路由到 dns-out
+        "type": "field",
+        "inboundTag": ["dns-in"],
+        "outboundTag": "dns-out"
+      },
+      {
+        // 非虚拟 DNS：SOCKS 入站的 DNS 流量（UDP 53）路由到 dns-out
+        "type": "field",
+        "inboundTag": ["socks"],
+        "port": 53,
+        "network": "udp",
+        "outboundTag": "dns-out"
+      },
+      {
+        // 中国大陆域名直连
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "geosite:cn",               // 中国大陆网站
+          "geosite:geolocation-cn"    // 中国大陆地理位置网站
+        ]
+      },
+      {
+        // 中国大陆 IP 直连
+        "type": "field",
+        "outboundTag": "direct",
+        "ip": [
+          "223.5.5.5",      // 阿里DNS
+          "223.6.6.6",      // 阿里DNS
+          "119.29.29.29",   // 腾讯DNS
+          "114.114.114.114", // 114DNS
+          "114.114.115.115", // 114DNS
+          "geoip:private",   // 私有 IP 地址
+          "geoip:cn"         // 中国大陆 IP
+        ]
+      },
+      {
+        // 默认规则：其他所有流量通过代理
+        "type": "field",
+        "port": "0-65535",
+        "outboundTag": "proxy"
+      }
+    ]
+  },
+  
+  // DNS 配置
+  "dns": {
+    "hosts": {                   // 静态 DNS 映射
+      "dns.google": "8.8.8.8",
+      "dns.cloudflare.com": "1.1.1.1",
+      "cloudflare-dns.com": "1.1.1.1"
+    },
+    "servers": [
+      {
+        // 中国大陆域名使用阿里 DNS
+        "address": "223.5.5.5",
+        "domains": [
+          "geosite:cn",           // 中国大陆网站
+          "geosite:geolocation-cn" // 中国大陆地理位置网站
+        ],
+        "expectIPs": [
+          "geoip:cn"              // 期望返回中国 IP
+        ],
+        "skipFallback": false     // 不跳过备用 DNS
+      },
+      "1.1.1.1",                 // Cloudflare DNS
+      "8.8.8.8"                  // Google DNS
+    ]
+  },
+  
   // 入站连接配置
   "inbounds": [
     {
@@ -38,7 +124,7 @@
       "listen": "127.0.0.1",
       "protocol": "dokodemo-door",
       "settings": {
-        "address": "8.8.8.8",
+        "address": "1.1.1.1",
         "port": 53,
         "network": "tcp,udp"
       }
@@ -145,105 +231,5 @@
         }
       }
     }
-  ],
-  
-  // DNS 配置
-  "dns": {
-    "hosts": {                   // 静态 DNS 映射
-      "dns.google": "8.8.8.8",
-      "dns.cloudflare.com": "1.1.1.1",
-      "cloudflare-dns.com": "1.1.1.1",
-      "dns.alidns.com": "223.5.5.5",
-      "geosite:category-ads-all": "127.0.0.1"
-    },
-    "servers": [
-      "223.5.5.5",                 
-      "114.114.114.114",  
-      {
-        "address": "8.8.8.8",
-        "port": 53,
-        "domains": ["geosite:geolocation-!cn"],
-        "expectIPs": ["geoip:!cn"]
-      }
-    ]
-  },
-  
-  // 路由配置
-  "routing": {
-    "domainStrategy": "AsIs",  
-    "rules": [
-      {
-        // API路由规则
-        "type": "field",
-        "inboundTag": ["api"],     // 来自API入站的流量
-        "outboundTag": "api"       // 路由到API出站
-      },
-      {
-        // 虚拟 DNS：DNS 入站流量路由到 dns-out
-        "type": "field",
-        "inboundTag": ["dns-in"],
-        "outboundTag": "dns-out"
-      },
-      {
-        // 非虚拟 DNS：SOCKS 入站的 DNS 流量（UDP 53）路由到 dns-out
-        "type": "field",
-        "inboundTag": ["socks"],
-        "port": 53,
-        "network": "tcp,udp"
-        "outboundTag": "dns-out"
-      },
-      {
-        // 特定 DNS 服务器通过代理
-        "type": "field",
-        "outboundTag": "proxy",
-        "ip": ["1.1.1.1", "8.8.8.8"],
-        "port": 53,
-        "network": "tcp,udp"
-      },
-      {
-        // 直连 123 端口 UDP 流量（NTP 协议）
-        "type": "field",
-        "outboundTag": "direct",
-        "port": 123,
-        "network": "udp"
-      },
-      {
-        // BT 流量直连
-        "type": "field",
-        "outboundTag": "direct",
-        "protocol":["bittorrent"]
-      },
-      {
-        // 中国大陆域名直连
-        "type": "field",
-        "outboundTag": "direct",
-        "domain": [
-          "geosite:cn",               // 中国大陆网站
-          "geosite:geolocation-cn"    // 中国大陆地理位置网站
-        ]
-      },
-      {
-        // 中国大陆 IP 直连
-        "type": "field",
-        "outboundTag": "direct",
-        "ip": [
-          "geoip:private",   // 私有 IP 地址
-          "geoip:cn"         // 中国大陆 IP
-        ]
-      },
-      {
-          "type": "field",
-          "outboundTag": "block",
-          "domain": [
-          "geosite:category-ads-all"
-          ]
-      },
-      {
-        // 默认规则：其他所有流量通过代理
-        "type": "field",
-        "network": "udp,tcp",
-        "outboundTag": "proxy"
-      }
-    ]
-  }
+  ]
 }
