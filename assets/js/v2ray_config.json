@@ -162,36 +162,20 @@
       "geosite:category-ads-all": "127.0.0.1"
     },
     "servers": [
-      "1.1.1.1",                 // Cloudflare DNS
-      "8.8.8.8",                  // Google DNS
+      "223.5.5.5",                 
+      "114.114.114.114",  
       {
-        "address": "https://1.1.1.1/dns-query",
+        "address": "1.1.1.1",
+        "port": 53,
         "domains": ["geosite:geolocation-!cn"],
         "expectIPs": ["geoip:!cn"]
-      },
-      {
-        // 中国大陆域名使用阿里 DNS
-        "address": "223.5.5.5",
-        "port": 53,
-        "domains": [
-          "geosite:cn",           // 中国大陆网站
-          "geosite:geolocation-cn" // 中国大陆地理位置网站
-        ],
-        "expectIPs": [
-          "geoip:cn"              // 期望返回中国 IP
-        ],
-        "skipFallback": true     // 跳过备用 DNS
-      },
-      {
-        "address": "localhost",
-        "skipFallback": true
       }
     ]
   },
   
   // 路由配置
   "routing": {
-    "domainStrategy": "AsIs",  // 域名解析策略：保持原样
+    "domainStrategy": "IPOnDemand",  
     "rules": [
       {
         // API路由规则
@@ -222,15 +206,23 @@
         "network": "udp"
       },
       {
+        // 直连 123 端口 UDP 流量（NTP 协议）
+        "type": "field",
+        "outboundTag": "direct",
+        "port": 123,
+        "network": "udp"
+      },
+      {
+        // BT 流量直连
+        "type": "field",
+        "outboundTag": "direct",
+        "protocol":["bittorrent"]
+      },
+      {
         // 中国大陆域名直连
         "type": "field",
         "outboundTag": "direct",
         "domain": [
-          "domain:dns.alidns.com",    // 阿里DNS
-          "domain:doh.pub",           // 腾讯DNS
-          "domain:dot.pub",           // 腾讯DNS
-          "domain:doh.360.cn",        // 360DNS
-          "domain:dot.360.cn",        // 360DNS
           "geosite:cn",               // 中国大陆网站
           "geosite:geolocation-cn"    // 中国大陆地理位置网站
         ]
@@ -240,11 +232,6 @@
         "type": "field",
         "outboundTag": "direct",
         "ip": [
-          "223.5.5.5",      // 阿里DNS
-          "223.6.6.6",      // 阿里DNS
-          "119.29.29.29",   // 腾讯DNS
-          "114.114.114.114", // 114DNS
-          "114.114.115.115", // 114DNS
           "geoip:private",   // 私有 IP 地址
           "geoip:cn"         // 中国大陆 IP
         ]
@@ -259,7 +246,7 @@
       {
         // 默认规则：其他所有流量通过代理
         "type": "field",
-        "port": "0-65535",
+        "network": "udp,tcp",
         "outboundTag": "proxy"
       }
     ]
