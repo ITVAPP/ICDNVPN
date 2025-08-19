@@ -196,6 +196,178 @@ class ProxyService {
     RegCloseKey(hkey);
   }
   
+  // ============ 新增DNS相关方法 ============
+  
+  /// 获取活动网络适配器列表
+  static Future<List<String>> _getActiveNetworkAdapters() async {
+    if (!Platform.isWindows) return [];
+    
+    try {
+      // 使用wmic获取活动的网络适配器
+      final result = await Process.run(
+        'wmic',
+        ['nic', 'where', 'NetEnabled=true', 'get', 'NetConnectionID', '/value'],
+        runInShell: true
+      );
+      
+      if (result.exitCode == 0) {
+        final output = result.stdout.toString();
+        final adapters = <String>[];
+        
+        // 解析输出
+        for (final line in output.split('\n')) {
+          if (line.startsWith('NetConnectionID=')) {
+            final name = line.substring('NetConnectionID='.length).trim();
+            if (name.isNotEmpty) {
+              adapters.add(name);
+            }
+          }
+        }
+        
+        if (adapters.isNotEmpty) {
+          await _log.debug('检测到活动网络适配器: ${adapters.join(', ')}', tag: _logTag);
+          return adapters;
+        }
+      }
+    } catch (e) {
+      await _log.warn('使用wmic获取网络适配器失败: $e', tag: _logTag);
+    }
+    
+    // 备用方案：返回常见的适配器名称
+    final defaultAdapters = ['以太网', 'WLAN', 'Wi-Fi', 'Ethernet'];
+    await _log.debug('使用默认网络适配器列表: ${defaultAdapters.join(', ')}', tag: _logTag);
+    return defaultAdapters;
+  }
+  
+  /// 设置DNS指向V2Ray的虚拟DNS
+  static Future<void> _setupDnsRedirection() async {
+    if (!Platform.isWindows) return;
+    
+    try {
+      await _log.info('开始设置DNS重定向到V2Ray虚拟DNS', tag: _logTag);
+      
+      // 从AppConfig读取虚拟DNS端口
+      final virtualDnsPort = AppConfig.virtualDnsPort;
+      await _log.info('V2Ray虚拟DNS端口: $virtualDnsPort', tag: _logTag);
+      
+      // 1. 如果虚拟DNS不在标准53端口，设置端口转发
+      if (virtualDnsPort != 53) {
+        await _log.info('设置端口转发: 53 -> $virtualDnsPort', tag: _logTag);
+        
+        // 先删除可能存在的旧规则
+        await Process.run('netsh', [
+          'interface', 'portproxy', 'delete', 'v4tov4',
+          'listenport=53',
+          'listenaddress=127.0.0.1'
+        ], runInShell: true);
+        
+        // 添加新的端口转发规则
+        final addResult = await Process.run('netsh', [
+          'interface', 'portproxy', 'add', 'v4tov4',
+          'listenport=53',
+          'listenaddress=127.0.0.1',
+          'connectport=$virtualDnsPort',
+          'connectaddress=127.0.0.1'
+        ], runInShell: true);
+        
+        if (addResult.exitCode == 0) {
+          await _log.info('端口转发规则添加成功', tag: _logTag);
+        } else {
+          await _log.warn('端口转发规则添加失败: ${addResult.stderr}', tag: _logTag);
+        }
+        
+        // 显示当前的端口转发规则（用于调试）
+        final showResult = await Process.run('netsh', [
+          'interface', 'portproxy', 'show', 'v4tov4'
+        ], runInShell: true);
+        
+        if (showResult.exitCode == 0) {
+          await _log.debug('当前端口转发规则:\n${showResult.stdout}', tag: _logTag);
+        }
+      }
+      
+      // 2. 获取活动网络适配器
+      final adapters = await _getActiveNetworkAdapters();
+      
+      // 3. 为每个适配器设置DNS为127.0.0.1
+      for (final adapter in adapters) {
+        try {
+          // 设置主DNS服务器
+          final result = await Process.run('netsh', [
+            'interface', 'ip', 'set', 'dns',
+            'name="$adapter"',
+            'source=static',
+            'address=127.0.0.1'
+          ], runInShell: true);
+          
+          if (result.exitCode == 0) {
+            await _log.info('已设置适配器 "$adapter" 的DNS为127.0.0.1', tag: _logTag);
+          } else {
+            await _log.warn('设置适配器 "$adapter" 的DNS失败: ${result.stderr}', tag: _logTag);
+          }
+        } catch (e) {
+          await _log.warn('设置适配器 "$adapter" 的DNS时出错: $e', tag: _logTag);
+        }
+      }
+      
+      await _log.info('DNS重定向设置完成', tag: _logTag);
+      
+    } catch (e) {
+      await _log.error('设置DNS重定向失败', tag: _logTag, error: e);
+    }
+  }
+  
+  /// 恢复DNS设置
+  static Future<void> _restoreDnsSettings() async {
+    if (!Platform.isWindows) return;
+    
+    try {
+      await _log.info('开始恢复DNS设置', tag: _logTag);
+      
+      // 1. 移除端口转发规则
+      final virtualDnsPort = AppConfig.virtualDnsPort;
+      if (virtualDnsPort != 53) {
+        final result = await Process.run('netsh', [
+          'interface', 'portproxy', 'delete', 'v4tov4',
+          'listenport=53',
+          'listenaddress=127.0.0.1'
+        ], runInShell: true);
+        
+        if (result.exitCode == 0) {
+          await _log.info('端口转发规则已移除', tag: _logTag);
+        } else {
+          await _log.debug('移除端口转发规则失败（可能不存在）: ${result.stderr}', tag: _logTag);
+        }
+      }
+      
+      // 2. 恢复网络适配器的DNS为自动获取
+      final adapters = await _getActiveNetworkAdapters();
+      
+      for (final adapter in adapters) {
+        try {
+          final result = await Process.run('netsh', [
+            'interface', 'ip', 'set', 'dns',
+            'name="$adapter"',
+            'source=dhcp'
+          ], runInShell: true);
+          
+          if (result.exitCode == 0) {
+            await _log.info('已恢复适配器 "$adapter" 的DNS为自动获取', tag: _logTag);
+          } else {
+            await _log.warn('恢复适配器 "$adapter" 的DNS失败: ${result.stderr}', tag: _logTag);
+          }
+        } catch (e) {
+          await _log.warn('恢复适配器 "$adapter" 的DNS时出错: $e', tag: _logTag);
+        }
+      }
+      
+      await _log.info('DNS设置恢复完成', tag: _logTag);
+      
+    } catch (e) {
+      await _log.error('恢复DNS设置失败', tag: _logTag, error: e);
+    }
+  }
+  
   // ============ ProxyService 主要方法 ============
   
   static Future<void> enableSystemProxy() async {
@@ -231,6 +403,9 @@ class ProxyService {
       // 关闭注册表键
       _closeRegistryKey(hkey);
       hkey = null;
+      
+      // 4. 设置DNS重定向到V2Ray虚拟DNS（防止DNS泄露）
+      await _setupDnsRedirection();
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
@@ -288,6 +463,9 @@ class ProxyService {
       // 关闭注册表键
       _closeRegistryKey(hkey);
       hkey = null;
+      
+      // 恢复DNS设置
+      await _restoreDnsSettings();
 
       // 通知系统代理设置已更改
       await _refreshSystemProxy();
