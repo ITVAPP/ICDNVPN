@@ -489,7 +489,7 @@ class V2RayService {
   // 生成配置（统一处理） - 优化全局代理实现
   static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
-    int? serverPort,
+    required int serverPort,
     String? serverName,
     int localPort = 7898,
     int httpPort = 7899,
@@ -567,9 +567,7 @@ class V2RayService {
             var vnext = outbound['settings']['vnext'] as List;
             if (vnext.isNotEmpty && vnext[0] is Map) {
               vnext[0]['address'] = serverIp;  // 使用CDN IP
-              if (serverPort != null) {
-                vnext[0]['port'] = serverPort;
-              }
+              vnext[0]['port'] = serverPort;
               
               // 更新用户UUID（如果提供）
               if (userId != null && userId.isNotEmpty) {
@@ -739,7 +737,7 @@ class V2RayService {
   // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
-    int? serverPort,
+    int serverPort = 443,
     String? serverName,
     bool globalProxy = false,
     // 新增参数（移动端特有）
@@ -780,7 +778,7 @@ class V2RayService {
       if (Platform.isAndroid || Platform.isIOS) {
         return await _startMobilePlatform(
           serverIp: serverIp,
-          serverPort: serverPort ?? 443,
+          serverPort: serverPort,
           serverName: serverName,
           globalProxy: globalProxy,
           allowedApps: allowedApps,
@@ -793,23 +791,9 @@ class V2RayService {
       
       // ============ Windows平台 ============
       if (Platform.isWindows) {
-        final config = await _loadConfigTemplate();
-        int configPort = 443;
-        if (config['outbounds'] is List) {
-          for (var outbound in config['outbounds']) {
-            if (outbound is Map && outbound['tag'] == 'proxy') {
-              if (outbound['settings']?['vnext'] is List &&
-                  outbound['settings']['vnext'].isNotEmpty) {
-                configPort = outbound['settings']['vnext'][0]['port'] ?? 443;
-              }
-              break;
-            }
-          }
-        }
-        int finalPort = serverPort ?? configPort;
         return await _startDesktopPlatform(
           serverIp: serverIp,
-          serverPort: finalPort,
+          serverPort: serverPort,
           serverName: serverName,
           globalProxy: globalProxy,
         );
