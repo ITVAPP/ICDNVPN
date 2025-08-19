@@ -486,188 +486,202 @@ class V2RayService {
     }
   }
   
-  // 生成配置（统一处理） - 优化全局代理实现
-  static Future<Map<String, dynamic>> _generateConfigMap({
-    required String serverIp,
-    required int serverPort,
-    String? serverName,
-    int localPort = 7898,
-    int httpPort = 7899,
-    bool globalProxy = false,
-  }) async {
-    // 加载配置模板
-    Map<String, dynamic> config = await _loadConfigTemplate();
-    
-    // 检查服务器群组配置（从AppConfig读取）
-    String? userId;  // 存储UUID
-    final groupServer = AppConfig.getRandomServer();
-    if (groupServer != null) {
-      // 使用群组配置覆盖参数
-      if (groupServer['serverName'] != null) {
-        serverName = groupServer['serverName'];
-      }
-      if (groupServer['uuid'] != null) {
-        userId = groupServer['uuid'];
-        // 安全显示UUID（防止substring越界）
-        final displayUuid = userId!.length > 8 ? '${userId.substring(0, 8)}...' : userId;
-        await _log.info('使用服务器群组UUID: $displayUuid', tag: _logTag);
-      }
-      await _log.info('使用服务器配置: CDN=$serverIp:$serverPort, ServerName=$serverName', tag: _logTag);
+// 生成配置（统一处理） - 优化全局代理实现
+static Future<Map<String, dynamic>> _generateConfigMap({
+  required String serverIp,
+  required int serverPort,
+  String? serverName,
+  int localPort = 7898,
+  int httpPort = 7899,
+  bool globalProxy = false,
+}) async {
+  // 加载配置模板
+  Map<String, dynamic> config = await _loadConfigTemplate();
+  
+  // 检查服务器群组配置（从AppConfig读取）
+  String? userId;  // 存储UUID
+  final groupServer = AppConfig.getRandomServer();
+  if (groupServer != null) {
+    // 使用群组配置覆盖参数
+    if (groupServer['serverName'] != null) {
+      serverName = groupServer['serverName'];
     }
-    
-    // 确保serverName有默认值
-    if (serverName == null || serverName.isEmpty) {
-      // 尝试从配置模板中获取默认值
-      try {
-        final outbounds = config['outbounds'] as List?;
-        if (outbounds != null) {
-          for (var outbound in outbounds) {
-            if (outbound['tag'] == 'proxy') {
-              serverName = outbound['streamSettings']?['tlsSettings']?['serverName'] ??
-                          outbound['streamSettings']?['wsSettings']?['headers']?['Host'];
-              if (serverName != null && serverName.isNotEmpty) {
-                await _log.info('使用配置模板中的默认ServerName: $serverName', tag: _logTag);
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        await _log.warn('无法从配置模板获取默认ServerName: $e', tag: _logTag);
-      }
-      
-      // 如果还是没有，使用硬编码的默认值
-      if (serverName == null || serverName.isEmpty) {
-        serverName = 'pages-vless-a9f.pages.dev';
-        await _log.info('使用硬编码的默认ServerName: $serverName', tag: _logTag);
-      }
+    if (groupServer['uuid'] != null) {
+      userId = groupServer['uuid'];
+      // 安全显示UUID（防止substring越界）
+      final displayUuid = userId!.length > 8 ? '${userId.substring(0, 8)}...' : userId;
+      await _log.info('使用服务器群组UUID: $displayUuid', tag: _logTag);
     }
-    
-    // 更新入站端口（移动端配置可能没有socks/http入站，需要判断）
-    if (config['inbounds'] is List) {
-      for (var inbound in config['inbounds']) {
-        if (inbound is Map) {
-          if (inbound['tag'] == 'socks') {
-            inbound['port'] = localPort;
-            await _log.debug('设置SOCKS端口: $localPort', tag: _logTag);
-          } else if (inbound['tag'] == 'http') {
-            inbound['port'] = httpPort;
-            await _log.debug('设置HTTP端口: $httpPort', tag: _logTag);
-          }
-        }
-      }
-    }
-    
-    // 更新出站服务器信息 - 只更新proxy出站
-    if (config['outbounds'] is List) {
-      for (var outbound in config['outbounds']) {
-        if (outbound is Map && outbound['tag'] == 'proxy') {
-          // 更新服务器地址和端口
-          if (outbound['settings']?['vnext'] is List) {
-            var vnext = outbound['settings']['vnext'] as List;
-            if (vnext.isNotEmpty && vnext[0] is Map) {
-              vnext[0]['address'] = serverIp;  // 使用CDN IP
-              vnext[0]['port'] = serverPort;
-              
-              // 更新用户UUID（如果提供）
-              if (userId != null && userId.isNotEmpty) {
-                if (vnext[0]['users'] is List && (vnext[0]['users'] as List).isNotEmpty) {
-                  vnext[0]['users'][0]['id'] = userId;
-                }
-              }
-            }
-          }
-          
-          // 更新TLS和WebSocket配置 - 使用serverName
-          if (serverName != null && serverName.isNotEmpty && 
-              outbound['streamSettings'] is Map) {
-            var streamSettings = outbound['streamSettings'] as Map;
-            
-            // 更新TLS serverName
-            if (streamSettings['tlsSettings'] is Map) {
-              streamSettings['tlsSettings']['serverName'] = serverName;
-              await _log.debug('设置TLS ServerName: $serverName', tag: _logTag);
-            }
-            
-            // 更新WebSocket Host
-            if (streamSettings['wsSettings'] is Map && 
-                streamSettings['wsSettings']['headers'] is Map) {
-              streamSettings['wsSettings']['headers']['Host'] = serverName;
-              await _log.debug('设置WebSocket Host: $serverName', tag: _logTag);
-            }
-          }
-          
-          break;  // 只有一个proxy出站，更新后退出
-        }
-      }
-    }
-    
-    // 优化后的全局代理模式处理
-    if (globalProxy) {
-      await _log.info('配置全局代理模式', tag: _logTag);
-      
-      if (config['routing'] is Map && config['routing']['rules'] is List) {
-        final rules = config['routing']['rules'] as List;
-        
-        // 创建新的规则列表，只保留必要的规则
-        final newRules = <Map<String, dynamic>>[];
-        
-        // 1. 保留API路由规则（如果有）
-        for (var rule in rules) {
-          if (rule is Map) {
-            // 检查是否是API路由
-            if (rule['inboundTag'] != null && 
-                (rule['inboundTag'] is List) &&
-                (rule['inboundTag'] as List).contains('api')) {
-              // 将Map<dynamic, dynamic>转换为Map<String, dynamic>
-              final convertedRule = <String, dynamic>{};
-              rule.forEach((key, value) {
-                convertedRule[key.toString()] = value;
-              });
-              newRules.add(convertedRule);
-              await _log.debug('保留API路由规则', tag: _logTag);
-            }
-          }
-        }
-        
-        // 2. 添加一个明确的全局代理规则（确保所有流量走proxy）
-        newRules.add({
-          'type': 'field',
-          'port': '0-65535',
-          'outboundTag': 'proxy'
-        });
-        await _log.debug('添加全局代理规则: 0-65535 -> proxy', tag: _logTag);
-        
-        // 3. 替换原有规则
-        config['routing']['rules'] = newRules;
-        
-        await _log.info('全局代理配置完成，规则数量: ${newRules.length}', tag: _logTag);
-      }
-    } else {
-      // 智能分流模式：保持原有规则不变
-      await _log.info('使用智能分流模式，保留所有路由规则', tag: _logTag);
-    }
-    
-    // 记录最终配置概要
-    if (kDebugMode) {
-      await _log.debug('配置概要:', tag: _logTag);
-      await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
-      await _log.debug('  - ServerName: $serverName', tag: _logTag);
-      await _log.debug('  - 代理模式: ${globalProxy ? "全局代理" : "智能分流"}', tag: _logTag);
-      if (userId != null && userId.isNotEmpty) {
-        final displayUuid = userId.length > 8 ? '${userId.substring(0, 8)}...' : userId;
-        await _log.debug('  - UUID: $displayUuid', tag: _logTag);
-      }
-      
-      // 输出路由规则数量
-      if (config['routing'] is Map && config['routing']['rules'] is List) {
-        final ruleCount = (config['routing']['rules'] as List).length;
-        await _log.debug('  - 路由规则数: $ruleCount', tag: _logTag);
-      }
-    }
-    
-    return config;
+    await _log.info('使用服务器配置: CDN=$serverIp, ServerName=$serverName', tag: _logTag);
   }
+  
+  // 确保serverName有默认值
+  if (serverName == null || serverName.isEmpty) {
+    // 尝试从配置模板中获取默认值
+    try {
+      final outbounds = config['outbounds'] as List?;
+      if (outbounds != null) {
+        for (var outbound in outbounds) {
+          if (outbound['tag'] == 'proxy') {
+            serverName = outbound['streamSettings']?['tlsSettings']?['serverName'] ??
+                        outbound['streamSettings']?['wsSettings']?['headers']?['Host'];
+            if (serverName != null && serverName.isNotEmpty) {
+              await _log.info('使用配置模板中的默认ServerName: $serverName', tag: _logTag);
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      await _log.warn('无法从配置模板获取默认ServerName: $e', tag: _logTag);
+    }
+    
+    // 如果还是没有，使用硬编码的默认值
+    if (serverName == null || serverName.isEmpty) {
+      serverName = 'pages-vless-a9f.pages.dev';
+      await _log.info('使用硬编码的默认ServerName: $serverName', tag: _logTag);
+    }
+  }
+  
+  // 更新入站端口（移动端配置可能没有socks/http入站，需要判断）
+  if (config['inbounds'] is List) {
+    for (var inbound in config['inbounds']) {
+      if (inbound is Map) {
+        if (inbound['tag'] == 'socks') {
+          inbound['port'] = localPort;
+          await _log.debug('设置SOCKS端口: $localPort', tag: _logTag);
+        } else if (inbound['tag'] == 'http') {
+          inbound['port'] = httpPort;
+          await _log.debug('设置HTTP端口: $httpPort', tag: _logTag);
+        }
+      }
+    }
+  }
+  
+  // 记录实际使用的端口（用于日志）
+  int actualPort = serverPort;  // 默认使用传入的端口
+  
+  // 更新出站服务器信息 - 只更新proxy出站
+  if (config['outbounds'] is List) {
+    for (var outbound in config['outbounds']) {
+      if (outbound is Map && outbound['tag'] == 'proxy') {
+        // 更新服务器地址，但保留配置文件中的端口
+        if (outbound['settings']?['vnext'] is List) {
+          var vnext = outbound['settings']['vnext'] as List;
+          if (vnext.isNotEmpty && vnext[0] is Map) {
+            vnext[0]['address'] = serverIp;  // 使用CDN IP
+            
+            // 🔧 关键修改：不覆盖端口，使用配置文件中的端口
+            // 获取配置文件中的原始端口
+            if (vnext[0]['port'] != null && vnext[0]['port'] > 0) {
+              actualPort = vnext[0]['port'];
+              await _log.info('使用配置文件中的端口: $actualPort', tag: _logTag);
+            } else {
+              // 只有当配置文件中没有端口时，才使用传入的端口
+              vnext[0]['port'] = serverPort;
+              actualPort = serverPort;
+              await _log.info('配置文件未定义端口，使用传入端口: $actualPort', tag: _logTag);
+            }
+            
+            // 更新用户UUID（如果提供）
+            if (userId != null && userId.isNotEmpty) {
+              if (vnext[0]['users'] is List && (vnext[0]['users'] as List).isNotEmpty) {
+                vnext[0]['users'][0]['id'] = userId;
+              }
+            }
+          }
+        }
+        
+        // 更新TLS和WebSocket配置 - 使用serverName
+        if (serverName != null && serverName.isNotEmpty && 
+            outbound['streamSettings'] is Map) {
+          var streamSettings = outbound['streamSettings'] as Map;
+          
+          // 更新TLS serverName
+          if (streamSettings['tlsSettings'] is Map) {
+            streamSettings['tlsSettings']['serverName'] = serverName;
+            await _log.debug('设置TLS ServerName: $serverName', tag: _logTag);
+          }
+          
+          // 更新WebSocket Host
+          if (streamSettings['wsSettings'] is Map && 
+              streamSettings['wsSettings']['headers'] is Map) {
+            streamSettings['wsSettings']['headers']['Host'] = serverName;
+            await _log.debug('设置WebSocket Host: $serverName', tag: _logTag);
+          }
+        }
+        
+        break;  // 只有一个proxy出站，更新后退出
+      }
+    }
+  }
+  
+  // 优化后的全局代理模式处理
+  if (globalProxy) {
+    await _log.info('配置全局代理模式', tag: _logTag);
+    
+    if (config['routing'] is Map && config['routing']['rules'] is List) {
+      final rules = config['routing']['rules'] as List;
+      
+      // 创建新的规则列表，只保留必要的规则
+      final newRules = <Map<String, dynamic>>[];
+      
+      // 1. 保留API路由规则（如果有）
+      for (var rule in rules) {
+        if (rule is Map) {
+          // 检查是否是API路由
+          if (rule['inboundTag'] != null && 
+              (rule['inboundTag'] is List) &&
+              (rule['inboundTag'] as List).contains('api')) {
+            // 将Map<dynamic, dynamic>转换为Map<String, dynamic>
+            final convertedRule = <String, dynamic>{};
+            rule.forEach((key, value) {
+              convertedRule[key.toString()] = value;
+            });
+            newRules.add(convertedRule);
+            await _log.debug('保留API路由规则', tag: _logTag);
+          }
+        }
+      }
+      
+      // 2. 添加一个明确的全局代理规则（确保所有流量走proxy）
+      newRules.add({
+        'type': 'field',
+        'port': '0-65535',
+        'outboundTag': 'proxy'
+      });
+      await _log.debug('添加全局代理规则: 0-65535 -> proxy', tag: _logTag);
+      
+      // 3. 替换原有规则
+      config['routing']['rules'] = newRules;
+      
+      await _log.info('全局代理配置完成，规则数量: ${newRules.length}', tag: _logTag);
+    }
+  } else {
+    // 智能分流模式：保持原有规则不变
+    await _log.info('使用智能分流模式，保留所有路由规则', tag: _logTag);
+  }
+  
+  // 记录最终配置概要
+  if (kDebugMode) {
+    await _log.debug('配置概要:', tag: _logTag);
+    await _log.debug('  - CDN IP: $serverIp:$actualPort', tag: _logTag);  // 使用实际端口
+    await _log.debug('  - ServerName: $serverName', tag: _logTag);
+    await _log.debug('  - 代理模式: ${globalProxy ? "全局代理" : "智能分流"}', tag: _logTag);
+    if (userId != null && userId.isNotEmpty) {
+      final displayUuid = userId.length > 8 ? '${userId.substring(0, 8)}...' : userId;
+      await _log.debug('  - UUID: $displayUuid', tag: _logTag);
+    }
+    
+    // 输出路由规则数量
+    if (config['routing'] is Map && config['routing']['rules'] is List) {
+      final ruleCount = (config['routing']['rules'] as List).length;
+      await _log.debug('  - 路由规则数: $ruleCount', tag: _logTag);
+    }
+  }
+  
+  return config;
+}
   
   // 生成配置文件（仅Windows平台）
   static Future<void> _generateConfigFile({
