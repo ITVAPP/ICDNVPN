@@ -529,46 +529,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return intDir.absolutePath
     }
     
-    /**
-     * 服务创建时调用
-     */
-    override fun onCreate() {
-        super.onCreate()
-        
-        VpnFileLogger.init(applicationContext)
-        VpnFileLogger.d(TAG, "VPN服务onCreate开始, IPv6支持: $ENABLE_IPV6")
-        
-        instanceRef = WeakReference(this)
-        
-        // 初始化Go运行时
-        try {
-            Seq.setContext(applicationContext)
-            VpnFileLogger.d(TAG, "Go运行时初始化成功")
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "Go运行时初始化失败", e)
-            stopSelf()
-            return
-        }
-        
-        // 注册广播接收器
-        try {
-            registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
-            VpnFileLogger.d(TAG, "广播接收器注册成功")
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "注册广播接收器失败", e)
-        }
-        
-        // 修复1：先复制资源文件到正确的assets目录
-        copyAssetFiles()
-        
-        // 修复1：使用正确的assets路径初始化V2Ray环境
+/**
+ * 服务创建时调用
+ */
 override fun onCreate() {
     super.onCreate()
+    
     VpnFileLogger.init(applicationContext)
     VpnFileLogger.d(TAG, "VPN服务onCreate开始, IPv6支持: $ENABLE_IPV6")
-
+    
     instanceRef = WeakReference(this)
-
+    
     // 初始化Go运行时
     try {
         Seq.setContext(applicationContext)
@@ -578,7 +549,7 @@ override fun onCreate() {
         stopSelf()
         return
     }
-
+    
     // 注册广播接收器
     try {
         registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
@@ -586,40 +557,38 @@ override fun onCreate() {
     } catch (e: Exception) {
         VpnFileLogger.e(TAG, "注册广播接收器失败", e)
     }
-
-    // 复制资源文件
+    
+    // 修复1：先复制资源文件到正确的assets目录
     copyAssetFiles()
-
-    // 初始化V2Ray环境
+    
+    // 修复1：使用正确的assets路径初始化V2Ray环境
     try {
-        val envPath = getV2RayAssetsPath()
+        val envPath = getV2RayAssetsPath()  // assets 目录路径
+        
+        // 验证geo文件是否存在
         val geoipFile = File(envPath, "geoip.dat")
         val geositeFile = File(envPath, "geosite.dat")
-
-        // 验证文件存在
-        if (!geoipFile.exists() || !geositeFile.exists()) {
-            VpnFileLogger.e(TAG, "资源文件缺失: geoip.dat=${geoipFile.exists()}, geosite.dat=${geositeFile.exists()}")
-            throw Exception("资源文件缺失")
-        }
-
-        // 传递绝对路径并记录
-        val geoipPath = geoipFile.absolutePath
-        val geositePath = geositeFile.absolutePath
-        VpnFileLogger.d(TAG, "初始化V2Ray环境: geoipPath=$geoipPath, geositePath=$geositePath")
-        // 传递目录路径并不是文件路径
-        Libv2ray.initCoreEnv(envPath, envPath)
-
-        // 验证文件状态
-        VpnFileLogger.d(TAG, "geoip.dat 存在: ${geoipFile.exists()}, 大小: ${geoipFile.length()} bytes")
-        VpnFileLogger.d(TAG, "geosite.dat 存在: ${geositeFile.exists()}, 大小: ${geositeFile.length()} bytes")
+        VpnFileLogger.d(TAG, "验证Geo文件:")
+        VpnFileLogger.d(TAG, "  geoip.dat - 存在: ${geoipFile.exists()}, 路径: ${geoipFile.absolutePath}, 大小: ${geoipFile.length()} bytes")
+        VpnFileLogger.d(TAG, "  geosite.dat - 存在: ${geositeFile.exists()}, 路径: ${geositeFile.absolutePath}, 大小: ${geositeFile.length()} bytes")
+        
+        // ===== 关键修复点：传递目录路径而不是文件路径 =====
+        // 原代码错误：Libv2ray.initCoreEnv(geoipPath, geositePath)
+        // 修复后：传递包含geo文件的目录路径
+        Libv2ray.initCoreEnv(envPath, envPath)  // 两个参数都传递同一个目录路径
+        VpnFileLogger.d(TAG, "V2Ray环境初始化成功，资源目录: $envPath")
+        
+        val version = Libv2ray.checkVersionX()
+        VpnFileLogger.i(TAG, "V2Ray版本: $version")
     } catch (e: Exception) {
         VpnFileLogger.e(TAG, "V2Ray环境初始化失败", e)
-        stopSelf()
-        return
     }
-
+    
     // 获取WakeLock
     acquireWakeLock()
+    
+    // 不在这里初始化统计缓存，改为在解析配置后初始化
+    
     VpnFileLogger.d(TAG, "VPN服务onCreate完成")
 }
     
