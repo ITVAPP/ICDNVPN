@@ -491,8 +491,8 @@ static Future<Map<String, dynamic>> _generateConfigMap({
   required String serverIp,
   required int serverPort,
   String? serverName,
-  int localPort = 7898,
-  int httpPort = 7899,
+  int localPort = AppConfig.v2raySocksPort,
+  int httpPort = AppConfig.v2rayHttpPort,
   bool globalProxy = false,
 }) async {
   // 加载配置模板
@@ -688,8 +688,8 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     required String serverIp,
     required int serverPort,
     String? serverName,
-    int localPort = 7898,
-    int httpPort = 7899,
+    int localPort = AppConfig.v2raySocksPort,
+    int httpPort = AppConfig.v2rayHttpPort,
     bool globalProxy = false,
   }) async {
     if (!Platform.isWindows) return;
@@ -792,7 +792,7 @@ static Future<Map<String, dynamic>> _generateConfigMap({
   // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
-    int serverPort = 443,
+    int serverPort = AppConfig.v2rayDefaultServerPort,
     String? serverName,
     bool globalProxy = false,
     // 新增参数（移动端特有）
