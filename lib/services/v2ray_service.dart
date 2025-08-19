@@ -748,6 +748,47 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     _connectionStartTime = null;
   }
   
+  // 清理DNS缓存（可选功能）
+  static Future<void> clearDnsCache() async {
+    try {
+      if (Platform.isWindows) {
+        // Windows: 使用 ipconfig /flushdns
+        final result = await Process.run('ipconfig', ['/flushdns'], runInShell: true);
+        if (result.exitCode == 0) {
+          await _log.info('Windows DNS缓存已清理', tag: _logTag);
+        } else {
+          await _log.warn('DNS缓存清理失败: ${result.stderr}', tag: _logTag);
+        }
+      } 
+      else if (Platform.isAndroid || Platform.isIOS) {
+        // 移动平台：需要原生端支持
+        // 暂时不实现，因为需要原生端配合
+        await _log.debug('移动平台DNS缓存清理暂未实现', tag: _logTag);
+      }
+      else if (Platform.isMacOS) {
+        // macOS: 使用 dscacheutil
+        await Process.run('dscacheutil', ['-flushcache'], runInShell: true);
+        await _log.info('macOS DNS缓存已清理', tag: _logTag);
+      }
+      else if (Platform.isLinux) {
+        // Linux: 重启 systemd-resolved 或 nscd
+        try {
+          await Process.run('systemctl', ['restart', 'systemd-resolved'], runInShell: true);
+        } catch (e) {
+          // 如果systemd-resolved不存在，尝试nscd
+          try {
+            await Process.run('service', ['nscd', 'restart'], runInShell: true);
+          } catch (e2) {
+            await _log.debug('Linux DNS缓存清理失败', tag: _logTag);
+          }
+        }
+        await _log.info('Linux DNS缓存已清理', tag: _logTag);
+      }
+    } catch (e) {
+      await _log.warn('清理DNS缓存失败: $e', tag: _logTag);
+    }
+  }
+  
   // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
@@ -781,6 +822,11 @@ static Future<Map<String, dynamic>> _generateConfigMap({
       if (_isRunning) {
         await stop();
         await Future.delayed(const Duration(seconds: 1));
+      }
+      
+      // 清理DNS缓存（可选，仅在Windows平台有效）
+      if (Platform.isWindows) {
+        await clearDnsCache();
       }
       
       await _log.info('开始启动V2Ray服务 - CDN IP: $serverIp:$serverPort, 全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns', tag: _logTag);
@@ -1108,6 +1154,14 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     _v2rayProcess!.exitCode.then((code) {
       _log.info('V2Ray进程退出，退出码: $code', tag: _logTag);
       _isRunning = false;
+      
+      // 重置流量统计（防止进程异常退出时资源未清理）
+      _uploadTotal = 0;
+      _downloadTotal = 0;
+      _lastUploadBytes = 0;
+      _lastDownloadBytes = 0;
+      _lastUpdateTime = 0;
+      
       _stopStatsTimer();
       _stopDurationTimer();
       _updateStatus(V2RayStatus(state: V2RayConnectionState.disconnected));
@@ -1143,7 +1197,7 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     }
   }
   
-  // 停止V2Ray服务
+  // 停止V2Ray服务 - 修复：添加资源清理
   static Future<void> stop() async {
     // 并发控制
     if (_isStopping) {
@@ -1160,6 +1214,16 @@ static Future<Map<String, dynamic>> _generateConfigMap({
       
       // 重置运行标志
       _isRunning = false;
+      
+      // 【修复】重置流量统计
+      _uploadTotal = 0;
+      _downloadTotal = 0;
+      _lastUploadBytes = 0;
+      _lastDownloadBytes = 0;
+      _lastUpdateTime = 0;
+      
+      // 【修复】重置连接时间
+      _connectionStartTime = null;
       
       // ============ 移动平台停止 ============
       if (Platform.isAndroid || Platform.isIOS) {
