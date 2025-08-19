@@ -23,6 +23,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONException
 import java.io.File
 import java.io.FileDescriptor
 import java.io.OutputStream
@@ -74,6 +75,16 @@ import libv2ray.CoreCallbackHandler
  * 1. 添加ENABLE_IPV6常量统一控制IPv6策略
  * 2. 修复通知栏过早显示"已连接"的问题
  * 3. DNS解析遵循IPv6策略
+ * 
+ * 配置验证修复版本 2024-12-28：
+ * 1. 修复parseConfig()中的geo规则验证逻辑
+ * 2. 添加V2Ray原生配置验证功能
+ * 3. 在启动前验证配置文件
+ * 
+ * startupLatch 修复版本 2024-12-28：
+ * 1. 修复startupLatch未初始化的BUG
+ * 2. 修复startupLatch无法重复使用的问题
+ * 3. 确保每次启动创建新的startupLatch
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -307,10 +318,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 连接检查任务
     private var connectionCheckJob: Job? = null
     
+    // tun2socks监控线程
+    private var tun2socksMonitorThread: Thread? = null
+    
+    // 验证任务
+    private var verificationJob: Job? = null
+    
     // 添加启动完成标志
     @Volatile
     private var v2rayCoreStarted = false
-    private val startupLatch = CompletableDeferred<Boolean>()
+    
+    // 修复：startupLatch 改为可空类型，每次启动时创建新的，添加 @Volatile 确保线程安全
+    @Volatile
+    private var startupLatch: CompletableDeferred<Boolean>? = null
     
     // 广播接收器
     private val stopReceiver = object : BroadcastReceiver() {
@@ -326,6 +346,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 解析V2Ray配置JSON - 统一入口，避免重复解析
+     * 修复：正确处理domain和ip数组字段
      */
     private fun parseConfig(): JSONObject? {
         return try {
@@ -337,15 +358,36 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 var hasGeoRules = false
                 for (i in 0 until (rules?.length() ?: 0)) {
                     val rule = rules.getJSONObject(i)
-                    val domain = rule.optString("domain")
-                    val ip = rule.optString("ip")
-                    if (domain.startsWith("geosite:") || ip.startsWith("geoip:")) {
-                        hasGeoRules = true
-                        VpnFileLogger.d(TAG, "找到geo规则: domain=$domain, ip=$ip")
+                    
+                    // ✅ 修复：正确处理domain数组
+                    val domainArray = rule.optJSONArray("domain")
+                    if (domainArray != null) {
+                        for (j in 0 until domainArray.length()) {
+                            val domain = domainArray.getString(j)
+                            if (domain.startsWith("geosite:")) {
+                                hasGeoRules = true
+                                VpnFileLogger.d(TAG, "找到geosite规则: $domain")
+                            }
+                        }
+                    }
+                    
+                    // ✅ 修复：正确处理ip数组
+                    val ipArray = rule.optJSONArray("ip")
+                    if (ipArray != null) {
+                        for (j in 0 until ipArray.length()) {
+                            val ip = ipArray.getString(j)
+                            if (ip.startsWith("geoip:")) {
+                                hasGeoRules = true
+                                VpnFileLogger.d(TAG, "找到geoip规则: $ip")
+                            }
+                        }
                     }
                 }
+                
                 if (!hasGeoRules) {
                     VpnFileLogger.w(TAG, "警告：配置文件中未找到任何geosite或geoip规则")
+                } else {
+                    VpnFileLogger.i(TAG, "✓ 配置文件包含geo规则")
                 }
             } else {
                 VpnFileLogger.w(TAG, "警告：配置文件中未找到routing配置")
@@ -377,6 +419,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             defaultPort
         }
     }
+    
+
     
     // ===== 🎯 新增：网络连接测试工具方法 =====
     
@@ -692,8 +736,9 @@ override fun onCreate() {
             return START_NOT_STICKY
         }
         
-        if (currentState == V2RayState.CONNECTED) {
-            VpnFileLogger.w(TAG, "VPN服务已在运行，当前状态: $currentState")
+        // 修复：防止在 CONNECTING 或 CONNECTED 状态时重复启动
+        if (currentState != V2RayState.DISCONNECTED) {
+            VpnFileLogger.w(TAG, "VPN服务已在运行或正在连接，当前状态: $currentState")
             return START_STICKY
         }
         
@@ -742,13 +787,14 @@ override fun onCreate() {
                 
                 // 只在启用虚拟DNS时检查本地DNS配置
                 if (enableVirtualDns) {
+                    localDnsPort = extractInboundPort(DNS_TAG_IN, configuredVirtualDnsPort)
                     val inbounds = config.optJSONArray("inbounds")
                     VpnFileLogger.d(TAG, "入站数量: ${inbounds?.length() ?: 0}")
                     for (i in 0 until (inbounds?.length() ?: 0)) {
                         val inbound = inbounds!!.getJSONObject(i)
                         val tag = inbound.optString("tag")
                         if (tag == DNS_TAG_IN) {
-                            VpnFileLogger.i(TAG, "✓ 本地DNS服务已配置: 端口=${inbound.optInt("port")}")
+                            VpnFileLogger.i(TAG, "✓ 本地DNS服务已配置: 端口=$localDnsPort")
                         }
                     }
                     
@@ -933,13 +979,37 @@ override fun onCreate() {
     }
     
     /**
+     * 快速检查JSON语法（不验证V2Ray配置逻辑）
+     * 仅用于提前发现明显的JSON格式错误
+     */
+    private fun quickCheckJsonSyntax(configJson: String): Boolean {
+        return try {
+            JSONObject(configJson)
+            true
+        } catch (e: JSONException) {
+            VpnFileLogger.e(TAG, "JSON语法错误: ${e.message}")
+            false
+        }
+    }
+    
+    /**
      * 启动V2Ray(VPN模式) - 优化版
+     * 流程：快速JSON检查→启动V2Ray→验证配置（通过启动结果）→建立VPN→启动tun2socks→验证转发
+     * 
+     * 修复：每次启动前创建新的 startupLatch
      */
     private suspend fun startV2RayWithVPN() = withContext(Dispatchers.IO) {
         VpnFileLogger.d(TAG, "================== startV2RayWithVPN START ==================")
         
         try {
-            // 调整启动顺序：先启动V2Ray核心，再建立VPN（与v2rayNG一致）
+            // 步骤0: 快速JSON语法检查（提前失败）
+            if (!quickCheckJsonSyntax(configJson)) {
+                throw Exception("配置文件JSON格式错误，请检查语法（如多余的逗号、引号等）")
+            }
+            
+            // 修复：每次启动前创建新的 startupLatch
+            startupLatch = CompletableDeferred<Boolean>()
+            VpnFileLogger.d(TAG, "创建新的 startupLatch")
             
             // 步骤1: 创建核心控制器
             VpnFileLogger.d(TAG, "===== 步骤1: 创建核心控制器 =====")
@@ -951,28 +1021,69 @@ override fun onCreate() {
             }
             VpnFileLogger.d(TAG, "CoreController创建成功")
             
-            // 步骤2: 启动V2Ray核心
-            VpnFileLogger.d(TAG, "===== 步骤2: 启动V2Ray核心 =====")
+            // 步骤2: 启动V2Ray核心（配置验证在此步骤完成）
+            VpnFileLogger.d(TAG, "===== 步骤2: 启动V2Ray核心（同时验证配置） =====")
             VpnFileLogger.d(TAG, "原始配置长度: ${configJson.length} 字符")
             
             VpnFileLogger.d(TAG, "调用 coreController.startLoop()...")
-            coreController?.startLoop(configJson)
-            VpnFileLogger.d(TAG, "coreController.startLoop() 调用完成")
+            try {
+                coreController?.startLoop(configJson)
+                VpnFileLogger.d(TAG, "coreController.startLoop() 调用完成")
+            } catch (e: Exception) {
+                // V2Ray启动失败，说明配置有错误
+                VpnFileLogger.e(TAG, "V2Ray核心启动失败，配置可能有错误: ${e.message}")
+                
+                // 解析错误信息，提供更详细的错误提示
+                val errorMsg = e.message ?: ""
+                when {
+                    errorMsg.contains("json", ignoreCase = true) -> {
+                        throw Exception("配置文件JSON格式错误: $errorMsg")
+                    }
+                    errorMsg.contains("dns", ignoreCase = true) -> {
+                        throw Exception("DNS配置错误: $errorMsg")
+                    }
+                    errorMsg.contains("outbound", ignoreCase = true) -> {
+                        throw Exception("出站配置错误: $errorMsg")
+                    }
+                    errorMsg.contains("inbound", ignoreCase = true) -> {
+                        throw Exception("入站配置错误: $errorMsg")
+                    }
+                    errorMsg.contains("routing", ignoreCase = true) -> {
+                        throw Exception("路由配置错误: $errorMsg")
+                    }
+                    errorMsg.contains("port", ignoreCase = true) || 
+                    errorMsg.contains("address already in use", ignoreCase = true) -> {
+                        throw Exception("端口被占用: $errorMsg")
+                    }
+                    else -> {
+                        throw Exception("V2Ray启动失败: $errorMsg")
+                    }
+                }
+            }
             
             // 等待startup()回调确认启动成功
             VpnFileLogger.d(TAG, "等待V2Ray核心启动回调...")
             val startupSuccess = withTimeoutOrNull(5000L) {
-                startupLatch.await()
+                startupLatch?.await()  // 使用安全调用
             }
             
             if (startupSuccess != true) {
-                throw Exception("V2Ray核心启动超时或失败")
+                VpnFileLogger.e(TAG, "V2Ray核心启动超时，配置可能有问题")
+                throw Exception("V2Ray核心启动超时或失败，请检查配置文件")
             }
             
-            VpnFileLogger.i(TAG, "V2Ray核心启动成功（已确认）")
+            // 步骤3: 验证V2Ray启动状态（配置验证的第二步）
+            VpnFileLogger.d(TAG, "===== 步骤3: 验证V2Ray启动状态 =====")
+            val isRunning = coreController?.isRunning ?: false
+            if (!isRunning) {
+                VpnFileLogger.e(TAG, "V2Ray核心未运行，配置验证失败")
+                throw Exception("V2Ray核心未运行，配置可能有错误")
+            }
             
-            // 步骤3: 建立VPN隧道
-            VpnFileLogger.d(TAG, "步骤3: 建立VPN隧道")
+            VpnFileLogger.i(TAG, "✓ V2Ray核心启动成功，配置验证通过")
+            
+            // 步骤4: 建立VPN隧道
+            VpnFileLogger.d(TAG, "===== 步骤4: 建立VPN隧道 =====")
             withContext(Dispatchers.Main) {
                 establishVpn()
             }
@@ -989,11 +1100,14 @@ override fun onCreate() {
                 configureNetworkCallback()
             }
             
-            // 步骤4: 启动tun2socks进程（与v2rayNG一致）
-            VpnFileLogger.d(TAG, "===== 步骤4: 启动tun2socks进程 (badvpn-tun2socks) =====")
+            // 步骤5: 启动tun2socks进程
+            VpnFileLogger.d(TAG, "===== 步骤5: 启动tun2socks进程 (badvpn-tun2socks) =====")
             runTun2socks()
             
-            // 步骤5: 更新状态
+            // 步骤6: 验证转发（在sendFd中通过协程异步执行）
+            VpnFileLogger.d(TAG, "===== 步骤6: 验证tun2socks转发（异步） =====")
+            
+            // 步骤7: 更新状态
             currentState = V2RayState.CONNECTED
             startTime = System.currentTimeMillis()
             
@@ -1032,7 +1146,9 @@ override fun onCreate() {
             startConnectionCheck()
             
         } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "启动V2Ray(VPN模式)失败", e)
+            VpnFileLogger.e(TAG, "启动V2Ray(VPN模式)失败: ${e.message}")
+            // 清理 startupLatch
+            startupLatch = null
             cleanupResources()
             sendStartResultBroadcast(false, e.message)
             throw e
@@ -1180,12 +1296,34 @@ override fun onCreate() {
     
     /**
      * 发送VPN启动结果广播
+     * 包含详细的错误信息，方便用户排查问题
      */
     private fun sendStartResultBroadcast(success: Boolean, error: String? = null) {
         try {
             val intent = Intent(ACTION_VPN_START_RESULT).apply {
                 putExtra("success", success)
-                putExtra("error", error)
+                
+                // 提供更友好的错误信息
+                val userFriendlyError = when {
+                    error == null -> null
+                    error.contains("json", ignoreCase = true) -> "配置文件格式错误，请检查JSON语法"
+                    error.contains("port", ignoreCase = true) || 
+                    error.contains("address already in use", ignoreCase = true) -> "端口被占用，请检查是否有其他VPN在运行"
+                    error.contains("dns", ignoreCase = true) -> "DNS配置错误，请检查DNS设置"
+                    error.contains("outbound", ignoreCase = true) -> "出站配置错误，请检查服务器信息"
+                    error.contains("inbound", ignoreCase = true) -> "入站配置错误，请检查本地端口设置"
+                    error.contains("routing", ignoreCase = true) -> "路由配置错误，请检查路由规则"
+                    error.contains("geoip", ignoreCase = true) || 
+                    error.contains("geosite", ignoreCase = true) -> "geo数据文件错误，请重新安装应用"
+                    error.contains("timeout", ignoreCase = true) -> "启动超时，配置可能有问题"
+                    error.contains("permission", ignoreCase = true) -> "权限不足，请授予VPN权限"
+                    else -> error
+                }
+                
+                putExtra("error", userFriendlyError)
+                
+                // 保留原始错误信息供调试
+                putExtra("error_detail", error)
             }
             sendBroadcast(intent)
             VpnFileLogger.d(TAG, "已发送VPN启动结果广播: success=$success, error=$error")
@@ -1203,6 +1341,13 @@ override fun onCreate() {
         // 停止连接检查
         connectionCheckJob?.cancel()
         connectionCheckJob = null
+        
+        // 停止验证任务
+        verificationJob?.cancel()
+        verificationJob = null
+        
+        // 清理 startupLatch
+        startupLatch = null
         
         // 注销网络回调
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -1341,6 +1486,7 @@ override fun onCreate() {
     
     /**
      * 启动tun2socks进程 - 支持虚拟DNS配置
+     * 改进：使用可管理的Thread和协程
      */
     private fun runTun2socks() {
         VpnFileLogger.d(TAG, "===== 启动tun2socks进程 (虚拟DNS: ${if(enableVirtualDns) "启用" else "禁用"}) =====")
@@ -1361,16 +1507,16 @@ override fun onCreate() {
             "--loglevel", "error"  // 修改：只输出错误日志，减少资源消耗
         )
         
-    // DNS 重定向配置
-    if (enableVirtualDns && localDnsPort > 0) {
-        cmd.add("--dnsgw")
-        cmd.add("127.0.0.1:$localDnsPort") // 例如 10853
-        VpnFileLogger.i(TAG, "✓ 启用虚拟DNS网关: 127.0.0.1:$localDnsPort")
-    } else {
-        cmd.add("--dnsgw")
-        cmd.add("127.0.0.1:$socksPort")
-        VpnFileLogger.i(TAG, "✓ 重定向 DNS 到 SOCKS 入站: 127.0.0.1:$socksPort")
-    }
+        // DNS 重定向配置
+        if (enableVirtualDns && localDnsPort > 0) {
+            cmd.add("--dnsgw")
+            cmd.add("127.0.0.1:$localDnsPort") // 例如 10853
+            VpnFileLogger.i(TAG, "✓ 启用虚拟DNS网关: 127.0.0.1:$localDnsPort")
+        } else {
+            cmd.add("--dnsgw")
+            cmd.add("127.0.0.1:$socksPort")
+            VpnFileLogger.i(TAG, "✓ 重定向 DNS 到 SOCKS 入站: 127.0.0.1:$socksPort")
+        }
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
         
@@ -1381,36 +1527,51 @@ override fun onCreate() {
                 .directory(applicationContext.filesDir)
                 .start()
             
-            // 修复：移除日志读取线程，只监控进程状态
-            Thread {
-                VpnFileLogger.d(TAG, "$TUN2SOCKS 进程监控开始")
-                val exitCode = process?.waitFor()
-                VpnFileLogger.d(TAG, "$TUN2SOCKS 进程退出，退出码: $exitCode")
-                
-                if (currentState == V2RayState.CONNECTED) {
-                    VpnFileLogger.e(TAG, "$TUN2SOCKS 意外退出，退出码: $exitCode")
+            // 改进：使用可管理的Thread监控进程
+            tun2socksMonitorThread = Thread {
+                try {
+                    VpnFileLogger.d(TAG, "$TUN2SOCKS 进程监控开始")
+                    val exitCode = process?.waitFor()
+                    VpnFileLogger.d(TAG, "$TUN2SOCKS 进程退出，退出码: $exitCode")
                     
-                    // 优化3: 改进的重启逻辑
-                    if (shouldRestartTun2socks()) {
-                        VpnFileLogger.w(TAG, "尝试重启tun2socks (第${tun2socksRestartCount + 1}次)")
-                        Thread.sleep(1000)  // 等待1秒再重启
-                        restartTun2socks()
-                    } else {
-                        VpnFileLogger.e(TAG, "tun2socks重启次数达到上限，停止服务")
-                        stopV2Ray()
+                    // 只在服务仍连接时处理意外退出
+                    if (currentState == V2RayState.CONNECTED) {
+                        VpnFileLogger.e(TAG, "$TUN2SOCKS 意外退出，退出码: $exitCode")
+                        
+                        // 使用协程处理重启逻辑
+                        serviceScope.launch {
+                            if (shouldRestartTun2socks()) {
+                                VpnFileLogger.w(TAG, "尝试重启tun2socks (第${tun2socksRestartCount + 1}次)")
+                                delay(1000)  // 等待1秒再重启
+                                if (currentState == V2RayState.CONNECTED && (process?.isAlive != true)) {
+                                    restartTun2socks()
+                                }
+                            } else {
+                                VpnFileLogger.e(TAG, "tun2socks重启次数达到上限，停止服务")
+                                stopV2Ray()
+                            }
+                        }
                     }
+                } catch (e: InterruptedException) {
+                    VpnFileLogger.d(TAG, "tun2socks监控线程被中断")
+                } catch (e: Exception) {
+                    VpnFileLogger.e(TAG, "tun2socks监控异常", e)
                 }
-            }.start()
+            }.apply {
+                name = "tun2socks-monitor"
+                isDaemon = true
+                start()
+            }
             
-            // 检查进程是否成功启动
-            Thread {
-                Thread.sleep(1000)  // 给进程一秒钟启动时间
+            // 检查进程是否成功启动（使用协程）
+            serviceScope.launch {
+                delay(1000)  // 给进程一秒钟启动时间
                 if (process?.isAlive != true) {
                     VpnFileLogger.e(TAG, "${TUN2SOCKS}进程启动后立即退出")
                 } else {
                     VpnFileLogger.i(TAG, "${TUN2SOCKS}进程运行正常")
                 }
-            }.start()
+            }
             
             // 发送文件描述符（与v2rayNG一致）
             Thread.sleep(500)  // 等待tun2socks准备就绪
@@ -1426,7 +1587,7 @@ override fun onCreate() {
     
     /**
      * 发送文件描述符给tun2socks（与v2rayNG完全一致）
-     * 修复3：增加tun2socks转发验证
+     * 修复3：增加tun2socks转发验证（使用协程）
      */
     private fun sendFd() {
         val path = File(applicationContext.filesDir, "sock_path").absolutePath
@@ -1460,8 +1621,10 @@ override fun onCreate() {
                     
                     VpnFileLogger.d(TAG, "文件描述符发送成功")
                     
-                    // 修复3：增加tun2socks转发验证
-                    verifyTun2socksForwarding()
+                    // 修复3：使用协程进行验证（不阻塞主流程）
+                    verificationJob = serviceScope.launch {
+                        verifyTun2socksForwarding()
+                    }
                     
                     break
                     
@@ -1485,15 +1648,20 @@ override fun onCreate() {
     }
     
     /**
-     * 🎯 优化：统一的网络验证方法 - 合并重复的验证逻辑
+     * 🎯 优化：统一的网络验证方法 - 使用协程
      * 修复：根据ENABLE_IPV6常量控制DNS解析
      */
-    private fun verifyTun2socksForwarding() {
+    private suspend fun verifyTun2socksForwarding() = withContext(Dispatchers.IO) {
         VpnFileLogger.d(TAG, "===== 开始验证tun2socks转发 (IPv6: $ENABLE_IPV6) =====")
-        Thread {
+        
+        try {
+            // 稍等一下让tun2socks完全启动
+            delay(500)
+            
             // 验证SOCKS5连接
             if (!testTcpConnection("127.0.0.1", socksPort, 2000, "SOCKS5")) {
-                return@Thread
+                VpnFileLogger.e(TAG, "SOCKS5端口验证失败")
+                return@withContext
             }
             
             // 只在启用虚拟DNS时测试本地DNS服务
@@ -1542,7 +1710,7 @@ override fun onCreate() {
                     }
                 } catch (e2: Exception) {
                     VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): ${e2.message}")
-                    return@Thread
+                    return@withContext
                 }
             }
 
@@ -1555,17 +1723,21 @@ override fun onCreate() {
                 connection.readTimeout = 5000
                 connection.instanceFollowRedirects = false
                 connection.setRequestProperty("User-Agent", "V2Ray-Test")
-                val responseCode = connection.responseCode
+                
+                val responseCode = withContext(Dispatchers.IO) {
+                    connection.responseCode
+                }
+                
                 if (responseCode == 204 || responseCode == 200) {
                     VpnFileLogger.i(TAG, "✓ HTTP连接测试成功，响应码: $responseCode")
                 } else {
                     VpnFileLogger.w(TAG, "✗ HTTP连接测试异常，响应码: $responseCode")
-                    return@Thread
+                    return@withContext
                 }
                 connection.disconnect()
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "✗ HTTP连接测试失败: ${e.message}")
-                return@Thread
+                return@withContext
             }
 
             VpnFileLogger.i(TAG, "===== tun2socks转发验证完成 - 全部测试通过 =====")
@@ -1575,7 +1747,10 @@ override fun onCreate() {
             } else {
                 VpnFileLogger.i(TAG, "✓ 使用公共DNS服务器（8.8.8.8, 1.1.1.1）")
             }
-        }.start()
+            
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "验证过程出现异常", e)
+        }
     }
     
     /**
@@ -1630,6 +1805,7 @@ override fun onCreate() {
     
     /**
      * 停止tun2socks进程
+     * 改进：正确清理监控线程
      */
     private fun stopTun2socks() {
         VpnFileLogger.d(TAG, "停止tun2socks进程")
@@ -1637,9 +1813,23 @@ override fun onCreate() {
         tun2socksRestartCount = 0
         tun2socksFirstRestartTime = 0L
         
+        // 停止监控线程
+        try {
+            tun2socksMonitorThread?.interrupt()
+            tun2socksMonitorThread = null
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "中断监控线程失败", e)
+        }
+        
+        // 停止进程
         try {
             process?.let {
                 it.destroy()
+                // 给进程一点时间优雅退出
+                if (!it.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    // 如果2秒内没有退出，强制终止
+                    it.destroyForcibly()
+                }
                 process = null
                 VpnFileLogger.d(TAG, "tun2socks进程已停止")
             }
@@ -1868,6 +2058,13 @@ override fun onCreate() {
         connectionCheckJob?.cancel()
         connectionCheckJob = null
         
+        // 停止验证任务
+        verificationJob?.cancel()
+        verificationJob = null
+        
+        // 清理 startupLatch
+        startupLatch = null
+        
         // 通知MainActivity服务已停止
         sendBroadcast(Intent(ACTION_VPN_STOPPED))
         VpnFileLogger.d(TAG, "已发送VPN停止广播")
@@ -1960,11 +2157,14 @@ override fun onCreate() {
     // ===== CoreCallbackHandler 接口实现 - 优化版 =====
     
     /**
-     * 修复2：V2Ray核心启动完成回调 - 增加验证
+     * 修复2：V2Ray核心启动完成回调
+     * 此时配置已经验证成功（因为V2Ray成功启动了）
+     * 
+     * 修复：使用安全调用 startupLatch?.complete() 并防止重复调用
      */
     override fun startup(): Long {
         VpnFileLogger.d(TAG, "========== CoreCallbackHandler.startup() 被调用 ==========")
-        VpnFileLogger.i(TAG, "V2Ray核心启动完成通知")
+        VpnFileLogger.i(TAG, "V2Ray核心启动完成通知（配置验证成功）")
         
         // 立即查询一次状态以验证
         try {
@@ -1973,80 +2173,79 @@ override fun onCreate() {
             
             // 设置启动成功标志
             v2rayCoreStarted = true
-            startupLatch.complete(true)
             
-            // 修复2：增加V2Ray启动验证
-            verifyV2RayStartup()
+            // 修复：安全地完成 startupLatch，防止重复调用
+            try {
+                startupLatch?.let { latch ->
+                    if (!latch.isCompleted) {
+                        latch.complete(true)
+                        VpnFileLogger.d(TAG, "startupLatch 已完成")
+                    } else {
+                        VpnFileLogger.w(TAG, "startupLatch 已经完成，忽略重复调用")
+                    }
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "完成 startupLatch 时出现异常（可能是重复调用）", e)
+            }
+            
+            // 验证端口监听状态
+            verifyV2RayPortsListening()
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "查询V2Ray状态失败", e)
-            startupLatch.complete(false)
+            // 修复：使用安全调用
+            try {
+                startupLatch?.let { latch ->
+                    if (!latch.isCompleted) {
+                        latch.complete(false)
+                    }
+                }
+            } catch (ignored: Exception) {
+                // 忽略重复 complete 的异常
+            }
         }
         
         return 0L
     }
     
     /**
-     * 🎯 重构：统一的V2Ray启动验证方法
-     * 修复2：验证V2Ray是否正确启动
+     * 验证V2Ray端口监听状态（简化版）
+     * 在startup回调中执行，确认各个服务端口正常监听
      */
-    private fun verifyV2RayStartup() {
-        Thread {
-            Thread.sleep(1000)  // 等待V2Ray完全初始化
+    private fun verifyV2RayPortsListening() {
+        serviceScope.launch {
+            delay(500)  // 稍等片刻让端口完全就绪
             
             try {
-                VpnFileLogger.d(TAG, "===== 开始验证V2Ray启动状态 =====")
+                VpnFileLogger.d(TAG, "===== 验证V2Ray端口监听状态 =====")
                 
-                // 验证1：检查核心运行状态
-                val isRunning = coreController?.isRunning ?: false
-                VpnFileLogger.d(TAG, "V2Ray核心运行状态: $isRunning")
-                
-                if (!isRunning) {
-                    VpnFileLogger.e(TAG, "✗ V2Ray核心未运行")
-                    return@Thread
-                }
-                
-                // 验证2-5：检查各种端口监听状态
+                // 验证SOCKS端口
                 val socksPort = extractInboundPort("socks", DEFAULT_SOCKS_PORT)
                 testTcpConnection("127.0.0.1", socksPort, 2000, "SOCKS5")
                 
+                // 验证HTTP端口（如果存在）
                 val httpPort = extractInboundPort("http", -1)
                 if (httpPort > 0) {
                     testTcpConnection("127.0.0.1", httpPort, 2000, "HTTP")
                 }
                 
+                // 验证虚拟DNS端口（如果启用）
                 if (enableVirtualDns && localDnsPort > 0) {
                     testTcpConnection("127.0.0.1", localDnsPort, 2000, "虚拟DNS")
                 }
                 
+                // 验证API端口（如果存在）
                 val apiPort = extractInboundPort("api", -1)
                 if (apiPort > 0) {
                     testTcpConnection("127.0.0.1", apiPort, 2000, "API")
                 }
                 
-                // 验证 geo 规则
-                try {
-                    val testDomain = "www.baidu.com"  // 已知在 geosite:cn 中的域名
-                    val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
-                    val url = URL("http://$testDomain")
-                    val connection = url.openConnection(proxy) as HttpURLConnection
-                    connection.connectTimeout = 5000
-                    connection.readTimeout = 5000
-                    connection.instanceFollowRedirects = false
-                    val responseCode = connection.responseCode
-                    connection.disconnect()
-                    VpnFileLogger.i(TAG, "geo规则测试($testDomain): 响应码=$responseCode")
-                    // 如果走 direct，响应应正常（如 200 或 302）；如果走 proxy，可能超时或失败
-                } catch (e: Exception) {
-                    VpnFileLogger.w(TAG, "geo规则测试失败: ${e.message}")
-                }
-                
-                VpnFileLogger.i(TAG, "===== V2Ray启动验证完成 =====")
+                VpnFileLogger.i(TAG, "===== V2Ray端口验证完成 =====")
                 
             } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "V2Ray启动验证异常", e)
+                VpnFileLogger.e(TAG, "V2Ray端口验证异常", e)
             }
-        }.start()
+        }
     }
     
     override fun shutdown(): Long {
@@ -2074,24 +2273,53 @@ override fun onCreate() {
                 else -> "LEVEL$level"
             }
             
-            // 记录所有V2Ray日志，不过滤
+            // 记录所有V2Ray日志
             VpnFileLogger.d(TAG, "[V2Ray-$levelName] $status")
             
             // 对重要事件使用不同的日志级别
             if (status != null) {
                 when {
+                    // 配置错误检测
+                    status.contains("config", ignoreCase = true) && 
+                    (status.contains("failed", ignoreCase = true) || 
+                     status.contains("error", ignoreCase = true) ||
+                     status.contains("invalid", ignoreCase = true)) -> {
+                        VpnFileLogger.e(TAG, "[V2Ray配置错误] $status")
+                    }
+                    
+                    // 一般错误
                     status.contains("failed", ignoreCase = true) || 
                     status.contains("error", ignoreCase = true) -> {
                         VpnFileLogger.e(TAG, "[V2Ray错误] $status")
+                        
                         // 特别检查 geo 文件相关错误
                         if (status.contains("geoip", ignoreCase = true) || 
                             status.contains("geosite", ignoreCase = true)) {
-                            VpnFileLogger.e(TAG, "[V2Ray geo错误] $status")
+                            VpnFileLogger.e(TAG, "[V2Ray geo文件错误] $status")
+                            VpnFileLogger.e(TAG, "请检查geoip.dat和geosite.dat文件是否存在")
+                        }
+                        
+                        // 检查端口占用
+                        if (status.contains("address already in use", ignoreCase = true) ||
+                            status.contains("bind", ignoreCase = true)) {
+                            VpnFileLogger.e(TAG, "[V2Ray端口占用] $status")
+                            VpnFileLogger.e(TAG, "端口可能被其他程序占用，请检查配置")
+                        }
+                        
+                        // 检查JSON错误
+                        if (status.contains("json", ignoreCase = true) ||
+                            status.contains("parse", ignoreCase = true)) {
+                            VpnFileLogger.e(TAG, "[V2Ray JSON解析错误] $status")
+                            VpnFileLogger.e(TAG, "配置文件JSON格式有误，请检查")
                         }
                     }
+                    
+                    // 警告
                     status.contains("warning", ignoreCase = true) -> {
                         VpnFileLogger.w(TAG, "[V2Ray警告] $status")
                     }
+                    
+                    // 重要信息
                     status.contains("started", ignoreCase = true) ||
                     status.contains("listening", ignoreCase = true) ||
                     status.contains("accepted", ignoreCase = true) ||
@@ -2151,6 +2379,12 @@ override fun onCreate() {
             connectionCheckJob?.cancel()
             connectionCheckJob = null
             
+            verificationJob?.cancel()
+            verificationJob = null
+            
+            // 清理 startupLatch
+            startupLatch = null
+            
             // 注销网络回调
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 try {
@@ -2163,6 +2397,14 @@ override fun onCreate() {
                     VpnFileLogger.w(TAG, "注销网络回调失败(onDestroy)", e)
                 }
                 defaultNetworkCallback = null
+            }
+            
+            // 停止tun2socks监控线程
+            try {
+                tun2socksMonitorThread?.interrupt()
+                tun2socksMonitorThread = null
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "中断监控线程失败(onDestroy)", e)
             }
             
             stopTun2socks()
