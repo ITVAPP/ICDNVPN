@@ -606,7 +606,8 @@ override fun onCreate() {
         val geoipPath = geoipFile.absolutePath
         val geositePath = geositeFile.absolutePath
         VpnFileLogger.d(TAG, "初始化V2Ray环境: geoipPath=$geoipPath, geositePath=$geositePath")
-        Libv2ray.initCoreEnv(geoipPath, geositePath)
+        // 传递目录路径并不是文件路径
+        Libv2ray.initCoreEnv(envPath, envPath)
 
         // 验证文件状态
         VpnFileLogger.d(TAG, "geoip.dat 存在: ${geoipFile.exists()}, 大小: ${geoipFile.length()} bytes")
