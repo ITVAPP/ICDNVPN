@@ -176,7 +176,7 @@
         "type": "field",
         "inboundTag": ["socks"],
         "port": 53,
-        "network": "tcp,udp"
+        "network": "tcp,udp",
         "outboundTag": "dns-out"
       },
       {
