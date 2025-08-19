@@ -96,7 +96,7 @@
         "vnext": [
           {
             "address": "SERVER_IP",  // 服务器 IP 地址（需要替换为实际 IP）
-            "port": 443,             // 服务器端口
+            "port": 80,             // 服务器端口
             "users": [
               {
                 "id": "bc24baea-3e5c-4107-a231-416cf00504fe", // 用户 UUID
@@ -257,5 +257,5 @@
       "1.1.1.1",                 // Cloudflare DNS
       "8.8.8.8"                  // Google DNS
     ]
-  },
+  }
 }
