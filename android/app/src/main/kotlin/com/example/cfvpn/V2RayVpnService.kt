@@ -329,7 +329,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun parseConfig(): JSONObject? {
         return try {
-            JSONObject(configJson)
+            val config = JSONObject(configJson)
+            // 验证路由规则
+            val routing = config.optJSONObject("routing")
+            if (routing != null) {
+                val rules = routing.optJSONArray("rules")
+                var hasGeoRules = false
+                for (i in 0 until (rules?.length() ?: 0)) {
+                    val rule = rules.getJSONObject(i)
+                    val domain = rule.optString("domain")
+                    val ip = rule.optString("ip")
+                    if (domain.startsWith("geosite:") || ip.startsWith("geoip:")) {
+                        hasGeoRules = true
+                        VpnFileLogger.d(TAG, "找到geo规则: domain=$domain, ip=$ip")
+                    }
+                }
+                if (!hasGeoRules) {
+                    VpnFileLogger.w(TAG, "警告：配置文件中未找到任何geosite或geoip规则")
+                }
+            } else {
+                VpnFileLogger.w(TAG, "警告：配置文件中未找到routing配置")
+            }
+            config
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "解析V2Ray配置失败", e)
             null
@@ -542,13 +563,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 修复1：使用正确的assets路径初始化V2Ray环境
         try {
-            val envPath = getV2RayAssetsPath()  // 关键修复：使用assets子目录
-            Libv2ray.initCoreEnv(envPath, "")
-            VpnFileLogger.d(TAG, "V2Ray环境初始化成功，路径: $envPath")
+            val envPath = getV2RayAssetsPath()  // assets 目录路径
+            val geoipPath = File(envPath, "geoip.dat").absolutePath
+            val geositePath = File(envPath, "geosite.dat").absolutePath
+            Libv2ray.initCoreEnv(geoipPath, geositePath)
+            VpnFileLogger.d(TAG, "V2Ray环境初始化成功，geoip: $geoipPath, geosite: $geositePath")
             
             // 验证geo文件是否存在
-            val geoipFile = File(envPath, "geoip.dat")
-            val geositeFile = File(envPath, "geosite.dat")
+            val geoipFile = File(geoipPath)
+            val geositeFile = File(geositePath)
             VpnFileLogger.d(TAG, "验证Geo文件:")
             VpnFileLogger.d(TAG, "  geoip.dat - 存在: ${geoipFile.exists()}, 路径: ${geoipFile.absolutePath}, 大小: ${geoipFile.length()} bytes")
             VpnFileLogger.d(TAG, "  geosite.dat - 存在: ${geositeFile.exists()}, 路径: ${geositeFile.absolutePath}, 大小: ${geositeFile.length()} bytes")
@@ -862,7 +885,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 
                 if (shouldUpdateFile(fileName, targetFile)) {
                     copyAssetFile(fileName, targetFile)
-                    VpnFileLogger.d(TAG, "文件复制成功: $fileName -> ${targetFile.absolutePath} (${targetFile.length()} bytes)")
+                    if (targetFile.exists() && targetFile.length() < 1024) { // 假设最小 1KB
+                        VpnFileLogger.e(TAG, "文件 $fileName 可能损坏，大小仅 ${targetFile.length()} bytes")
+                    } else {
+                        VpnFileLogger.d(TAG, "文件复制成功: $fileName -> ${targetFile.absolutePath} (${targetFile.length()} bytes)")
+                    }
                 } else {
                     VpnFileLogger.d(TAG, "文件已是最新,跳过: $fileName (${targetFile.length()} bytes)")
                 }
@@ -1995,6 +2022,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     testTcpConnection("127.0.0.1", apiPort, 2000, "API")
                 }
                 
+                // 验证 geo 规则
+                try {
+                    val testDomain = "www.baidu.com"  // 已知在 geosite:cn 中的域名
+                    val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
+                    val url = URL("http://$testDomain")
+                    val connection = url.openConnection(proxy) as HttpURLConnection
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.instanceFollowRedirects = false
+                    val responseCode = connection.responseCode
+                    connection.disconnect()
+                    VpnFileLogger.i(TAG, "geo规则测试($testDomain): 响应码=$responseCode")
+                    // 如果走 direct，响应应正常（如 200 或 302）；如果走 proxy，可能超时或失败
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "geo规则测试失败: ${e.message}")
+                }
+                
                 VpnFileLogger.i(TAG, "===== V2Ray启动验证完成 =====")
                 
             } catch (e: Exception) {
@@ -2037,6 +2081,11 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     status.contains("failed", ignoreCase = true) || 
                     status.contains("error", ignoreCase = true) -> {
                         VpnFileLogger.e(TAG, "[V2Ray错误] $status")
+                        // 特别检查 geo 文件相关错误
+                        if (status.contains("geoip", ignoreCase = true) || 
+                            status.contains("geosite", ignoreCase = true)) {
+                            VpnFileLogger.e(TAG, "[V2Ray geo错误] $status")
+                        }
                     }
                     status.contains("warning", ignoreCase = true) -> {
                         VpnFileLogger.w(TAG, "[V2Ray警告] $status")
