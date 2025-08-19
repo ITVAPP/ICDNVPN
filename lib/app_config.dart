@@ -21,6 +21,8 @@ class AppConfig {
   static const int v2rayHttpPort = 7899; // HTTP代理端口
   static const int v2rayApiPort = 10085; // V2Ray API端口
   static const int v2rayDefaultServerPort = 443; // 默认服务器端口
+  static const int virtualDnsPort = 10853; // 虚拟DNS服务端口
+  static const bool enableVirtualDns = false; // 默认关闭虚拟DNS
   
   // ===== V2Ray服务配置 =====
   static const Duration v2rayStartupWait = Duration(seconds: 3); // V2Ray启动后等待时间
@@ -28,13 +30,6 @@ class AppConfig {
   static const Duration portCheckTimeout = Duration(seconds: 2); // 端口检查超时时间
   static const int v2rayTerminateRetries = 6; // V2Ray进程终止重试次数
   static const Duration v2rayTerminateInterval = Duration(milliseconds: 500); // 终止重试间隔
-  
-  // ===== 虚拟DNS配置 =====
-  // 是否启用虚拟DNS（防DNS泄露）
-  static const bool enableVirtualDns = false; // 默认关闭虚拟DNS
-  
-  // 虚拟DNS服务端口
-  static const int virtualDnsPort = 10853; // 本地DNS服务监听端口
   
   // ===== V2Ray服务器群组配置 =====
   // 服务器群组用于指定多个后端服务器，实现域前置的灵活切换
