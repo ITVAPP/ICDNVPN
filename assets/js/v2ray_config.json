@@ -239,19 +239,23 @@
     "hosts": {                   // 静态 DNS 映射
       "dns.google": "8.8.8.8",
       "dns.cloudflare.com": "1.1.1.1",
-      "cloudflare-dns.com": "1.1.1.1",
-      "dns.alidns.com": "223.5.5.5",
-      "geosite:category-ads-all": "127.0.0.1"
+      "cloudflare-dns.com": "1.1.1.1"
     },
     "servers": [
-      "223.5.5.5",                 
-      "114.114.114.114",  
       {
-        "address": "8.8.8.8",
-        "port": 53,
-        "domains": ["geosite:geolocation-!cn"],
-        "expectIPs": ["geoip:!cn"]
-      }
+        // 中国大陆域名使用阿里 DNS
+        "address": "223.5.5.5",
+        "domains": [
+          "geosite:cn",           // 中国大陆网站
+          "geosite:geolocation-cn" // 中国大陆地理位置网站
+        ],
+        "expectIPs": [
+          "geoip:cn"              // 期望返回中国 IP
+        ],
+        "skipFallback": false     // 不跳过备用 DNS
+      },
+      "1.1.1.1",                 // Cloudflare DNS
+      "8.8.8.8"                  // Google DNS
     ]
-  }
+  },
 }
