@@ -1,1 +1,228 @@
-{"inbounds":[{"port":7898,"protocol":"socks","settings":{"auth":"noauth","udp":true}},{"tag":"http","port":7899,"protocol":"http","sniffing":{"enabled":true,"destOverride":["http","tls"],"routeOnly":false},"settings":{"auth":"noauth","udp":true,"allowTransparent":false}}],"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"104.16.44.219","port":80,"users":[{"id":"bc24baea-3e5c-4107-a231-416cf00504fe","alterId":0,"email":"t@t.tt","security":"auto","encryption":"none"}]}]},"streamSettings":{"network":"ws","security":"","wsSettings":{"path":"/?ed=2560","headers":{"Host":"pagesvless.jeseelim.workers.dev"}},"tlsSettings":{"serverName":"pagesvless.jeseelim.workers.dev","fingerprint":"randomized"},"sockopt":{"dialerProxy":"proxy3"}},"mux":{"enabled":false,"concurrency":-1}},{"tag":"direct","protocol":"freedom","settings":{}},{"tag":"block","protocol":"blackhole","settings":{"response":{"type":"http"}}},{"tag":"proxy3","protocol":"freedom","settings":{"fragment":{"packets":"tlshello","length":"100-200","interval":"10-20"}}}],"dns":{"hosts":{"dns.google":"8.8.8.8","proxy.example.com":"127.0.0.1"},"servers":[{"address":"223.5.5.5","domains":["geosite:cn","geosite:geolocation-cn"],"expectIPs":["geoip:cn"]},"1.1.1.1","8.8.8.8","https://dns.google/dns-query"]},"routing":{"domainStrategy":"AsIs","rules":[{"type":"field","inboundTag":["api"],"outboundTag":"api"},{"type":"field","outboundTag":"direct","domain":["domain:example-example.com","domain:example-example2.com","domain:3o91888o77.vicp.fun"]},{"type":"field","port":"443","network":"udp","outboundTag":"block"},{"type":"field","outboundTag":"block","domain":["geosite:category-ads-all"]},{"type":"field","outboundTag":"direct","domain":["domain:dns.alidns.com","domain:doh.pub","domain:dot.pub","domain:doh.360.cn","domain:dot.360.cn","geosite:cn","geosite:geolocation-cn"]},{"type":"field","outboundTag":"direct","ip":["223.5.5.5/32","223.6.6.6/32","2400:3200::1/128","2400:3200:baba::1/128","119.29.29.29/32","1.12.12.12/32","120.53.53.53/32","2402:4e00::/128","2402:4e00:1::/128","180.76.76.76/32","2400:da00::6666/128","114.114.114.114/32","114.114.115.115/32","180.184.1.1/32","180.184.2.2/32","101.226.4.6/32","218.30.118.6/32","123.125.81.6/32","140.207.198.6/32","geoip:private","geoip:cn"]},{"type":"field","port":"0-65535","outboundTag":"proxy"}]}}
+{
+  "inbounds": [
+    {
+      // 虚拟 DNS 入站
+      "tag": "dns-in",
+      "port": 10853,
+      "listen": "127.0.0.1",
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "8.8.8.8",
+        "port": 53,
+        "network": "tcp,udp"
+      }
+    },
+    {
+      "port": 7898,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    },
+    {
+      // HTTP 代理服务器
+      "tag": "http",
+      "port": 7899,              // 监听端口
+      "protocol": "http",        // HTTP 协议
+      "sniffing": {              // 流量探测配置
+        "enabled": true,         // 启用探测
+        "destOverride": ["http", "tls"], // 探测 HTTP 和 TLS 流量
+        "routeOnly": false       // 不仅仅用于路由
+      },
+      "settings": {
+        "auth": "noauth",        // 无需认证
+        "udp": true,             // 支持 UDP
+        "allowTransparent": false // 不允许透明代理
+      }
+    },
+    {
+      // API 管理接口
+      "tag": "api",
+      "port": 10085,             // API 端口
+      "listen": "127.0.0.1",     // 仅本地访问
+      "protocol": "dokodemo-door", // 任意门协议
+      "settings": {
+        "address": "127.0.0.1"   // 目标地址
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      // DNS 出站
+      "tag": "dns-out",
+      "protocol": "dns"
+    },
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "104.16.44.219",
+            "port": 80,
+            "users": [
+              {
+                "id": "bc24baea-3e5c-4107-a231-416cf00504fe",
+                "alterId": 0,
+                "email": "t@t.tt",
+                "security": "auto",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "",
+        "wsSettings": {
+          "path": "/?ed=2560",
+          "headers": {
+            "Host": "pagesvless.jeseelim.workers.dev"
+          }
+        },
+        "tlsSettings": {
+          "serverName": "pagesvless.jeseelim.workers.dev",
+          "fingerprint": "randomized"
+        },
+        "sockopt": {
+          "dialerProxy": "proxy3"
+        }
+      },
+      "mux": {
+        "enabled": false,
+        "concurrency": -1
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    },
+    {
+      "tag": "proxy3",
+      "protocol": "freedom",
+      "settings": {
+        "fragment": {
+          "packets": "tlshello",
+          "length": "100-200",
+          "interval": "10-20"
+        }
+      }
+    }
+  ],
+
+  // DNS 配置
+  "dns": {
+    "hosts": {                   // 静态 DNS 映射
+      "dns.google": "8.8.8.8",
+      "dns.cloudflare.com": "1.1.1.1",
+      "cloudflare-dns.com": "1.1.1.1"
+    },
+    "servers": [
+      {
+        // 中国大陆域名使用阿里 DNS
+        "address": "223.5.5.5",
+        "domains": [
+          "geosite:cn",           // 中国大陆网站
+          "geosite:geolocation-cn" // 中国大陆地理位置网站
+        ],
+        "expectIPs": [
+          "geoip:cn"              // 期望返回中国 IP
+        ],
+        "skipFallback": false     // 不跳过备用 DNS
+      },
+      "1.1.1.1",                 // Cloudflare DNS
+      "8.8.8.8"                  // Google DNS
+    ]
+  },
+  
+  // 路由配置
+  "routing": {
+    "domainStrategy": "AsIs",  
+    "rules": [
+      {
+        // API路由规则
+        "type": "field",
+        "inboundTag": ["api"],     // 来自API入站的流量
+        "outboundTag": "api"       // 路由到API出站
+      },
+      {
+        // 虚拟 DNS：DNS 入站流量路由到 dns-out
+        "type": "field",
+        "inboundTag": ["dns-in"],
+        "outboundTag": "dns-out"
+      },
+      {
+        // 非虚拟 DNS：SOCKS 入站的 DNS 流量（UDP 53）路由到 dns-out
+        "type": "field",
+        "inboundTag": ["socks"],
+        "port": 53,
+        "network": "tcp,udp",
+        "outboundTag": "dns-out"
+      },
+      {
+        // 特定 DNS 服务器通过代理
+        "type": "field",
+        "outboundTag": "proxy",
+        "ip": ["1.1.1.1", "8.8.8.8"],
+        "port": 53,
+        "network": "tcp,udp"
+      },
+      {
+        // 直连 123 端口 UDP 流量（NTP 协议）
+        "type": "field",
+        "outboundTag": "direct",
+        "port": 123,
+        "network": "udp"
+      },
+      {
+        // BT 流量直连
+        "type": "field",
+        "outboundTag": "direct",
+        "protocol":["bittorrent"]
+      },
+      {
+        // 中国大陆域名直连
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "geosite:cn",               // 中国大陆网站
+          "geosite:geolocation-cn"    // 中国大陆地理位置网站
+        ]
+      },
+      {
+        // 中国大陆 IP 直连
+        "type": "field",
+        "outboundTag": "direct",
+        "ip": [
+          "geoip:private",   // 私有 IP 地址
+          "geoip:cn"         // 中国大陆 IP
+        ]
+      },
+      {
+          "type": "field",
+          "outboundTag": "block",
+          "domain": [
+          "geosite:category-ads-all"
+          ]
+      },
+      {
+        // 默认规则：其他所有流量通过代理
+        "type": "field",
+        "network": "udp,tcp",
+        "outboundTag": "proxy"
+      }
+    ]
+  }
+}
