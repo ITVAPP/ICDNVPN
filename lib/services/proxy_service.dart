@@ -12,6 +12,11 @@ class ProxyService {
   static const _registryPath = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings';
   // 修改：使用AppConfig构建代理服务器地址
   static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
+  
+  // 添加：注册表备份变量
+  static int? _originalProxyEnable;
+  static String? _originalProxyServer;
+  static String? _originalProxyOverride;
 
   // ============ 从win32_registry复制的核心代码 ============
   // 只在Windows平台编译和执行，移动端会跳过
@@ -233,8 +238,17 @@ class ProxyService {
       await _log.warn('使用wmic获取网络适配器失败: $e', tag: _logTag);
     }
     
-    // 备用方案：返回常见的适配器名称
-    final defaultAdapters = ['以太网', 'WLAN', 'Wi-Fi', 'Ethernet'];
+    // 备用方案：返回常见的适配器名称（改进：添加更多中文名称）
+    final defaultAdapters = [
+      '以太网', '以太网 2', '以太网 3',
+      'WLAN', 'WLAN 2', 
+      'Wi-Fi', 'Wi-Fi 2',
+      '无线网络连接', '无线网络连接 2',
+      '本地连接', '本地连接 2',
+      '有线',
+      'Ethernet', 'Ethernet 2',
+      'Wireless'
+    ];
     await _log.debug('使用默认网络适配器列表: ${defaultAdapters.join(', ')}', tag: _logTag);
     return defaultAdapters;
   }
@@ -317,7 +331,7 @@ class ProxyService {
     }
   }
   
-  /// 恢复DNS设置
+  /// 恢复DNS设置（增强版：添加刷新命令）
   static Future<void> _restoreDnsSettings() async {
     if (!Platform.isWindows) return;
     
@@ -361,6 +375,14 @@ class ProxyService {
         }
       }
       
+      // 3. 添加：刷新DNS缓存和网络配置
+      await _log.info('刷新DNS缓存', tag: _logTag);
+      await Process.run('ipconfig', ['/flushdns']);
+      
+      // 4. 添加：注册DNS
+      await _log.info('注册DNS', tag: _logTag);
+      await Process.run('ipconfig', ['/registerdns']);
+      
       await _log.info('DNS设置恢复完成', tag: _logTag);
       
     } catch (e) {
@@ -386,6 +408,12 @@ class ProxyService {
       if (hkey == null) {
         throw Exception('无法打开注册表键');
       }
+      
+      // 添加：备份原始值
+      _originalProxyEnable = _getRegistryDwordValue(hkey, 'ProxyEnable');
+      _originalProxyServer = _getRegistryStringValue(hkey, 'ProxyServer');
+      _originalProxyOverride = _getRegistryStringValue(hkey, 'ProxyOverride');
+      await _log.info('已备份原始代理设置', tag: _logTag);
       
       // 1. 启用代理 - 设置ProxyEnable为1 (DWORD类型)
       _setRegistryDwordValue(hkey, 'ProxyEnable', 1);
@@ -442,37 +470,55 @@ class ProxyService {
         throw Exception('无法打开注册表键');
       }
       
-      // 禁用代理 - 设置ProxyEnable为0 (DWORD类型)
-      _setRegistryDwordValue(hkey, 'ProxyEnable', 0);
-      await _log.info('ProxyEnable已设置为0', tag: _logTag);
+      // 修改：恢复原始值而不是简单删除
+      if (_originalProxyEnable != null) {
+        _setRegistryDwordValue(hkey, 'ProxyEnable', _originalProxyEnable!);
+        await _log.info('ProxyEnable已恢复为原始值: $_originalProxyEnable', tag: _logTag);
+      } else {
+        _setRegistryDwordValue(hkey, 'ProxyEnable', 0);
+        await _log.info('ProxyEnable已设置为0', tag: _logTag);
+      }
       
-      // 删除ProxyServer设置
-      try {
-        _deleteRegistryValue(hkey, 'ProxyServer');
-        await _log.info('ProxyServer设置已删除', tag: _logTag);
-      } catch (e) {
-        // 如果删除失败，尝试设置为空字符串
+      if (_originalProxyServer != null && _originalProxyServer!.isNotEmpty) {
+        _setRegistryStringValue(hkey, 'ProxyServer', _originalProxyServer!);
+        await _log.info('ProxyServer已恢复为原始值', tag: _logTag);
+      } else {
         try {
-          _setRegistryStringValue(hkey, 'ProxyServer', '');
-          await _log.info('ProxyServer设置已清空', tag: _logTag);
-        } catch (e2) {
-          await _log.debug('清空ProxyServer失败（非致命）: $e2', tag: _logTag);
+          _deleteRegistryValue(hkey, 'ProxyServer');
+          await _log.info('ProxyServer设置已删除', tag: _logTag);
+        } catch (e) {
+          // 如果删除失败，尝试设置为空字符串
+          try {
+            _setRegistryStringValue(hkey, 'ProxyServer', '');
+            await _log.info('ProxyServer设置已清空', tag: _logTag);
+          } catch (e2) {
+            await _log.debug('清空ProxyServer失败（非致命）: $e2', tag: _logTag);
+          }
         }
       }
       
-      // 删除ProxyOverride设置 - 这是修复的关键部分
-      try {
-        _deleteRegistryValue(hkey, 'ProxyOverride');
-        await _log.info('ProxyOverride设置已删除', tag: _logTag);
-      } catch (e) {
-        // 如果删除失败，尝试设置为空字符串
+      if (_originalProxyOverride != null && _originalProxyOverride!.isNotEmpty) {
+        _setRegistryStringValue(hkey, 'ProxyOverride', _originalProxyOverride!);
+        await _log.info('ProxyOverride已恢复为原始值', tag: _logTag);
+      } else {
         try {
-          _setRegistryStringValue(hkey, 'ProxyOverride', '');
-          await _log.info('ProxyOverride设置已清空', tag: _logTag);
-        } catch (e2) {
-          await _log.debug('清空ProxyOverride失败（非致命）: $e2', tag: _logTag);
+          _deleteRegistryValue(hkey, 'ProxyOverride');
+          await _log.info('ProxyOverride设置已删除', tag: _logTag);
+        } catch (e) {
+          // 如果删除失败，尝试设置为空字符串
+          try {
+            _setRegistryStringValue(hkey, 'ProxyOverride', '');
+            await _log.info('ProxyOverride设置已清空', tag: _logTag);
+          } catch (e2) {
+            await _log.debug('清空ProxyOverride失败（非致命）: $e2', tag: _logTag);
+          }
         }
       }
+      
+      // 清空备份值
+      _originalProxyEnable = null;
+      _originalProxyServer = null;
+      _originalProxyOverride = null;
       
       // 关闭注册表键
       _closeRegistryKey(hkey);
