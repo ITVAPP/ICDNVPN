@@ -12,11 +12,6 @@ class ProxyService {
   static const _registryPath = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings';
   // 修改：使用AppConfig构建代理服务器地址
   static String get _proxyServer => '127.0.0.1:${AppConfig.v2rayHttpPort}';
-  
-  // 添加：注册表备份变量
-  static int? _originalProxyEnable;
-  static String? _originalProxyServer;
-  static String? _originalProxyOverride;
 
   // ============ 从win32_registry复制的核心代码 ============
   // 只在Windows平台编译和执行，移动端会跳过
@@ -201,7 +196,403 @@ class ProxyService {
     RegCloseKey(hkey);
   }
   
+  /// 检查注册表值是否存在
+  static bool _registryValueExists(int hkey, String valueName) {
+    if (!Platform.isWindows) return false;
+    
+    final lpValueName = valueName.toNativeUtf16();
+    try {
+      final retcode = RegQueryValueEx(
+        hkey,
+        lpValueName,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+      );
+      return retcode == ERROR_SUCCESS;
+    } finally {
+      free(lpValueName);
+    }
+  }
+  
+  // ============ 新增备份恢复方法 ============
+  
+  /// 备份注册表值（通过重命名）
+  static Future<void> _backupRegistryValue(int hkey, String valueName) async {
+    if (!Platform.isWindows) return;
+    
+    final backupName = '${valueName}_bak';
+    
+    // 先删除旧的备份（如果存在）
+    try {
+      _deleteRegistryValue(hkey, backupName);
+    } catch (e) {
+      // 忽略删除失败
+    }
+    
+    // 读取当前值
+    final dwordValue = _getRegistryDwordValue(hkey, valueName);
+    if (dwordValue != null) {
+      // 是DWORD类型，创建备份
+      _setRegistryDwordValue(hkey, backupName, dwordValue);
+      await _log.debug('已备份DWORD值 $valueName -> $backupName: $dwordValue', tag: _logTag);
+      return;
+    }
+    
+    final stringValue = _getRegistryStringValue(hkey, valueName);
+    if (stringValue != null) {
+      // 是字符串类型，创建备份
+      _setRegistryStringValue(hkey, backupName, stringValue);
+      await _log.debug('已备份字符串值 $valueName -> $backupName', tag: _logTag);
+      return;
+    }
+    
+    // 值不存在，不需要备份
+    await _log.debug('值 $valueName 不存在，无需备份', tag: _logTag);
+  }
+  
+  /// 恢复注册表值（从备份）
+  static Future<void> _restoreRegistryValue(int hkey, String valueName) async {
+    if (!Platform.isWindows) return;
+    
+    final backupName = '${valueName}_bak';
+    
+    // 先删除当前值
+    try {
+      _deleteRegistryValue(hkey, valueName);
+    } catch (e) {
+      // 忽略删除失败
+    }
+    
+    // 读取备份值
+    final dwordValue = _getRegistryDwordValue(hkey, backupName);
+    if (dwordValue != null) {
+      // 恢复DWORD值
+      _setRegistryDwordValue(hkey, valueName, dwordValue);
+      // 删除备份
+      _deleteRegistryValue(hkey, backupName);
+      await _log.debug('已恢复DWORD值 $backupName -> $valueName: $dwordValue', tag: _logTag);
+      return;
+    }
+    
+    final stringValue = _getRegistryStringValue(hkey, backupName);
+    if (stringValue != null) {
+      // 恢复字符串值
+      _setRegistryStringValue(hkey, valueName, stringValue);
+      // 删除备份
+      _deleteRegistryValue(hkey, backupName);
+      await _log.debug('已恢复字符串值 $backupName -> $valueName', tag: _logTag);
+      return;
+    }
+    
+    // 备份不存在，值保持删除状态
+    await _log.debug('备份 $backupName 不存在，值 $valueName 保持删除状态', tag: _logTag);
+  }
+  
+  /// 检查并恢复异常退出的备份
+  static Future<void> checkAndRestoreBackup() async {
+    if (!Platform.isWindows) return;
+    
+    await _log.info('检查是否存在异常退出的备份...', tag: _logTag);
+    
+    int? hkey;
+    try {
+      hkey = _openRegistryKey(_registryPath, KEY_ALL_ACCESS);
+      if (hkey == null) return;
+      
+      // 检查是否存在备份
+      bool hasBackup = false;
+      if (_registryValueExists(hkey, 'ProxyEnable_bak')) {
+        hasBackup = true;
+        await _log.warn('发现ProxyEnable备份，表示上次异常退出', tag: _logTag);
+        await _restoreRegistryValue(hkey, 'ProxyEnable');
+      }
+      
+      if (_registryValueExists(hkey, 'ProxyServer_bak')) {
+        hasBackup = true;
+        await _log.warn('发现ProxyServer备份，表示上次异常退出', tag: _logTag);
+        await _restoreRegistryValue(hkey, 'ProxyServer');
+      }
+      
+      if (_registryValueExists(hkey, 'ProxyOverride_bak')) {
+        hasBackup = true;
+        await _log.warn('发现ProxyOverride备份，表示上次异常退出', tag: _logTag);
+        await _restoreRegistryValue(hkey, 'ProxyOverride');
+      }
+      
+      if (hasBackup) {
+        await _log.info('已恢复异常退出前的代理设置', tag: _logTag);
+        
+        // 恢复DNS设置
+        await _restoreDnsSettings();
+        
+        // 刷新系统代理
+        await _refreshSystemProxy();
+      } else {
+        await _log.info('未发现备份，系统正常', tag: _logTag);
+        
+        // 检查是否有DNS备份（可能代理备份已恢复但DNS还未恢复）
+        const dnsBackupPath = r'Software\CFVpn\DnsBackup';
+        final dnsBackupKey = _openRegistryKey(dnsBackupPath, KEY_READ);
+        if (dnsBackupKey != null) {
+          _closeRegistryKey(dnsBackupKey);
+          await _log.warn('发现DNS备份，恢复DNS设置', tag: _logTag);
+          await _restoreDnsSettings();
+        }
+      }
+      
+      _closeRegistryKey(hkey);
+    } catch (e) {
+      await _log.error('检查备份失败', tag: _logTag, error: e);
+      if (hkey != null) _closeRegistryKey(hkey);
+    }
+  }
+  
   // ============ 新增DNS相关方法 ============
+  
+  /// 备份DNS设置到注册表
+  static Future<void> _backupDnsSettings() async {
+    if (!Platform.isWindows) return;
+    
+    await _log.info('备份DNS设置', tag: _logTag);
+    
+    // 创建备份路径
+    const dnsBackupPath = r'Software\CFVpn\DnsBackup';
+    
+    int? hkey;
+    try {
+      // 创建或打开备份键
+      final phKey = calloc<HKEY>();
+      final lpSubKey = dnsBackupPath.toNativeUtf16();
+      
+      try {
+        // 使用RegOpenKeyEx尝试打开，如果失败则创建
+        var result = RegOpenKeyEx(
+          HKEY_CURRENT_USER,
+          lpSubKey,
+          0,
+          KEY_ALL_ACCESS,
+          phKey,
+        );
+        
+        if (result != ERROR_SUCCESS) {
+          // 键不存在，创建新键
+          final lpClass = ''.toNativeUtf16();
+          try {
+            result = RegCreateKeyEx(
+              HKEY_CURRENT_USER,
+              lpSubKey,
+              0,
+              lpClass,
+              REG_OPTION_NON_VOLATILE,
+              KEY_ALL_ACCESS,
+              nullptr,
+              phKey,
+              nullptr,
+            );
+          } finally {
+            free(lpClass);
+          }
+        }
+        
+        if (result == ERROR_SUCCESS) {
+          hkey = phKey.value;
+        }
+      } finally {
+        free(lpSubKey);
+        free(phKey);
+      }
+      
+      if (hkey == null) {
+        await _log.error('无法创建DNS备份注册表键', tag: _logTag);
+        return;
+      }
+      
+      // 获取所有网络适配器
+      final adapters = await _getActiveNetworkAdapters();
+      
+      for (final adapter in adapters) {
+        try {
+          // 获取当前DNS设置
+          final result = await Process.run('netsh', [
+            'interface', 'ip', 'show', 'dns',
+            'name="$adapter"'
+          ], runInShell: true);
+          
+          if (result.exitCode == 0) {
+            final output = result.stdout.toString();
+            
+            // 判断是DHCP还是静态
+            if (output.contains('DHCP') || output.contains('自动配置')) {
+              // DHCP模式
+              _setRegistryStringValue(hkey, '${adapter}_source', 'dhcp');
+              await _log.info('适配器 "$adapter" 原DNS: DHCP', tag: _logTag);
+            } else {
+              // 静态模式，提取DNS服务器
+              _setRegistryStringValue(hkey, '${adapter}_source', 'static');
+              
+              final dnsServers = <String>[];
+              final lines = output.split('\n');
+              for (final line in lines) {
+                final ipMatch = RegExp(r'(\d+\.\d+\.\d+\.\d+)').firstMatch(line);
+                if (ipMatch != null && !line.contains('配置') && !line.contains('Configuration')) {
+                  dnsServers.add(ipMatch.group(1)!);
+                }
+              }
+              
+              if (dnsServers.isNotEmpty) {
+                // 保存DNS服务器列表
+                _setRegistryStringValue(hkey, '${adapter}_servers', dnsServers.join(','));
+                await _log.info('适配器 "$adapter" 原DNS: ${dnsServers.join(", ")}', tag: _logTag);
+              }
+            }
+          }
+        } catch (e) {
+          await _log.warn('备份适配器 "$adapter" DNS失败: $e', tag: _logTag);
+        }
+      }
+      
+      _closeRegistryKey(hkey);
+      
+    } catch (e) {
+      await _log.error('备份DNS设置失败', tag: _logTag, error: e);
+      if (hkey != null) _closeRegistryKey(hkey);
+    }
+  }
+  
+  /// 从注册表恢复DNS设置
+  static Future<void> _restoreDnsFromBackup() async {
+    if (!Platform.isWindows) return;
+    
+    await _log.info('从备份恢复DNS设置', tag: _logTag);
+    
+    const dnsBackupPath = r'Software\CFVpn\DnsBackup';
+    
+    int? hkey;
+    try {
+      // 打开备份键
+      hkey = _openRegistryKey(dnsBackupPath, KEY_READ);
+      if (hkey == null) {
+        await _log.warn('没有找到DNS备份，恢复为DHCP', tag: _logTag);
+        await _restoreDnsToDefault();
+        return;
+      }
+      
+      // 获取所有网络适配器
+      final adapters = await _getActiveNetworkAdapters();
+      
+      for (final adapter in adapters) {
+        try {
+          // 读取备份的DNS源类型
+          final source = _getRegistryStringValue(hkey, '${adapter}_source');
+          
+          if (source == 'static') {
+            // 恢复静态DNS
+            final servers = _getRegistryStringValue(hkey, '${adapter}_servers');
+            if (servers != null && servers.isNotEmpty) {
+              final dnsServerList = servers.split(',');
+              
+              // 设置主DNS
+              var result = await Process.run('netsh', [
+                'interface', 'ip', 'set', 'dns',
+                'name="$adapter"',
+                'source=static',
+                'address=${dnsServerList[0]}'
+              ], runInShell: true);
+              
+              if (result.exitCode == 0) {
+                await _log.info('恢复适配器 "$adapter" 主DNS: ${dnsServerList[0]}', tag: _logTag);
+              }
+              
+              // 设置备用DNS
+              for (int i = 1; i < dnsServerList.length; i++) {
+                result = await Process.run('netsh', [
+                  'interface', 'ip', 'add', 'dns',
+                  'name="$adapter"',
+                  'address=${dnsServerList[i]}',
+                  'index=${i + 1}'
+                ], runInShell: true);
+                
+                if (result.exitCode == 0) {
+                  await _log.info('恢复适配器 "$adapter" 备用DNS: ${dnsServerList[i]}', tag: _logTag);
+                }
+              }
+            }
+          } else if (source == 'dhcp') {
+            // 恢复DHCP
+            final result = await Process.run('netsh', [
+              'interface', 'ip', 'set', 'dns',
+              'name="$adapter"',
+              'source=dhcp'
+            ], runInShell: true);
+            
+            if (result.exitCode == 0) {
+              await _log.info('恢复适配器 "$adapter" DNS为DHCP', tag: _logTag);
+            }
+          } else {
+            // 没有备份，默认恢复为DHCP
+            await _log.warn('适配器 "$adapter" 无DNS备份，恢复为DHCP', tag: _logTag);
+            await Process.run('netsh', [
+              'interface', 'ip', 'set', 'dns',
+              'name="$adapter"',
+              'source=dhcp'
+            ], runInShell: true);
+          }
+        } catch (e) {
+          await _log.warn('恢复适配器 "$adapter" DNS失败: $e', tag: _logTag);
+        }
+      }
+      
+      _closeRegistryKey(hkey);
+      
+      // 清理备份
+      await _clearDnsBackup();
+      
+    } catch (e) {
+      await _log.error('恢复DNS设置失败', tag: _logTag, error: e);
+      if (hkey != null) _closeRegistryKey(hkey);
+    }
+  }
+  
+  /// 清理DNS备份
+  static Future<void> _clearDnsBackup() async {
+    if (!Platform.isWindows) return;
+    
+    try {
+      // 删除整个备份键
+      // 删除整个备份键
+      const dnsBackupPath = r'Software\CFVpn\DnsBackup';
+      final lpSubKey = dnsBackupPath.toNativeUtf16();
+      
+      try {
+        RegDeleteKey(HKEY_CURRENT_USER, lpSubKey);
+        await _log.debug('DNS备份已清理', tag: _logTag);
+      } finally {
+        free(lpSubKey);
+      }
+    } catch (e) {
+      // 忽略删除失败
+    }
+  }
+  
+  /// 恢复DNS为默认（DHCP）
+  static Future<void> _restoreDnsToDefault() async {
+    if (!Platform.isWindows) return;
+    
+    final adapters = await _getActiveNetworkAdapters();
+    for (final adapter in adapters) {
+      try {
+        await Process.run('netsh', [
+          'interface', 'ip', 'set', 'dns',
+          'name="$adapter"',
+          'source=dhcp'
+        ], runInShell: true);
+      } catch (e) {
+        // 忽略错误
+      }
+    }
+  }
   
   /// 获取活动网络适配器列表
   static Future<List<String>> _getActiveNetworkAdapters() async {
@@ -259,6 +650,9 @@ class ProxyService {
     
     try {
       await _log.info('开始设置DNS重定向到V2Ray虚拟DNS', tag: _logTag);
+      
+      // 先备份原始DNS设置
+      await _backupDnsSettings();
       
       // 从AppConfig读取虚拟DNS端口
       final virtualDnsPort = AppConfig.virtualDnsPort;
@@ -331,7 +725,7 @@ class ProxyService {
     }
   }
   
-  /// 恢复DNS设置（增强版：添加刷新命令）
+  /// 恢复DNS设置
   static Future<void> _restoreDnsSettings() async {
     if (!Platform.isWindows) return;
     
@@ -354,32 +748,14 @@ class ProxyService {
         }
       }
       
-      // 2. 恢复网络适配器的DNS为自动获取
-      final adapters = await _getActiveNetworkAdapters();
+      // 2. 从备份恢复DNS设置
+      await _restoreDnsFromBackup();
       
-      for (final adapter in adapters) {
-        try {
-          final result = await Process.run('netsh', [
-            'interface', 'ip', 'set', 'dns',
-            'name="$adapter"',
-            'source=dhcp'
-          ], runInShell: true);
-          
-          if (result.exitCode == 0) {
-            await _log.info('已恢复适配器 "$adapter" 的DNS为自动获取', tag: _logTag);
-          } else {
-            await _log.warn('恢复适配器 "$adapter" 的DNS失败: ${result.stderr}', tag: _logTag);
-          }
-        } catch (e) {
-          await _log.warn('恢复适配器 "$adapter" 的DNS时出错: $e', tag: _logTag);
-        }
-      }
-      
-      // 3. 添加：刷新DNS缓存和网络配置
+      // 3. 刷新DNS缓存和网络配置
       await _log.info('刷新DNS缓存', tag: _logTag);
       await Process.run('ipconfig', ['/flushdns']);
       
-      // 4. 添加：注册DNS
+      // 4. 注册DNS
       await _log.info('注册DNS', tag: _logTag);
       await Process.run('ipconfig', ['/registerdns']);
       
@@ -409,11 +785,11 @@ class ProxyService {
         throw Exception('无法打开注册表键');
       }
       
-      // 添加：备份原始值
-      _originalProxyEnable = _getRegistryDwordValue(hkey, 'ProxyEnable');
-      _originalProxyServer = _getRegistryStringValue(hkey, 'ProxyServer');
-      _originalProxyOverride = _getRegistryStringValue(hkey, 'ProxyOverride');
-      await _log.info('已备份原始代理设置', tag: _logTag);
+      // 备份原始值（通过重命名）
+      await _log.info('备份原始代理设置', tag: _logTag);
+      await _backupRegistryValue(hkey, 'ProxyEnable');
+      await _backupRegistryValue(hkey, 'ProxyServer');
+      await _backupRegistryValue(hkey, 'ProxyOverride');
       
       // 1. 启用代理 - 设置ProxyEnable为1 (DWORD类型)
       _setRegistryDwordValue(hkey, 'ProxyEnable', 1);
@@ -470,55 +846,11 @@ class ProxyService {
         throw Exception('无法打开注册表键');
       }
       
-      // 修改：恢复原始值而不是简单删除
-      if (_originalProxyEnable != null) {
-        _setRegistryDwordValue(hkey, 'ProxyEnable', _originalProxyEnable!);
-        await _log.info('ProxyEnable已恢复为原始值: $_originalProxyEnable', tag: _logTag);
-      } else {
-        _setRegistryDwordValue(hkey, 'ProxyEnable', 0);
-        await _log.info('ProxyEnable已设置为0', tag: _logTag);
-      }
-      
-      if (_originalProxyServer != null && _originalProxyServer!.isNotEmpty) {
-        _setRegistryStringValue(hkey, 'ProxyServer', _originalProxyServer!);
-        await _log.info('ProxyServer已恢复为原始值', tag: _logTag);
-      } else {
-        try {
-          _deleteRegistryValue(hkey, 'ProxyServer');
-          await _log.info('ProxyServer设置已删除', tag: _logTag);
-        } catch (e) {
-          // 如果删除失败，尝试设置为空字符串
-          try {
-            _setRegistryStringValue(hkey, 'ProxyServer', '');
-            await _log.info('ProxyServer设置已清空', tag: _logTag);
-          } catch (e2) {
-            await _log.debug('清空ProxyServer失败（非致命）: $e2', tag: _logTag);
-          }
-        }
-      }
-      
-      if (_originalProxyOverride != null && _originalProxyOverride!.isNotEmpty) {
-        _setRegistryStringValue(hkey, 'ProxyOverride', _originalProxyOverride!);
-        await _log.info('ProxyOverride已恢复为原始值', tag: _logTag);
-      } else {
-        try {
-          _deleteRegistryValue(hkey, 'ProxyOverride');
-          await _log.info('ProxyOverride设置已删除', tag: _logTag);
-        } catch (e) {
-          // 如果删除失败，尝试设置为空字符串
-          try {
-            _setRegistryStringValue(hkey, 'ProxyOverride', '');
-            await _log.info('ProxyOverride设置已清空', tag: _logTag);
-          } catch (e2) {
-            await _log.debug('清空ProxyOverride失败（非致命）: $e2', tag: _logTag);
-          }
-        }
-      }
-      
-      // 清空备份值
-      _originalProxyEnable = null;
-      _originalProxyServer = null;
-      _originalProxyOverride = null;
+      // 恢复原始值（从备份）
+      await _log.info('恢复原始代理设置', tag: _logTag);
+      await _restoreRegistryValue(hkey, 'ProxyEnable');
+      await _restoreRegistryValue(hkey, 'ProxyServer');
+      await _restoreRegistryValue(hkey, 'ProxyOverride');
       
       // 关闭注册表键
       _closeRegistryKey(hkey);
