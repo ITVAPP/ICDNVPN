@@ -272,7 +272,7 @@ class ConnectionProvider with ChangeNotifier {
     await _connectInternal(enableVirtualDns: enableVirtualDns);
   }
   
-  // 修改：内部连接实现，添加enableVirtualDns参数
+  // 修改：内部连接实现，调整Windows平台执行顺序
   Future<void> _connectInternal({bool? enableVirtualDns}) async {
     if (_isDisposed) return;
     
@@ -330,67 +330,86 @@ class ConnectionProvider with ChangeNotifier {
     
     if (serverToConnect != null) {
       try {
-        // 启动V2Ray服务，传递虚拟DNS配置
-        final success = await V2RayService.start(
-          serverIp: serverToConnect.ip,
-          serverPort: serverToConnect.port,
-          globalProxy: _globalProxy,  // 修改：传递全局代理参数
-          localizedStrings: _localizedStrings,  // 传递国际化文字
-          enableVirtualDns: enableVirtualDns ?? AppConfig.enableVirtualDns,  // 添加虚拟DNS参数
-        );
-
-        if (success) {
+        // ========== 关键修改：调整Windows平台执行顺序 ==========
+        if (Platform.isWindows) {
+          // Windows平台：先设置系统代理，失败直接返回
+          await _log.info('Windows平台：先设置系统代理', tag: _logTag);
           try {
-            // ========== 关键修改：只在 Windows 平台启用系统代理 ==========
-            if (Platform.isWindows) {
-              await _log.info('Windows平台：启用系统代理', tag: _logTag);
-              await ProxyService.enableSystemProxy();
-              
-              // Windows平台：系统代理设置完成后才更新为已连接
-              _isConnected = true;
-              _connectStartTime = DateTime.now(); // 记录连接开始时间
-              if (!_isDisposed) {
-                notifyListeners();
-              }
-            } else {
-              // 移动平台：V2Ray启动成功即为已连接（V2RayService内部已更新状态）
-              _isConnected = true;
-              _connectStartTime = DateTime.now(); // 记录连接开始时间
-              if (!_isDisposed) {
-                notifyListeners();
-              }
-              await _log.info('非Windows平台：跳过系统代理设置（使用VPN模式）', tag: _logTag);
-            }
-            // ==============================================================
-            
+            await ProxyService.enableSystemProxy();
+            await _log.info('系统代理设置成功', tag: _logTag);
           } catch (e) {
-            // 如果系统代理设置失败，停止V2Ray
-            await _log.error('系统代理设置失败', tag: _logTag, error: e);
-            await V2RayService.stop();
+            await _log.error('系统代理设置失败，中止连接', tag: _logTag, error: e);
             
-            // Windows平台显示错误提示对话框
-            if (Platform.isWindows && _dialogContext != null) {
-              // 显示详细的错误对话框，不再重新抛出异常避免重复提示
+            // 显示错误提示对话框
+            if (_dialogContext != null) {
               await _showRegistryErrorDialog(e.toString());
-              // 确保状态一致性
-              _isConnected = false;
-              _connectStartTime = null;
-              if (!_isDisposed) {
-                notifyListeners();
-              }
-              return;  // 直接返回，不再抛出异常
             }
             
-            // 非Windows平台或没有对话框上下文时，继续抛出异常
-            throw e;
+            // 确保状态一致性
+            _isConnected = false;
+            _connectStartTime = null;
+            if (!_isDisposed) {
+              notifyListeners();
+            }
+            
+            // 直接返回，不启动V2Ray
+            return;
           }
-        } else {
-          throw Exception('Failed to start V2Ray service');
         }
+        
+        // 启动V2Ray服务
+        bool v2rayStarted = false;
+        try {
+          await _log.info('开始启动V2Ray服务', tag: _logTag);
+          v2rayStarted = await V2RayService.start(
+            serverIp: serverToConnect.ip,
+            serverPort: serverToConnect.port,
+            globalProxy: _globalProxy,
+            localizedStrings: _localizedStrings,
+            enableVirtualDns: enableVirtualDns ?? AppConfig.enableVirtualDns,
+          );
+
+          if (v2rayStarted) {
+            // V2Ray启动成功，更新状态
+            _isConnected = true;
+            _connectStartTime = DateTime.now();
+            if (!_isDisposed) {
+              notifyListeners();
+            }
+            await _log.info('连接成功建立', tag: _logTag);
+          } else {
+            throw Exception('Failed to start V2Ray service');
+          }
+          
+        } catch (e) {
+          await _log.error('V2Ray启动失败', tag: _logTag, error: e);
+          
+          // Windows平台：V2Ray启动失败，需要回滚系统代理设置
+          if (Platform.isWindows) {
+            await _log.info('回滚系统代理设置', tag: _logTag);
+            try {
+              await ProxyService.disableSystemProxy();
+            } catch (rollbackError) {
+              await _log.error('回滚系统代理失败', tag: _logTag, error: rollbackError);
+            }
+          }
+          
+          // 确保状态一致性
+          _isConnected = false;
+          _connectStartTime = null;
+          if (!_isDisposed) {
+            notifyListeners();
+          }
+          
+          throw e;
+        }
+        // ========== 修改结束 ==========
+        
       } catch (e) {
         await _log.error('Connection failed', tag: _logTag, error: e);
         // 确保状态一致性
         _isConnected = false;
+        _connectStartTime = null;
         if (!_isDisposed) {
           notifyListeners();
         }
