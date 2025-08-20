@@ -446,7 +446,7 @@ class ProxyService {
       _setRegistryDwordValue(hkey, 'ProxyEnable', 0);
       await _log.info('ProxyEnable已设置为0', tag: _logTag);
       
-      // 可选：删除代理服务器设置
+      // 删除ProxyServer设置
       try {
         _deleteRegistryValue(hkey, 'ProxyServer');
         await _log.info('ProxyServer设置已删除', tag: _logTag);
@@ -457,6 +457,20 @@ class ProxyService {
           await _log.info('ProxyServer设置已清空', tag: _logTag);
         } catch (e2) {
           await _log.debug('清空ProxyServer失败（非致命）: $e2', tag: _logTag);
+        }
+      }
+      
+      // 删除ProxyOverride设置 - 这是修复的关键部分
+      try {
+        _deleteRegistryValue(hkey, 'ProxyOverride');
+        await _log.info('ProxyOverride设置已删除', tag: _logTag);
+      } catch (e) {
+        // 如果删除失败，尝试设置为空字符串
+        try {
+          _setRegistryStringValue(hkey, 'ProxyOverride', '');
+          await _log.info('ProxyOverride设置已清空', tag: _logTag);
+        } catch (e2) {
+          await _log.debug('清空ProxyOverride失败（非致命）: $e2', tag: _logTag);
         }
       }
       
