@@ -1,4 +1,34 @@
 {
+  // 统计信息配置
+  "stats": {},  // 空对象，启用基础统计功能
+  
+  // API配置
+  "api": {
+    "tag": "api",
+    "services": ["StatsService"]  // 启用统计服务API
+  },
+  
+  // 本地策略配置
+  "policy": {
+    "levels": {
+      "0": {  // 用户级别0的策略
+        "handshake": 5,        // 握手超时时间（秒）
+        "connIdle": 300,       // 连接空闲超时时间（秒）
+        "uplinkOnly": 2,       // 仅上行连接超时时间（秒）
+        "downlinkOnly": 3,     // 仅下行连接超时时间（秒）
+        "statsUserUplink": true,   // 启用用户上行流量统计
+        "statsUserDownlink": true, // 启用用户下行流量统计
+        "bufferSize": 512      // 缓冲区大小（KB）
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,    // 启用入站上行流量统计
+      "statsInboundDownlink": true,  // 启用入站下行流量统计
+      "statsOutboundUplink": true,   // 启用出站上行流量统计
+      "statsOutboundDownlink": true  // 启用出站下行流量统计
+    }
+  },
+  
   "inbounds": [
     {
       // 虚拟 DNS 入站
@@ -29,7 +59,7 @@
       "sniffing": {              // 流量探测配置
         "enabled": true,         // 启用探测
         "destOverride": ["http", "tls"], // 探测 HTTP 和 TLS 流量
-        "routeOnly": false       // 不仅仅用于路由
+        "routeOnly": true        // 仅用于路由判断，不改变目标地址
       },
       "settings": {
         "auth": "noauth",        // 无需认证
@@ -85,10 +115,9 @@
         },
         "tlsSettings": {
           "serverName": "pagesvless.jeseelim.workers.dev",
-          "fingerprint": "randomized"
-        },
-        "sockopt": {
-          "dialerProxy": "proxy3"
+          "allowInsecure": false,
+          "alpn": ["http/1.1"],
+          "fingerprint": "chrome"
         }
       },
       "mux": {
@@ -109,17 +138,6 @@
           "type": "http"
         }
       }
-    },
-    {
-      "tag": "proxy3",
-      "protocol": "freedom",
-      "settings": {
-        "fragment": {
-          "packets": "tlshello",
-          "length": "100-200",
-          "interval": "10-20"
-        }
-      }
     }
   ],
 
@@ -138,14 +156,13 @@
           "geosite:cn",           // 中国大陆网站
           "geosite:geolocation-cn" // 中国大陆地理位置网站
         ],
-        "expectIPs": [
-          "geoip:cn"              // 期望返回中国 IP
-        ],
         "skipFallback": false     // 不跳过备用 DNS
       },
       "1.1.1.1",                 // Cloudflare DNS
       "8.8.8.8"                  // Google DNS
-    ]
+    ],
+    "disableCache": false,       // 启用DNS缓存
+    "disableFallback": false     // 启用备用DNS
   },
   
   // 路由配置
