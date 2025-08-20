@@ -31,11 +31,16 @@
   
   "inbounds": [
     {
-      // 虚拟 DNS 入站 - 修改为使用V2Ray内置DNS服务器
+      // 虚拟 DNS 入站
       "tag": "dns-in",
       "port": 10853,
       "listen": "127.0.0.1",
-      "protocol": "dns"  // 改为dns协议，使用V2Ray内置DNS处理
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "8.8.8.8",
+        "port": 53,
+        "network": "tcp,udp"
+      }
     },
     {
       "tag": "socks",
@@ -174,6 +179,8 @@
         // 虚拟 DNS：DNS 入站流量路由到 dns-out
         "type": "field",
         "inboundTag": ["dns-in"],
+        "port": 53,
+        "network": "udp,tcp",
         "outboundTag": "dns-out"
       },
       {
