@@ -190,6 +190,42 @@ class V2RayService {
     return 0;
   }
   
+  // 更新通知栏文字（语言切换时调用）
+  static Future<void> updateNotificationStrings(Map<String, String> localizedStrings) async {
+    // 平台检查
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      await _log.debug('非移动平台，跳过通知栏更新', tag: _logTag);
+      return;
+    }
+    
+    // 状态检查
+    if (!_isRunning) {
+      await _log.debug('V2Ray未运行，跳过通知栏更新', tag: _logTag);
+      return;
+    }
+    
+    try {
+      await _log.info('开始更新通知栏本地化文字', tag: _logTag);
+      
+      // 确保通道已初始化
+      if (!_isChannelInitialized) {
+        _initializeChannelListeners();
+      }
+      
+      // 通过原生通道更新通知栏文字
+      final result = await _channel.invokeMethod<bool>('updateNotificationStrings', localizedStrings);
+      
+      if (result == true) {
+        await _log.info('通知栏文字更新成功', tag: _logTag);
+      } else {
+        await _log.warn('通知栏文字更新失败：原生端返回false', tag: _logTag);
+      }
+    } catch (e) {
+      await _log.error('更新通知栏文字异常', tag: _logTag, error: e);
+      // 不抛出异常，避免影响正常功能
+    }
+  }
+  
   // ============ 移动平台方法 ============
   // 初始化原生通道监听器（移动平台）
   static void _initializeChannelListeners() {

@@ -43,6 +43,16 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadAutoStartStatus();
     _checkVersionStatus();  // 新增：初始化时检查版本状态
   }
+  
+void _updateConnectionProviderLocale() {
+  // 延迟执行，确保语言切换完成
+  Future.delayed(const Duration(milliseconds: 100), () {
+    if (mounted) {
+      final connectionProvider = context.read<ConnectionProvider>();
+      connectionProvider.updateLocalizedStrings(context);
+    }
+  });
+}
 
   Future<void> _loadAutoStartStatus() async {
     final enabled = AutoStartService.isAutoStartEnabled();
@@ -667,6 +677,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () {
                 localeProvider.setLocale(const Locale('en', 'US'));
                 Navigator.pop(context);
+                _updateConnectionProviderLocale();
               },
             ),
             _LanguageOption(
@@ -676,6 +687,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () {
                 localeProvider.setLocale(const Locale('zh', 'CN'));
                 Navigator.pop(context);
+                _updateConnectionProviderLocale();
               },
             ),
             _LanguageOption(
@@ -685,6 +697,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () {
                 localeProvider.setLocale(const Locale('zh', 'TW'));
                 Navigator.pop(context);
+                _updateConnectionProviderLocale();
               },
             ),
             _LanguageOption(
@@ -694,6 +707,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () {
                 localeProvider.setLocale(const Locale('ja', 'JP'));
                 Navigator.pop(context);
+                _updateConnectionProviderLocale();
               },
             ),
             _LanguageOption(
@@ -703,6 +717,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () {
                 localeProvider.setLocale(const Locale('ko', 'KR'));
                 Navigator.pop(context);
+                _updateConnectionProviderLocale();
               },
             ),
           ],

@@ -64,7 +64,7 @@ class _ServersPageState extends State<ServersPage> {
         }
       } catch (e) {
         // 图片加载失败，不显示广告（静默处理）
-        debugPrint('广告图片预加载失败: $e');
+        await _log.error('广告图片预加载失败', tag: _logTag, error: e);
       }
     }
   }
@@ -85,6 +85,18 @@ class _ServersPageState extends State<ServersPage> {
 
   void _addCloudflareServer(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final serverProvider = context.read<ServerProvider>();
+    
+    // 检查是否正在获取节点
+    if (serverProvider.isRefreshing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.gettingNodes),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     
     showDialog(
       context: context,
@@ -978,7 +990,7 @@ class TextAdCard extends StatelessWidget {
               children: [
                 // 广告图标容器 - 与节点卡片的国旗样式一致
                 Container(
-                  width: 56, // 与服务器列表页的国旗大小一致
+                  width: 56, // 与服务器列表项的国旗大小一致
                   height: 56,
                   decoration: BoxDecoration(
                     color: theme.primaryColor,
