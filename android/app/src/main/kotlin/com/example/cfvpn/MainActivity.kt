@@ -7,8 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.provider.Settings
 import android.net.VpnService
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -168,6 +171,32 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 
+                "updateNotificationStrings" -> {
+                    // 更新通知栏文字（语言切换时）
+                    try {
+                        val localizedStrings = mutableMapOf<String, String>()
+                        localizedStrings["appName"] = call.argument<String>("appName") ?: "CFVPN"
+                        localizedStrings["notificationChannelName"] = call.argument<String>("notificationChannelName") ?: "VPN Service"
+                        localizedStrings["notificationChannelDesc"] = call.argument<String>("notificationChannelDesc") ?: "VPN connection status"
+                        localizedStrings["globalProxyMode"] = call.argument<String>("globalProxyMode") ?: "Global Proxy"
+                        localizedStrings["smartProxyMode"] = call.argument<String>("smartProxyMode") ?: "Smart Proxy"
+                        localizedStrings["proxyOnlyMode"] = call.argument<String>("proxyOnlyMode") ?: "Proxy Only"
+                        localizedStrings["disconnectButtonName"] = call.argument<String>("disconnectButtonName") ?: "Disconnect"
+                        localizedStrings["trafficStatsFormat"] = call.argument<String>("trafficStatsFormat") ?: "Traffic: ↑%upload ↓%download"
+                        
+                        VpnFileLogger.d(TAG, "收到更新通知栏文字请求")
+                        
+                        // 调用服务的静态方法更新通知
+                        val success = V2RayVpnService.updateNotificationStrings(localizedStrings)
+                        
+                        VpnFileLogger.d(TAG, "通知栏文字更新结果: $success")
+                        result.success(success)
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "更新通知栏文字失败", e)
+                        result.error("UPDATE_NOTIFICATION_FAILED", e.message, null)
+                    }
+                }
+                
                 "stopVpn" -> {
                     // 停止VPN
                     stopVpn()
@@ -180,42 +209,46 @@ class MainActivity: FlutterActivity() {
                     result.success(isConnected)
                 }
                 
-                "getTrafficStats" -> {
-                    // 获取流量统计（增强版：返回实时数据）
-                    // 修复：不需要异步，直接调用
-                    try {
-                        // 获取当前通知栏显示的流量统计
-                        val stats = V2RayVpnService.getTrafficStats()
-                        
-                        // 创建返回的Map，支持混合类型（Long和String）
-                        val enhancedStats = mutableMapOf<String, Any>()
-                        
-                        // 添加原始的Long值
-                        enhancedStats.putAll(stats)
-                        
-                        // 添加格式化的String值
-                        enhancedStats["uploadFormatted"] = formatBytes(stats["uploadTotal"] ?: 0L)
-                        enhancedStats["downloadFormatted"] = formatBytes(stats["downloadTotal"] ?: 0L)
-                        enhancedStats["uploadSpeedFormatted"] = "${formatBytes(stats["uploadSpeed"] ?: 0L)}/s"
-                        enhancedStats["downloadSpeedFormatted"] = "${formatBytes(stats["downloadSpeed"] ?: 0L)}/s"
-                        
-                        // 添加连接时长（如果服务正在运行）
-                        if (V2RayVpnService.isServiceRunning()) {
-                            val startTime = stats["startTime"] ?: System.currentTimeMillis()
-                            val connectedTime = System.currentTimeMillis() - startTime
-                            enhancedStats["connectedTime"] = connectedTime
-                            enhancedStats["connectedTimeFormatted"] = formatDuration(connectedTime)
-                        }
-                        
-                        VpnFileLogger.d(TAG, "返回流量统计: 上传=${enhancedStats["uploadFormatted"]}, " +
-                                "下载=${enhancedStats["downloadFormatted"]}")
-                        
-                        result.success(enhancedStats)
-                    } catch (e: Exception) {
-                        VpnFileLogger.e(TAG, "获取流量统计失败", e)
-                        result.error("GET_STATS_FAILED", e.message, null)
-                    }
+"getTrafficStats" -> {
+    // 简化版：直接返回V2RayVpnService的原始数据
+    try {
+        val stats = V2RayVpnService.getTrafficStats()
+        VpnFileLogger.d(TAG, "返回流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
+        result.success(stats)
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "获取流量统计失败", e)
+        result.error("GET_STATS_FAILED", e.message, null)
+    }
+}
+
+"requestBatteryOptimization" -> {
+    // 请求电池优化豁免
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val packageName = packageName
+            
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                VpnFileLogger.d(TAG, "请求电池优化豁免")
+                val intent = Intent().apply {
+                    action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                    data = Uri.parse("package:$packageName")
                 }
+                startActivity(intent)
+                result.success(true)  // 需要请求
+            } else {
+                VpnFileLogger.d(TAG, "已有电池优化豁免权限")
+                result.success(false)  // 不需要请求
+            }
+        } else {
+            // 低版本不需要
+            result.success(false)
+        }
+    } catch (e: Exception) {
+        VpnFileLogger.e(TAG, "请求电池优化豁免失败", e)
+        result.error("BATTERY_OPTIMIZATION_FAILED", e.message, null)
+    }
+}
                 
                 "checkPermission" -> {
                     // 检查VPN权限

@@ -46,45 +46,6 @@ import libv2ray.CoreCallbackHandler
 
 /**
  * V2Ray VPN服务实现 - 完整版（包含连接保持机制）
- * 优化版本：包含缓冲区优化、MTU优化、连接保持优化和流量统计优化
- * 修复版本：修正流量统计标签获取和查询
- * 简化版本：删除不必要的shouldBypassLan逻辑，让V2Ray处理路由
- * 
- * 修复版本 2024-12-26：
- * 1. 修复geo文件路径问题 - 使用assets子目录
- * 2. 增加验证V2Ray是否正确启动
- * 3. 增加验证tun2socks是否正确转发
- * 
- * 虚拟DNS版本 2024-12-27：
- * 1. 动态注入本地DNS服务配置
- * 2. 配置tun2socks使用本地DNS网关
- * 3. 实现DNS防泄露和智能分流
- * 
- * 可配置虚拟DNS版本 2024-12-28：
- * 1. 添加enableVirtualDns开关控制
- * 2. 支持8.8.8.8和1.1.1.1并发DNS查询
- * 3. 虚拟DNS端口可配置
- * 
- * 重构精简版本：
- * 1. 抽取配置解析工具方法，避免重复JSON解析
- * 2. 统一网络连接测试逻辑
- * 3. 合并通知构建重复代码
- * 4. 分解复杂的流量统计方法
- * 
- * IPv6和通知栏修复版本：
- * 1. 添加ENABLE_IPV6常量统一控制IPv6策略
- * 2. 修复通知栏过早显示"已连接"的问题
- * 3. DNS解析遵循IPv6策略
- * 
- * 配置验证修复版本 2024-12-28：
- * 1. 修复parseConfig()中的geo规则验证逻辑
- * 2. 添加V2Ray原生配置验证功能
- * 3. 在启动前验证配置文件
- * 
- * startupLatch 修复版本 2024-12-28：
- * 1. 修复startupLatch未初始化的BUG
- * 2. 修复startupLatch无法重复使用的问题
- * 3. 确保每次启动创建新的startupLatch
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -156,6 +117,56 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         @JvmStatic
         fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
+
+        /**
+         * 更新通知栏文字（语言切换时调用）
+         * @return 是否更新成功
+         */
+        @JvmStatic
+        fun updateNotificationStrings(newStrings: Map<String, String>): Boolean {
+            return try {
+                VpnFileLogger.d(TAG, "开始更新通知栏本地化文字")
+                
+                // 更新静态存储的本地化文字
+                localizedStrings.clear()
+                localizedStrings.putAll(newStrings)
+                
+                // 获取服务实例
+                val service = instance?.get()
+                if (service != null) {
+                    // 更新实例的本地化文字
+                    service.instanceLocalizedStrings.clear()
+                    service.instanceLocalizedStrings.putAll(newStrings)
+                    
+                    // 只在已连接状态下更新通知栏
+                    if (currentState == V2RayState.CONNECTED) {
+                        VpnFileLogger.d(TAG, "服务已连接，更新通知栏显示")
+                        
+                        // 重新构建并更新通知
+                        val notification = service.buildNotification(isConnecting = false)
+                        if (notification != null) {
+                            val notificationManager = service.getSystemService(NotificationManager::class.java)
+                            notificationManager.notify(NOTIFICATION_ID, notification)
+                            VpnFileLogger.d(TAG, "通知栏更新成功")
+                            true
+                        } else {
+                            VpnFileLogger.w(TAG, "构建通知失败")
+                            false
+                        }
+                    } else {
+                        VpnFileLogger.d(TAG, "服务未连接，仅更新本地化字符串")
+                        true
+                    }
+                } else {
+                    VpnFileLogger.w(TAG, "服务实例不存在，仅更新静态本地化字符串")
+                    // 即使服务不在运行，也保存字符串供下次使用
+                    true
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "更新通知栏文字异常", e)
+                false
+            }
+        }
         
         /**
          * 启动VPN服务 - 简化版（添加虚拟DNS参数）
