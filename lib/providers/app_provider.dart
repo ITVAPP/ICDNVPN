@@ -516,6 +516,7 @@ class ServerProvider with ChangeNotifier {
   
   List<ServerModel> get servers => _servers;
   bool get isInitializing => _isInitializing;
+  bool get isRefreshing => _isRefreshing;  // 新增：公开isRefreshing getter，让UI层可以访问
   String get initMessage => _initMessage;
   String get initDetail => _initDetail; // 新增getter
   double get progress => _progress; // 新增getter
