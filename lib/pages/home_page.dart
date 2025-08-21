@@ -13,6 +13,7 @@ import '../services/location_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
 import '../utils/log_service.dart';
+import '../app_config.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
