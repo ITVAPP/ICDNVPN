@@ -10,9 +10,9 @@ import '../services/cloudflare_test_service.dart';
 import '../services/v2ray_service.dart';
 import '../services/ad_service.dart';
 import '../services/location_service.dart';
-import '../services/log_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
+import '../utils/log_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
