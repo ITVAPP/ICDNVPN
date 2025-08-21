@@ -217,6 +217,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var tun2socksRestartCount = 0
     private var tun2socksFirstRestartTime = 0L
     
+    // 修复：添加重启状态标记防止死循环
+    @Volatile
+    private var isRestartingTun2socks = false
+    
     // 配置信息
     private var configJson: String = ""
     private var configCache: JSONObject? = null  // 配置缓存
@@ -230,7 +234,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var configuredVirtualDnsPort: Int = 10853
     
     private val instanceLocalizedStrings = mutableMapOf<String, String>()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    
+    // 修复：添加异常处理器
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        VpnFileLogger.e(TAG, "协程异常", exception)
+    }
+    
+    // 修复：使用SupervisorJob防止级联取消
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
     
     // 流量统计
     private var uploadBytes: Long = 0
@@ -247,13 +258,16 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var statsJob: Job? = null
     private var connectionCheckJob: Job? = null
     private var tun2socksMonitorThread: Thread? = null
-    private var verificationJob: Job? = null
     
     @Volatile
     private var v2rayCoreStarted = false
     
     @Volatile
     private var startupLatch: CompletableDeferred<Boolean>? = null
+    
+    // 修复：添加广播接收器注册状态
+    @Volatile
+    private var stopReceiverRegistered = false
     
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -497,12 +511,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        try {
-            registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
-            VpnFileLogger.d(TAG, "广播接收器注册成功")
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "注册广播接收器失败", e)
-        }
+        // 修复：安全注册广播接收器
+        registerStopReceiver()
         
         copyAssetFiles()
         
@@ -527,6 +537,36 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         acquireWakeLock()
         
         VpnFileLogger.d(TAG, "VPN服务onCreate完成")
+    }
+    
+    /**
+     * 修复：安全注册停止广播接收器
+     */
+    private fun registerStopReceiver() {
+        if (!stopReceiverRegistered) {
+            try {
+                registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_VPN))
+                stopReceiverRegistered = true
+                VpnFileLogger.d(TAG, "停止广播接收器注册成功")
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "注册停止广播接收器失败", e)
+            }
+        }
+    }
+    
+    /**
+     * 修复：安全注销停止广播接收器
+     */
+    private fun unregisterStopReceiver() {
+        if (stopReceiverRegistered) {
+            try {
+                unregisterReceiver(stopReceiver)
+                stopReceiverRegistered = false
+                VpnFileLogger.d(TAG, "停止广播接收器注销成功")
+            } catch (e: Exception) {
+                // 忽略异常
+            }
+        }
     }
     
     /**
@@ -610,14 +650,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return START_NOT_STICKY
         }
         
+        // 修复：防止重复启动
         if (currentState != V2RayState.DISCONNECTED) {
             VpnFileLogger.w(TAG, "VPN服务已在运行或正在连接")
+            // 不发送失败广播，避免误导调用方
             return START_STICKY
         }
         
         currentState = V2RayState.CONNECTING
         v2rayCoreStarted = false
         configCache = null  // 清除配置缓存
+        isRestartingTun2socks = false  // 重置重启标记
         
         // 获取配置
         enableVirtualDns = intent.getBooleanExtra("enableVirtualDns", false)
@@ -768,6 +811,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 启动V2Ray(VPN模式)
+     * 修改：添加同步的连接测试，测试成功后才返回成功
      */
     private suspend fun startV2RayWithVPN() = withContext(Dispatchers.IO) {
         VpnFileLogger.d(TAG, "startV2RayWithVPN开始")
@@ -843,7 +887,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 启动tun2socks
             runTun2socks()
             
-            // 更新状态
+            // 【关键修改】等待并验证连接是否真正可用
+            VpnFileLogger.d(TAG, "开始验证远程服务器连接...")
+            val connectionTestSuccess = verifyRemoteConnection()
+            
+            if (!connectionTestSuccess) {
+                throw Exception("Unable to connect to remote server")
+            }
+            
+            VpnFileLogger.i(TAG, "远程服务器连接验证成功")
+            
+            // 连接测试成功后才更新状态
             currentState = V2RayState.CONNECTED
             startTime = System.currentTimeMillis()
             
@@ -851,6 +905,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             VpnFileLogger.i(TAG, "V2Ray服务完全启动成功")
             
+            // 现在才发送成功广播
             sendStartResultBroadcast(true)
             
             // 保存自启动配置
@@ -880,10 +935,55 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray失败: ${e.message}")
-            startupLatch = null
-            cleanupResources()
+            
+            // 修复：确保资源清理
+            try {
+                cleanupResources()
+            } catch (cleanupError: Exception) {
+                VpnFileLogger.e(TAG, "清理资源失败", cleanupError)
+            }
+            
             sendStartResultBroadcast(false, e.message)
             throw e
+        } finally {
+            startupLatch = null
+        }
+    }
+    
+    /**
+     * 简化的远程连接验证
+     * 只测试必要的项目：通过SOCKS代理访问远程服务器
+     */
+    private suspend fun verifyRemoteConnection(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // 等待服务稳定
+            delay(500)
+            
+            // 测试通过SOCKS代理访问远程服务器
+            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
+            val testUrl = URL("http://www.google.com/generate_204")
+            
+            val connection = testUrl.openConnection(proxy) as HttpURLConnection
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            connection.instanceFollowRedirects = false
+            
+            val responseCode = connection.responseCode
+            connection.disconnect()
+            
+            val success = (responseCode == 204 || responseCode == 200)
+            
+            if (success) {
+                VpnFileLogger.i(TAG, "✅ 远程服务器连接测试成功，响应码: $responseCode")
+            } else {
+                VpnFileLogger.e(TAG, "❌ 远程服务器连接测试失败，响应码: $responseCode")
+            }
+            
+            return@withContext success
+            
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "❌ 远程服务器连接测试异常: ${e.message}")
+            return@withContext false
         }
     }
     
@@ -967,7 +1067,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     }
                     
                     val processAlive = process?.isAlive ?: false
-                    if (!processAlive) {
+                    if (!processAlive && !isRestartingTun2socks) {
                         VpnFileLogger.w(TAG, "tun2socks进程不存在，尝试重启")
                         
                         if (shouldRestartTun2socks()) {
@@ -1024,6 +1124,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     error.contains("geosite", ignoreCase = true) -> "geo数据文件错误"
                     error.contains("timeout", ignoreCase = true) -> "启动超时"
                     error.contains("permission", ignoreCase = true) -> "权限不足"
+                    error.contains("Unable to connect to remote server") -> "Unable to connect to remote server"
                     else -> error
                 }
                 
@@ -1037,17 +1138,22 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
+    /**
+     * 修复：改进资源清理顺序
+     */
     private fun cleanupResources() {
         currentState = V2RayState.DISCONNECTED
         
+        // 先取消所有协程任务
         connectionCheckJob?.cancel()
         connectionCheckJob = null
         
-        verificationJob?.cancel()
-        verificationJob = null
+        statsJob?.cancel()
+        statsJob = null
         
         startupLatch = null
         
+        // 注销网络回调
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 defaultNetworkCallback?.let {
@@ -1060,8 +1166,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             defaultNetworkCallback = null
         }
         
+        // 停止tun2socks
         stopTun2socks()
         
+        // 停止V2Ray核心
         try {
             coreController?.stopLoop()
         } catch (e: Exception) {
@@ -1069,9 +1177,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
         coreController = null
         
-        mInterface?.close()
+        // 关闭VPN接口
+        try {
+            mInterface?.close()
+        } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "关闭VPN接口异常", e)
+        }
         mInterface = null
         
+        // 释放WakeLock
         releaseWakeLock()
     }
     
@@ -1192,7 +1306,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     val exitCode = process?.waitFor()
                     VpnFileLogger.d(TAG, "tun2socks进程退出，退出码: $exitCode")
                     
-                    if (currentState == V2RayState.CONNECTED) {
+                    if (currentState == V2RayState.CONNECTED && !isRestartingTun2socks) {
                         VpnFileLogger.e(TAG, "tun2socks意外退出")
                         
                         serviceScope.launch {
@@ -1265,10 +1379,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     
                     VpnFileLogger.d(TAG, "文件描述符发送成功")
                     
-                    verificationJob = serviceScope.launch {
-                        verifyTun2socksForwarding()
-                    }
-                    
                     break
                     
                 } catch (e: Exception) {
@@ -1290,68 +1400,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    private suspend fun verifyTun2socksForwarding() = withContext(Dispatchers.IO) {
-        VpnFileLogger.d(TAG, "开始验证tun2socks转发")
-        
-        try {
-            delay(500)
-            
-            if (!testTcpConnection("127.0.0.1", socksPort, 2000, "SOCKS5")) {
-                VpnFileLogger.e(TAG, "SOCKS5端口验证失败")
-                return@withContext
-            }
-            
-            if (enableVirtualDns && localDnsPort > 0) {
-                if (!testTcpConnection("127.0.0.1", localDnsPort, 2000, "虚拟DNS")) {
-                    VpnFileLogger.w(TAG, "虚拟DNS服务连接失败")
-                }
-            }
-
-            // 测试DNS解析
-            try {
-                val testDomain = "www.google.com"
-                val addr = if (ENABLE_IPV6) {
-                    InetAddress.getAllByName(testDomain).firstOrNull { it is Inet4Address } 
-                        ?: InetAddress.getAllByName(testDomain).firstOrNull()
-                } else {
-                    Inet4Address.getByName(testDomain)
-                }
-                
-                if (addr != null) {
-                    VpnFileLogger.i(TAG, "DNS解析成功: $testDomain -> ${addr.hostAddress}")
-                }
-            } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "DNS解析失败: ${e.message}")
-            }
-
-            // 测试HTTP连接
-            try {
-                val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
-                val testUrl = URL("http://www.google.com/generate_204")
-                val connection = testUrl.openConnection(proxy) as HttpURLConnection
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.instanceFollowRedirects = false
-                
-                val responseCode = withContext(Dispatchers.IO) {
-                    connection.responseCode
-                }
-                
-                if (responseCode == 204 || responseCode == 200) {
-                    VpnFileLogger.i(TAG, "HTTP连接测试成功，响应码: $responseCode")
-                }
-                connection.disconnect()
-            } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "HTTP连接测试失败: ${e.message}")
-            }
-
-            VpnFileLogger.i(TAG, "tun2socks转发验证完成")
-            
-        } catch (e: Exception) {
-            VpnFileLogger.e(TAG, "验证过程出现异常", e)
-        }
-    }
-    
     private fun shouldRestartTun2socks(): Boolean {
         val now = System.currentTimeMillis()
         
@@ -1368,17 +1416,32 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return tun2socksRestartCount < MAX_TUN2SOCKS_RESTART_COUNT
     }
     
+    /**
+     * 修复：防止重启死循环
+     */
     private fun restartTun2socks() {
+        if (isRestartingTun2socks) {
+            VpnFileLogger.w(TAG, "tun2socks正在重启中，跳过重复重启")
+            return
+        }
+        
         try {
+            isRestartingTun2socks = true
             tun2socksRestartCount++
             VpnFileLogger.d(TAG, "重启tun2socks，第${tun2socksRestartCount}次尝试")
             
             stopTun2socks()
             Thread.sleep(1000)
             
+            // 检查服务状态
+            if (currentState != V2RayState.CONNECTED) {
+                VpnFileLogger.w(TAG, "服务已断开，取消tun2socks重启")
+                return
+            }
+            
             if (mInterface == null || mInterface?.fileDescriptor == null) {
                 VpnFileLogger.e(TAG, "VPN接口无效，无法重启tun2socks")
-                stopV2Ray()
+                // 不调用stopV2Ray()避免死循环
                 return
             }
             
@@ -1387,7 +1450,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.i(TAG, "tun2socks重启成功")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "重启tun2socks失败", e)
-            stopV2Ray()
+            // 不调用stopV2Ray()避免死循环
+        } finally {
+            isRestartingTun2socks = false
         }
     }
     
@@ -1497,19 +1562,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         )
     }
     
+    /**
+     * 修复：防止重复调用stopV2Ray
+     */
     private fun stopV2Ray() {
+        if (currentState == V2RayState.DISCONNECTED) {
+            VpnFileLogger.d(TAG, "服务已停止，跳过重复停止")
+            return
+        }
+        
         VpnFileLogger.d(TAG, "开始停止V2Ray服务")
         
         currentState = V2RayState.DISCONNECTED
+        isRestartingTun2socks = false
         
         statsJob?.cancel()
         statsJob = null
         
         connectionCheckJob?.cancel()
         connectionCheckJob = null
-        
-        verificationJob?.cancel()
-        verificationJob = null
         
         startupLatch = null
         
@@ -1724,35 +1795,42 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
+    /**
+     * 修复：改进onDestroy确保资源正确释放
+     */
     override fun onDestroy() {
         super.onDestroy()
         
         VpnFileLogger.d(TAG, "onDestroy开始")
         
+        // 清除实例引用
         instanceRef?.clear()
         instanceRef = null
         
-        serviceScope.cancel()
-        
+        // 取消所有协程
         try {
-            unregisterReceiver(stopReceiver)
+            serviceScope.cancel()
         } catch (e: Exception) {
+            VpnFileLogger.w(TAG, "取消协程作用域失败", e)
         }
         
+        // 修复：安全注销广播接收器
+        unregisterStopReceiver()
+        
+        // 如果服务还在运行，执行清理
         if (currentState != V2RayState.DISCONNECTED) {
             currentState = V2RayState.DISCONNECTED
             
+            // 取消所有任务
             statsJob?.cancel()
             statsJob = null
             
             connectionCheckJob?.cancel()
             connectionCheckJob = null
             
-            verificationJob?.cancel()
-            verificationJob = null
-            
             startupLatch = null
             
+            // 注销网络回调
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 try {
                     defaultNetworkCallback?.let {
@@ -1765,20 +1843,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 defaultNetworkCallback = null
             }
             
+            // 中断监控线程
             try {
                 tun2socksMonitorThread?.interrupt()
                 tun2socksMonitorThread = null
             } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "中断监控线程失败", e)
             }
             
+            // 停止tun2socks
             stopTun2socks()
             
+            // 停止V2Ray核心
             try {
                 coreController?.stopLoop()
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "停止V2Ray核心异常", e)
             }
             
+            // 关闭VPN接口
             try {
                 mInterface?.close()
                 mInterface = null
@@ -1787,12 +1870,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
+        // 清空核心控制器引用
         coreController = null
         
+        // 释放WakeLock
         releaseWakeLock()
         
         VpnFileLogger.d(TAG, "onDestroy完成")
         
+        // 刷新日志并关闭
         runBlocking {
             VpnFileLogger.flushAll()
         }
