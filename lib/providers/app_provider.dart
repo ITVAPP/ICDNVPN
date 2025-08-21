@@ -43,6 +43,8 @@ class ConnectionProvider with ChangeNotifier {
   DateTime? get connectStartTime => _connectStartTime; // 添加 getter
   String? get disconnectReason => _disconnectReason; // 添加 getter
   bool get globalProxy => _globalProxy;  // 修改：getter名称
+  // 新增：标记是否正在更新通知
+  bool _isUpdatingNotification = false;
   
   ConnectionProvider() {
     // 设置V2Ray进程退出回调
@@ -61,6 +63,41 @@ class ConnectionProvider with ChangeNotifier {
       });
     }
     super.dispose();
+  }
+  
+  // 新增：更新本地化字符串（语言切换时调用）
+  Future<void> updateLocalizedStrings(BuildContext context) async {
+    // 防止重复更新
+    if (_isUpdatingNotification) {
+      await _log.debug('正在更新通知，跳过重复调用', tag: _logTag);
+      return;
+    }
+    
+    try {
+      _isUpdatingNotification = true;
+      
+      // 更新本地化字符串
+      setLocalizedStrings(context);
+      
+      // 只在VPN正在运行且是移动平台时更新通知栏
+      if (_isConnected && (Platform.isAndroid || Platform.isIOS)) {
+        // 确保本地化字符串不为空
+        if (_localizedStrings != null && _localizedStrings!.isNotEmpty) {
+          await _log.info('语言切换，更新通知栏文字', tag: _logTag);
+          
+          // 调用V2Ray服务更新通知栏
+          await V2RayService.updateNotificationStrings(_localizedStrings!);
+          
+          await _log.info('通知栏文字更新完成', tag: _logTag);
+        } else {
+          await _log.warn('本地化字符串为空，跳过通知栏更新', tag: _logTag);
+        }
+      }
+    } catch (e) {
+      await _log.error('更新通知栏文字失败', tag: _logTag, error: e);
+    } finally {
+      _isUpdatingNotification = false;
+    }
   }
   
   // 新增：设置国际化文字
