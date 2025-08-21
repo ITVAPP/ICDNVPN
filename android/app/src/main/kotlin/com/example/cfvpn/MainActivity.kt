@@ -41,7 +41,7 @@ class MainActivity: FlutterActivity() {
         // 新增：VPN启动结果广播
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
         private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
-        private const val VPN_START_TIMEOUT = 10000L  // 10秒超时
+        private const val VPN_START_TIMEOUT = 15000L  // 15秒超时
     }
     
     private lateinit var channel: MethodChannel
@@ -741,3 +741,4 @@ class MainActivity: FlutterActivity() {
         mainScope.cancel()
     }
 }
+
