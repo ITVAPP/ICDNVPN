@@ -1199,7 +1199,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin, Widg
         
         return Scaffold(
           appBar: AppBar(
-            title: Text(l10n.appTitle),
+            title: Text(AppConfig.appName),
             centerTitle: true,
             elevation: 0,
           ),
@@ -1492,25 +1492,5 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
         ],
       ),
     );
-  }
-}
-
-// ImageAdOverlay widget需要单独定义
-class ImageAdOverlay extends StatelessWidget {
-  final dynamic ad;
-  final AdService adService;
-  final VoidCallback onClose;
-
-  const ImageAdOverlay({
-    super.key,
-    required this.ad,
-    required this.adService,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // TODO: 实现广告覆盖层UI
-    return Container();
   }
 }
