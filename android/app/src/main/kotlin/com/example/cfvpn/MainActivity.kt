@@ -65,6 +65,10 @@ class MainActivity: FlutterActivity() {
     private var pendingStartResult: MethodChannel.Result? = null
     private var startTimeoutJob: Job? = null
     
+    // 修复：添加广播接收器注册状态标记
+    @Volatile
+    private var receiversRegistered = false
+    
     // 新增：VPN启动结果广播接收器
     private val vpnStartResultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -112,11 +116,8 @@ class MainActivity: FlutterActivity() {
         // 初始化文件日志系统
         VpnFileLogger.init(applicationContext)
         
-        // 注册VPN启动结果广播接收器
-        registerReceiver(vpnStartResultReceiver, IntentFilter(ACTION_VPN_START_RESULT))
-        
-        // 注册VPN停止广播接收器（用于通知栏停止按钮）
-        registerReceiver(vpnStoppedReceiver, IntentFilter(ACTION_VPN_STOPPED))
+        // 修复：安全注册广播接收器
+        registerReceivers()
         
         // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -327,6 +328,44 @@ class MainActivity: FlutterActivity() {
                     result.notImplemented()
                 }
             }
+        }
+    }
+    
+    /**
+     * 修复：安全注册广播接收器
+     */
+    private fun registerReceivers() {
+        if (!receiversRegistered) {
+            try {
+                registerReceiver(vpnStartResultReceiver, IntentFilter(ACTION_VPN_START_RESULT))
+                registerReceiver(vpnStoppedReceiver, IntentFilter(ACTION_VPN_STOPPED))
+                receiversRegistered = true
+                VpnFileLogger.d(TAG, "广播接收器注册成功")
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "注册广播接收器失败", e)
+            }
+        }
+    }
+    
+    /**
+     * 修复：安全注销广播接收器
+     */
+    private fun unregisterReceivers() {
+        if (receiversRegistered) {
+            try {
+                unregisterReceiver(vpnStartResultReceiver)
+            } catch (e: Exception) {
+                // 忽略异常
+            }
+            
+            try {
+                unregisterReceiver(vpnStoppedReceiver)
+            } catch (e: Exception) {
+                // 忽略异常
+            }
+            
+            receiversRegistered = false
+            VpnFileLogger.d(TAG, "广播接收器注销成功")
         }
     }
     
@@ -695,18 +734,8 @@ class MainActivity: FlutterActivity() {
         // 清理pending状态
         cancelPendingStart("Activity销毁")
         
-        // 注销广播接收器
-        try {
-            unregisterReceiver(vpnStartResultReceiver)
-        } catch (e: Exception) {
-            // 可能已经注销
-        }
-        
-        try {
-            unregisterReceiver(vpnStoppedReceiver)
-        } catch (e: Exception) {
-            // 可能已经注销
-        }
+        // 修复：安全注销广播接收器
+        unregisterReceivers()
         
         // 取消所有协程
         mainScope.cancel()
