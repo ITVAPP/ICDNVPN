@@ -113,7 +113,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private var localizedStrings = mutableMapOf<String, String>()
         
         private val instance: V2RayVpnService?
-            get() = instanceRef?.get()
+            get() {
+                val ref = instanceRef
+                return ref?.get()
+            }
         
         @JvmStatic
         fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
@@ -132,7 +135,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 localizedStrings.putAll(newStrings)
                 
                 // 获取服务实例
-                val service = instance?.get()
+                val service = instance
                 if (service != null) {
                     // 更新实例的本地化文字
                     service.instanceLocalizedStrings.clear()
@@ -398,7 +401,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 if (!hasGeoRules) {
                     VpnFileLogger.w(TAG, "警告：配置文件中未找到任何geosite或geoip规则")
                 } else {
-                    VpnFileLogger.i(TAG, "✓ 配置文件包含geo规则")
+                    VpnFileLogger.i(TAG, "✔ 配置文件包含geo规则")
                 }
             } else {
                 VpnFileLogger.w(TAG, "警告：配置文件中未找到routing配置")
@@ -447,7 +450,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeout)
-                VpnFileLogger.i(TAG, "✓ $serviceName 端口 $port 连接正常")
+                VpnFileLogger.i(TAG, "✔ $serviceName 端口 $port 连接正常")
                 true
             }
         } catch (e: Exception) {
@@ -805,7 +808,7 @@ override fun onCreate() {
                         val inbound = inbounds!!.getJSONObject(i)
                         val tag = inbound.optString("tag")
                         if (tag == DNS_TAG_IN) {
-                            VpnFileLogger.i(TAG, "✓ 本地DNS服务已配置: 端口=$localDnsPort")
+                            VpnFileLogger.i(TAG, "✔ 本地DNS服务已配置: 端口=$localDnsPort")
                         }
                     }
                     
@@ -814,7 +817,7 @@ override fun onCreate() {
                     for (i in 0 until (outbounds?.length() ?: 0)) {
                         val outbound = outbounds!!.getJSONObject(i)
                         if (outbound.optString("protocol") == "dns") {
-                            VpnFileLogger.i(TAG, "✓ DNS出站已配置: tag=${outbound.optString("tag")}")
+                            VpnFileLogger.i(TAG, "✔ DNS出站已配置: tag=${outbound.optString("tag")}")
                         }
                     }
                 }
@@ -944,7 +947,7 @@ override fun onCreate() {
                 
                 if (shouldUpdateFile(fileName, targetFile)) {
                     copyAssetFile(fileName, targetFile)
-                    if (targetFile.exists() && targetFile.length() < 1024) { // 假设最小 1KB
+                    if (targetFile.exists() && targetFile.length() < 1024) { // 假设最少 1KB
                         VpnFileLogger.e(TAG, "文件 $fileName 可能损坏，大小仅 ${targetFile.length()} bytes")
                     } else {
                         VpnFileLogger.d(TAG, "文件复制成功: $fileName -> ${targetFile.absolutePath} (${targetFile.length()} bytes)")
@@ -1091,7 +1094,7 @@ override fun onCreate() {
                 throw Exception("V2Ray核心未运行，配置可能有错误")
             }
             
-            VpnFileLogger.i(TAG, "✓ V2Ray核心启动成功，配置验证通过")
+            VpnFileLogger.i(TAG, "✔ V2Ray核心启动成功，配置验证通过")
             
             // 步骤4: 建立VPN隧道
             VpnFileLogger.d(TAG, "===== 步骤4: 建立VPN隧道 =====")
@@ -1522,11 +1525,11 @@ override fun onCreate() {
         if (enableVirtualDns && localDnsPort > 0) {
             cmd.add("--dnsgw")
             cmd.add("127.0.0.1:$localDnsPort") // 例如 10853
-            VpnFileLogger.i(TAG, "✓ 启用虚拟DNS网关: 127.0.0.1:$localDnsPort")
+            VpnFileLogger.i(TAG, "✔ 启用虚拟DNS网关: 127.0.0.1:$localDnsPort")
         } else {
             cmd.add("--dnsgw")
             cmd.add("127.0.0.1:$socksPort")
-            VpnFileLogger.i(TAG, "✓ 重定向 DNS 到 SOCKS 入站: 127.0.0.1:$socksPort")
+            VpnFileLogger.i(TAG, "✔ 重定向 DNS 到 SOCKS 入站: 127.0.0.1:$socksPort")
         }
         
         VpnFileLogger.d(TAG, "tun2socks命令: ${cmd.joinToString(" ")}")
@@ -1695,14 +1698,14 @@ override fun onCreate() {
                     // 优先使用IPv4，但也接受IPv6
                     val addr = addresses.firstOrNull { it is Inet4Address } ?: addresses.firstOrNull()
                     if (addr != null) {
-                        VpnFileLogger.i(TAG, "✓ DNS解析成功: $testDomain -> ${addr.hostAddress}")
+                        VpnFileLogger.i(TAG, "✔ DNS解析成功: $testDomain -> ${addr.hostAddress}")
                     } else {
                         VpnFileLogger.w(TAG, "✗ DNS解析失败: 未找到有效地址")
                     }
                 } else {
                     // IPv6禁用时，只获取IPv4地址
                     val addr = Inet4Address.getByName(testDomain)
-                    VpnFileLogger.i(TAG, "✓ DNS解析成功(仅IPv4): $testDomain -> ${addr.hostAddress}")
+                    VpnFileLogger.i(TAG, "✔ DNS解析成功(仅IPv4): $testDomain -> ${addr.hostAddress}")
                 }
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "✗ DNS解析失败: ${e.message}")
@@ -1713,11 +1716,11 @@ override fun onCreate() {
                         val fallbackAddresses = InetAddress.getAllByName(fallbackDomain)
                         val fallbackAddr = fallbackAddresses.firstOrNull { it is Inet4Address } ?: fallbackAddresses.firstOrNull()
                         if (fallbackAddr != null) {
-                            VpnFileLogger.i(TAG, "✓ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                            VpnFileLogger.i(TAG, "✔ DNS解析成功(备用): $fallbackDomain -> ${fallbackAddr.hostAddress}")
                         }
                     } else {
                         val fallbackAddr = Inet4Address.getByName(fallbackDomain)
-                        VpnFileLogger.i(TAG, "✓ DNS解析成功(备用,仅IPv4): $fallbackDomain -> ${fallbackAddr.hostAddress}")
+                        VpnFileLogger.i(TAG, "✔ DNS解析成功(备用,仅IPv4): $fallbackDomain -> ${fallbackAddr.hostAddress}")
                     }
                 } catch (e2: Exception) {
                     VpnFileLogger.e(TAG, "✗ DNS解析失败(备用): ${e2.message}")
@@ -1740,7 +1743,7 @@ override fun onCreate() {
                 }
                 
                 if (responseCode == 204 || responseCode == 200) {
-                    VpnFileLogger.i(TAG, "✓ HTTP连接测试成功，响应码: $responseCode")
+                    VpnFileLogger.i(TAG, "✔ HTTP连接测试成功，响应码: $responseCode")
                 } else {
                     VpnFileLogger.w(TAG, "✗ HTTP连接测试异常，响应码: $responseCode")
                     return@withContext
@@ -1754,9 +1757,9 @@ override fun onCreate() {
             VpnFileLogger.i(TAG, "===== tun2socks转发验证完成 - 全部测试通过 =====")
             VpnFileLogger.i(TAG, "IPv6支持: ${if (ENABLE_IPV6) "已启用" else "已禁用"}")
             if (enableVirtualDns && localDnsPort > 0) {
-                VpnFileLogger.i(TAG, "✓ 虚拟DNS服务运行正常，DNS防泄露已启用")
+                VpnFileLogger.i(TAG, "✔ 虚拟DNS服务运行正常，DNS防泄露已启用")
             } else {
-                VpnFileLogger.i(TAG, "✓ 使用公共DNS服务器（8.8.8.8, 1.1.1.1）")
+                VpnFileLogger.i(TAG, "✔ 使用公共DNS服务器（8.8.8.8, 1.1.1.1）")
             }
             
         } catch (e: Exception) {
