@@ -163,7 +163,7 @@ class BootReceiver : BroadcastReceiver() {
                 }
                 
             } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "VPN启动失败: 第${retryCount + 1}次，共$MAX_RETRY_COUNT次", e)
+                VpnFileLogger.e(TAG, "VPN启动失败: 第${retryCount + 1}次", e)
             }
             
             retryCount++
@@ -171,7 +171,7 @@ class BootReceiver : BroadcastReceiver() {
         
         // 处理所有重试失败的情况
         if (!success) {
-            VpnFileLogger.e(TAG, "VPN自启动最终失败，已重试$MAX_RETRY_COUNT次")
+            VpnFileLogger.e(TAG, "VPN自启动最终失败，已重试次数：$MAX_RETRY_COUNT")
             sendNotification(context, "VPN自动连接失败", "请手动连接")
         }
     }
@@ -445,4 +445,5 @@ object AutoStartManager {
             Pair(false, 10853)  // 返回默认配置
         }
     }
+
 }
