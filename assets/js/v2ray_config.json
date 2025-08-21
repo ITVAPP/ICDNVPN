@@ -43,7 +43,7 @@
       "listen": "127.0.0.1", // 绑定本地回环地址
       "protocol": "dokodemo-door", // 使用任意门协议
       "settings": {
-        "address": "8.8.8.8", // 转发到Google DNS
+        "address": "1.1.1.1", // 转发DNS
         "port": 53, // 目标端口53
         "network": "tcp,udp" // 支持TCP和UDP协议
       }
