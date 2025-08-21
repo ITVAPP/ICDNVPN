@@ -288,51 +288,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         return try {
             val config = JSONObject(configJson)
-            validateGeoRules(config)
+            // 已删除validateGeoRules调用
             configCache = config
             config
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "解析V2Ray配置失败", e)
             null
-        }
-    }
-    
-    /**
-     * 验证Geo规则配置
-     */
-    private fun validateGeoRules(config: JSONObject) {
-        val routing = config.optJSONObject("routing") ?: return
-        val rules = routing.optJSONArray("rules") ?: return
-        
-        var hasGeoRules = false
-        for (i in 0 until rules.length()) {
-            val rule = rules.getJSONObject(i)
-            
-            // 检查domain数组
-            rule.optJSONArray("domain")?.let { domainArray ->
-                for (j in 0 until domainArray.length()) {
-                    val domain = domainArray.getString(j)
-                    if (domain.startsWith("geosite:")) {
-                        hasGeoRules = true
-                        VpnFileLogger.d(TAG, "找到geosite规则: $domain")
-                    }
-                }
-            }
-            
-            // 检查ip数组
-            rule.optJSONArray("ip")?.let { ipArray ->
-                for (j in 0 until ipArray.length()) {
-                    val ip = ipArray.getString(j)
-                    if (ip.startsWith("geoip:")) {
-                        hasGeoRules = true
-                        VpnFileLogger.d(TAG, "找到geoip规则: $ip")
-                    }
-                }
-            }
-        }
-        
-        if (!hasGeoRules) {
-            VpnFileLogger.w(TAG, "警告：配置文件中未找到任何geosite或geoip规则")
         }
     }
     
@@ -518,12 +479,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         try {
             val envPath = getV2RayAssetsPath()
-            
-            val geoipFile = File(envPath, "geoip.dat")
-            val geositeFile = File(envPath, "geosite.dat")
-            VpnFileLogger.d(TAG, "验证Geo文件:")
-            VpnFileLogger.d(TAG, "  geoip.dat - 存在: ${geoipFile.exists()}, 大小: ${geoipFile.length()} bytes")
-            VpnFileLogger.d(TAG, "  geosite.dat - 存在: ${geositeFile.exists()}, 大小: ${geositeFile.length()} bytes")
             
             Libv2ray.initCoreEnv(envPath, envPath)
             VpnFileLogger.d(TAG, "V2Ray环境初始化成功")
@@ -1120,8 +1075,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     error.contains("outbound", ignoreCase = true) -> "出站配置错误"
                     error.contains("inbound", ignoreCase = true) -> "入站配置错误"
                     error.contains("routing", ignoreCase = true) -> "路由配置错误"
-                    error.contains("geoip", ignoreCase = true) || 
-                    error.contains("geosite", ignoreCase = true) -> "geo数据文件错误"
                     error.contains("timeout", ignoreCase = true) -> "启动超时"
                     error.contains("permission", ignoreCase = true) -> "权限不足"
                     error.contains("Unable to connect to remote server") -> "Unable to connect to remote server"
@@ -1754,11 +1707,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                     status.contains("failed", ignoreCase = true) || 
                     status.contains("error", ignoreCase = true) -> {
                         VpnFileLogger.e(TAG, "[V2Ray错误] $status")
-                        
-                        if (status.contains("geoip", ignoreCase = true) || 
-                            status.contains("geosite", ignoreCase = true)) {
-                            VpnFileLogger.e(TAG, "请检查geo文件是否存在")
-                        }
                         
                         if (status.contains("address already in use", ignoreCase = true)) {
                             VpnFileLogger.e(TAG, "端口被占用")
