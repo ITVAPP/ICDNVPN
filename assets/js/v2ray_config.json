@@ -181,6 +181,12 @@
     "domainStrategy": "AsIs",
     "rules": [
       {
+        // API路由规则
+        "type": "field",
+        "inboundTag": ["api"],     // 来自API入站的流量
+        "outboundTag": "api"       // 路由到API出站
+      },
+      {
         "type": "field",
         "inboundTag": ["dns-in"],
         "outboundTag": "dns-out"
