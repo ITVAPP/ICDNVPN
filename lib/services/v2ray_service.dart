@@ -909,6 +909,7 @@ static Future<Map<String, dynamic>> _generateConfigMap({
   }
   
   // 移动平台启动逻辑 - 增强版，支持新功能（简化版）
+  // 修复：添加PlatformException捕获处理
   static Future<bool> _startMobilePlatform({
     required String serverIp,
     required int serverPort,
@@ -981,10 +982,27 @@ static Future<Map<String, dynamic>> _generateConfigMap({
         params.addAll(localizedStrings);
       }
       
-      // 3. 通过原生通道启动V2Ray（增强版）
-      final result = await _channel.invokeMethod<bool>('startVpn', params);
+      // 【关键修复】正确处理原生方法调用，捕获PlatformException
+      bool startResult = false;
+      String? errorMessage;
       
-      if (result == true) {
+      try {
+        // 3. 通过原生通道启动V2Ray（增强版）
+        final result = await _channel.invokeMethod<bool>('startVpn', params);
+        startResult = result ?? false;
+        await _log.info('VPN启动结果: $startResult', tag: _logTag);
+      } on PlatformException catch (e) {
+        // 捕获Kotlin端的result.error()调用
+        errorMessage = e.message;
+        await _log.error('VPN启动失败: ${e.code} - ${e.message}', tag: _logTag);
+        
+        // 特别处理远程服务器连接失败
+        if (e.message?.contains('Unable to connect to remote server') == true) {
+          await _log.error('无法连接到远程服务器', tag: _logTag);
+        }
+      }
+      
+      if (startResult) {
         await _log.info('V2Ray启动命令已发送，等待连接建立', tag: _logTag);
         
         // 4. 等待连接建立
@@ -1017,8 +1035,16 @@ static Future<Map<String, dynamic>> _generateConfigMap({
           }
         }
       } else {
+        // 启动失败，更新状态并传递错误信息
         _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-        await _log.error('V2Ray启动失败', tag: _logTag);
+        
+        if (errorMessage != null) {
+          await _log.error('V2Ray启动失败: $errorMessage', tag: _logTag);
+          // 抛出具体的错误信息给上层
+          throw Exception(errorMessage);
+        } else {
+          await _log.error('V2Ray启动失败', tag: _logTag);
+        }
       }
       
       await _log.info('移动平台：V2Ray启动流程完成，最终状态: ${_isRunning ? "已连接" : "未连接"}', 
@@ -1028,7 +1054,8 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     } catch (e, stackTrace) {
       await _log.error('启动V2Ray失败', tag: _logTag, error: e, stackTrace: stackTrace);
       _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
-      return false;
+      // 重新抛出异常，让上层处理
+      rethrow;
     }
   }
   
