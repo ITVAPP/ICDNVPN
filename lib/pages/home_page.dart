@@ -13,6 +13,7 @@ import '../services/ad_service.dart';
 import '../services/location_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/ui_utils.dart';
+import '../app_config.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -153,7 +154,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.batteryOptimizationHint),
+                Text(l10n.batteryOptimizationHintFormat(AppConfig.appName)),
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(8),
