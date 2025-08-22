@@ -34,8 +34,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   bool _isProcessing = false;
   bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
-  // 新增：记录是否已经提示过电池优化
-  static bool _hasBatteryOptimizationPrompted = false;
   
   // 用于跟踪服务器列表变化
   int _previousServerCount = 0;
@@ -122,6 +120,90 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
   
+  // 使用SharedPreferences持久化，避免重启后重复提示
+  Future<void> _checkAndRequestBatteryOptimization() async {
+    // 仅Android平台需要
+    if (!Platform.isAndroid) return;
+    
+    try {
+      // 检查是否已经提示过（使用SharedPreferences持久化）
+      final prefs = await SharedPreferences.getInstance();
+      final hasPrompted = prefs.getBool('battery_optimization_prompted') ?? false;
+      if (hasPrompted) return;
+      
+      // 通过原生通道检查是否需要电池优化豁免
+      final channel = const MethodChannel('com.example.cfvpn/v2ray');
+      final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization');
+      
+      // 返回true表示需要请求权限，false表示已有权限
+      if (needsOptimization == true && mounted) {
+        // 标记已提示（持久化）
+        await prefs.setBool('battery_optimization_prompted', true);
+        
+        // 延迟显示，确保连接稳定
+        await Future.delayed(const Duration(seconds: 3));
+        
+        if (!mounted) return;
+        
+        final l10n = AppLocalizations.of(context);
+        
+        // 显示提示对话框
+        final shouldRequest = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.battery_charging_full, color: Colors.green, size: 48),
+            title: Text(l10n.optimizeBattery),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.optimizeBatteryDesc),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.green[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          l10n.recommendedSetting,
+                          style: TextStyle(fontSize: 12, color: Colors.green[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(l10n.later),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(l10n.goToSettings),
+              ),
+            ],
+          ),
+        );
+        
+        if (shouldRequest == true) {
+          // 调用原生方法打开电池优化设置
+          await channel.invokeMethod('requestBatteryOptimization');
+        }
+      }
+    } catch (e) {
+      debugPrint('检查电池优化失败: $e');
+    }
+  }
+  
   void _onConnectionChanged() {
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
     
@@ -134,11 +216,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         case 'unexpected_exit':
           message = l10n.vpnDisconnected;
           break;
+        case 'service_stopped':
+          message = l10n.vpnDisconnected;  // 使用已有的键
+          break;
         default:
           message = l10n.connectionLost;
       }
       
-      // 显示提示
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -148,7 +232,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               duration: const Duration(seconds: 3),
             ),
           );
-          // 清除断开原因，避免重复显示
           connectionProvider.clearDisconnectReason();
         }
       });
@@ -156,12 +239,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     if (connectionProvider.isConnected) {
       _startConnectedTimeTimer();
-      // 连接成功后延迟检查电池优化
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted && connectionProvider.isConnected) {
-          _checkAndRequestBatteryOptimization();
-        }
-      });
+      // 仅Android平台检查电池优化
+      if (Platform.isAndroid) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && connectionProvider.isConnected) {
+            _checkAndRequestBatteryOptimization();
+          }
+        });
+      }
     } else {
       _stopConnectedTimeTimer();
       // 断开时重置流量显示
@@ -173,7 +258,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     }
   }
-}
   
   void _onServerListChanged() {
     if (!mounted) return;
@@ -253,71 +337,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         _connectedTime = '$hours:$minutes:$seconds';
       });
-    }
-  }
-  
-  // 新增：检查并请求电池优化方法
-  Future<void> _checkAndRequestBatteryOptimization() async {
-    if (!Platform.isAndroid) return;
-    if (_hasBatteryOptimizationPrompted) return;  // 避免重复提示
-    
-    try {
-      // 通过原生通道检查是否需要电池优化豁免
-      final channel = const MethodChannel('com.example.cfvpn/v2ray');
-      final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization');
-      
-      // 返回true表示需要请求权限
-      if (needsOptimization == true && mounted) {
-        _hasBatteryOptimizationPrompted = true;  // 标记已提示
-        
-        // 延迟显示，确保连接稳定
-        await Future.delayed(const Duration(seconds: 3));
-        
-        if (!mounted) return;
-        
-        final l10n = AppLocalizations.of(context);
-        
-        // 显示提示对话框
-        final shouldRequest = await showDialog<bool>(
-          context: context,
-          barrierDismissible: true,
-          builder: (context) => AlertDialog(
-            icon: const Icon(Icons.battery_charging_full, color: Colors.green, size: 48),
-            title: Text(l10n.optimizeBattery),  // 使用已有的国际化键
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(l10n.optimizeBatteryDesc),  // 使用已有的国际化键
-                const SizedBox(height: 12),
-                Text(
-                  l10n.recommendedSetting,  // 使用已有的国际化键
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).hintColor,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text(l10n.later),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(l10n.goToSettings),
-              ),
-            ],
-          ),
-        );
-        
-        // 如果用户选择去设置，再次调用原生方法打开设置
-        if (shouldRequest == true) {
-          await channel.invokeMethod('requestBatteryOptimization');
-        }
-      }
-    } catch (e) {
-      debugPrint('检查电池优化失败: $e');
     }
   }
 
@@ -529,15 +548,15 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         // 触感反馈
         Feedback.forTap(context);
         
-        // 新增：未连接时检查是否有可用节点
+        // 未连接时检查节点情况
         if (!isConnected) {
           final serverProvider = Provider.of<ServerProvider>(context, listen: false);
           
-          // 检查是否正在获取节点
+          // 情况1：正在获取节点
           if (serverProvider.isInitializing) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(l10n.gettingNodes),
+                content: Text(l10n.gettingNodes),  // 使用已有的国际化键
                 backgroundColor: Colors.blue,
                 duration: const Duration(seconds: 2),
               ),
@@ -545,14 +564,13 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
             return;
           }
           
-          // 检查是否有可用节点
+          // 情况2：没有节点
           if (serverProvider.servers.isEmpty) {
-            // 显示友好提示
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(l10n.noServersToConnect),  // 使用已存在的国际化键
+                content: Text(l10n.noServers),  // 使用已有的国际化键
                 backgroundColor: Colors.orange,
-                action: serverProvider.isRefreshing ? null : SnackBarAction(
+                action: SnackBarAction(
                   label: l10n.refresh,
                   textColor: Colors.white,
                   onPressed: () async {
@@ -562,12 +580,11 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                 duration: const Duration(seconds: 4),
               ),
             );
-            return; // 阻止连接
+            return;  // 阻止连接
           }
           
-          // 检查是否选择了服务器
-          if (provider.currentServer == null && serverProvider.servers.isNotEmpty) {
-            // 自动选择最优服务器
+          // 情况3：有节点但未选择
+          if (provider.currentServer == null) {
             final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
             provider.setCurrentServer(bestServer);
             ScaffoldMessenger.of(context).showSnackBar(
@@ -577,16 +594,19 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                 duration: const Duration(seconds: 2),
               ),
             );
+            // 继续连接流程
           }
         }
-        
-        setState(() {
-          _isProcessing = true;
-          if (isConnected) {
-            _isDisconnecting = true;
-          }
-        });
-        
+          
+          setState(() {
+            _isProcessing = true;
+            // 如果是断开操作，设置断开标志
+            if (isConnected) {
+              _isDisconnecting = true;
+            }
+          });
+          
+          // 启动加载动画
         _loadingController.repeat();
         
         try {
@@ -615,7 +635,7 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
           }
         }
       },
-        child: AnimatedBuilder(
+      child: AnimatedBuilder(
           animation: _loadingAnimation,
           builder: (context, child) {
             return Container(
