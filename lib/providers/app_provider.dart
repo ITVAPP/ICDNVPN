@@ -85,6 +85,23 @@ class ConnectionProvider with ChangeNotifier {
     super.dispose();
   }
   
+  // 新增：恢复移动端连接状态（不触发重连，只同步状态）
+  Future<void> restoreMobileConnectionState(DateTime connectTime) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    
+    _isConnected = true;
+    _connectStartTime = connectTime;
+    
+    // 不需要调用connect()，因为VPN已经在运行
+    // 只是恢复Dart端的状态显示
+    
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+    
+    await _log.info('移动端连接状态已恢复，连接时间: $connectTime', tag: _logTag);
+  }
+  
   Future<void> updateLocalizedStrings(BuildContext context) async {
     if (_isUpdatingNotification) {
       await _log.debug('正在更新通知，跳过重复调用', tag: _logTag);
