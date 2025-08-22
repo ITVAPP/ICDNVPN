@@ -216,6 +216,18 @@ class AppLocalizations {
   String get reGetNodes => _get('reGetNodes');
   String get newVersion => _get('newVersion');
   
+  // 电池优化相关
+  String get batteryOptimization => _get('batteryOptimization');
+  String get batteryOptimizationHint => _get('batteryOptimizationHint');
+  String get recommended => _get('recommended');
+  String get openSettings => _get('openSettings');
+  
+  // 电池优化带参数方法
+  String batteryOptimizationHintFormat(String appName) {
+    final template = _get('batteryOptimizationHint');
+    return template.replaceAll('%appName', appName);
+  }
+  
   // 代理模式（新增）
   String get globalProxyMode => _get('globalProxyMode');
   String get smartProxyMode => _get('smartProxyMode');
@@ -616,6 +628,12 @@ const Map<String, String> _zhCnTranslations = {
   'cacheDetails': '已清除：日志文件、服务器列表、用户设置',
   'reGetNodes': '重新获取节点',
   'newVersion': '新版 %s',
+  
+  // 电池优化相关
+  'batteryOptimization': '电池优化',
+  'batteryOptimizationHint': '为了保持稳定的VPN连接，建议将 %appName 添加到电池优化白名单。',
+  'recommended': '推荐设置',
+  'openSettings': '打开设置',
   
   // 代理模式（新增）
   'globalProxyMode': '全局代理模式',
