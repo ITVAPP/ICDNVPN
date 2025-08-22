@@ -699,7 +699,6 @@ static Future<Map<String, dynamic>> _generateConfigMap({
   }
   
   // 记录最终配置概要
-  if (kDebugMode) {
     await _log.debug('配置概要:', tag: _logTag);
     await _log.debug('  - CDN IP: $serverIp:$actualPort', tag: _logTag);  // 使用实际端口
     await _log.debug('  - ServerName: $serverName', tag: _logTag);
@@ -714,7 +713,6 @@ static Future<Map<String, dynamic>> _generateConfigMap({
       final ruleCount = (config['routing']['rules'] as List).length;
       await _log.debug('  - 路由规则数: $ruleCount', tag: _logTag);
     }
-  }
   
   return config;
 }
@@ -939,8 +937,6 @@ static Future<Map<String, dynamic>> _generateConfigMap({
       final configJson = jsonEncode(configMap);
       await _log.info('配置已生成，长度: ${configJson.length}', tag: _logTag);
       
-      // 在调试模式下，输出配置的关键信息
-      if (kDebugMode) {
         await _log.debug('配置详情:', tag: _logTag);
         await _log.debug('  - 协议: ${configMap['outbounds']?[0]?['protocol']}', tag: _logTag);
         await _log.debug('  - CDN IP: $serverIp:$serverPort', tag: _logTag);
@@ -963,7 +959,6 @@ static Future<Map<String, dynamic>> _generateConfigMap({
             await _log.debug('  - UUID: $displayUuid', tag: _logTag);
           }
         }
-      }
       
       // 3. 准备调用参数（简化版） - 添加虚拟DNS参数
       final params = <String, dynamic>{
