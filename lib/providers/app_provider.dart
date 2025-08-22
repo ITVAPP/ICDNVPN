@@ -45,36 +45,31 @@ class ConnectionProvider with ChangeNotifier {
   bool get globalProxy => _globalProxy;  // 修改：getter名称
   // 新增：标记是否正在更新通知
   bool _isUpdatingNotification = false;
-  // 新增：状态流订阅
   StreamSubscription<V2RayStatus>? _v2rayStatusSubscription;
+  bool _isStopping = false;  // 添加停止标志
   
   ConnectionProvider() {
-    // 设置V2Ray进程退出回调
+    // 设置V2Ray进程退出回调（Windows平台使用）
     V2RayService.setOnProcessExit(_handleV2RayProcessExit);
     
-    // 新增：监听V2RayService状态流
-    _v2rayStatusSubscription = V2RayService.statusStream.listen((status) {
-      // 只处理断开事件，避免与其他状态管理冲突
-      if (status.state == V2RayConnectionState.disconnected && 
-          _isConnected && 
-          !_isStopping) {  // 避免主动断开时重复处理
-        _log.info('检测到V2Ray服务从外部断开（如通知栏）', tag: _logTag);
-        _isConnected = false;
-        _connectStartTime = null;
-        _disconnectReason = 'service_stopped';
-        
-        // 清理Windows系统代理
-        if (Platform.isWindows) {
-          ProxyService.disableSystemProxy().catchError((e) {
-            _log.error('清理系统代理失败', tag: _logTag, error: e);
-          });
+    // 只在移动端监听V2RayService状态流处理通知栏断开
+    if (Platform.isAndroid || Platform.isIOS) {
+      _v2rayStatusSubscription = V2RayService.statusStream.listen((status) {
+        // 只处理外部断开（通知栏断开），避免与主动断开冲突
+        if (status.state == V2RayConnectionState.disconnected && 
+            _isConnected && 
+            !_isStopping) {  // 确保不是主动断开
+          _log.info('移动端：检测到VPN从通知栏断开', tag: _logTag);
+          _isConnected = false;
+          _connectStartTime = null;
+          _disconnectReason = 'service_stopped';
+          
+          if (!_isDisposed) {
+            notifyListeners();
+          }
         }
-        
-        if (!_isDisposed) {
-          notifyListeners();
-        }
-      }
-    });
+      });
+    }
     
     _loadSettings();
     _loadCurrentServer();
@@ -83,11 +78,12 @@ class ConnectionProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    // 新增：取消状态流订阅
+    
+    // 取消移动端状态流订阅
     _v2rayStatusSubscription?.cancel();
     _v2rayStatusSubscription = null;
     
-    // 现有的清理代码...
+    // 如果还在连接状态，断开连接
     if (_isConnected) {
       disconnect().catchError((e) {
         _log.error('dispose时断开连接失败', tag: _logTag, error: e);
@@ -489,29 +485,26 @@ class ConnectionProvider with ChangeNotifier {
     }
   }
   
-  // 修改disconnect方法，添加标志避免重复处理
-  bool _isStopping = false;
-  
   Future<void> disconnect() async {
-    _isStopping = true;  // 设置停止标志
+    _isStopping = true;  // 设置停止标志，防止状态流监听器重复处理
     try {
       await V2RayService.stop();
       
+      // 只在Windows平台清理系统代理
       if (Platform.isWindows) {
         await _log.info('Windows平台：禁用系统代理', tag: _logTag);
         await ProxyService.disableSystemProxy();
-      } else {
-        await _log.info('非Windows平台：跳过系统代理禁用', tag: _logTag);
       }
       
       _isConnected = false;
       _connectStartTime = null;
-      _disconnectReason = null;
+      _disconnectReason = null;  // 主动断开不设置原因
       if (!_isDisposed) {
         notifyListeners();
       }
     } catch (e) {
-      await _log.error('Error during disconnect', tag: _logTag, error: e);
+      await _log.error('断开连接时出错', tag: _logTag, error: e);
+      // 即使出错也要更新状态
       _isConnected = false;
       _connectStartTime = null;
       if (!_isDisposed) {
