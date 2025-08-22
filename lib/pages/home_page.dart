@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/app_provider.dart';
 import '../models/server_model.dart';
 import '../services/cloudflare_test_service.dart';
@@ -25,7 +27,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<Offset> _slideAnimation;
   late Animation<double> _loadingAnimation;
   
-  // 流量统计 - 修改为显示总量
   String _uploadTotal = '0 KB';
   String _downloadTotal = '0 KB';
   String _connectedTime = '00:00:00';
@@ -33,28 +34,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   StreamSubscription<V2RayStatus>? _statusSubscription;
   
   bool _isProcessing = false;
-  bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
+  bool _isDisconnecting = false;
   
-  // 用于跟踪服务器列表变化
   int _previousServerCount = 0;
 
   @override
   void initState() {
     super.initState();
     
-    // 滑动动画控制器
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
     
-    // 加载动画控制器
     _loadingController = AnimationController(
       duration: const Duration(seconds: 1),
       vsync: this,
     );
     
-    // 动画配置
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.1),
       end: Offset.zero,
@@ -71,51 +68,44 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       curve: Curves.linear,
     ));
     
-  _slideController.forward();
-  
-  // 根据平台监听流量统计
-  if (Platform.isAndroid || Platform.isIOS) {
-    // 移动端：监听V2RayService状态流获取流量数据
-    _statusSubscription = V2RayService.statusStream.listen((status) {
-      if (mounted && status.state == V2RayConnectionState.connected) {
-        setState(() {
-          _uploadTotal = UIUtils.formatBytes(status.upload);
-          _downloadTotal = UIUtils.formatBytes(status.download);
-        });
-      }
-    });
-  } else if (Platform.isWindows) {
-    // Windows平台：同样监听状态流（由V2RayService的API更新）
-    _statusSubscription = V2RayService.statusStream.listen((status) {
-      if (mounted) {
-        setState(() {
-          _uploadTotal = UIUtils.formatBytes(status.upload);
-          _downloadTotal = UIUtils.formatBytes(status.download);
-        });
-      }
-    });
-  }
+    _slideController.forward();
     
-    // 监听连接状态变化
+    // 根据平台监听流量统计
+    if (Platform.isAndroid || Platform.isIOS) {
+      _statusSubscription = V2RayService.statusStream.listen((status) {
+        if (mounted && status.state == V2RayConnectionState.connected) {
+          setState(() {
+            _uploadTotal = UIUtils.formatBytes(status.upload);
+            _downloadTotal = UIUtils.formatBytes(status.download);
+          });
+        }
+      });
+    } else if (Platform.isWindows) {
+      _statusSubscription = V2RayService.statusStream.listen((status) {
+        if (mounted) {
+          setState(() {
+            _uploadTotal = UIUtils.formatBytes(status.upload);
+            _downloadTotal = UIUtils.formatBytes(status.download);
+          });
+        }
+      });
+    }
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
       final serverProvider = Provider.of<ServerProvider>(context, listen: false);
       
-      // 新增：设置对话框上下文，供Windows平台显示注册表修改提示
       connectionProvider.setDialogContext(context);
       
       connectionProvider.addListener(_onConnectionChanged);
       serverProvider.addListener(_onServerListChanged);
       
-      // 初始化服务器数量
       _previousServerCount = serverProvider.servers.length;
       
       _onConnectionChanged();
       
-      // 新增：检查是否显示图片广告
       _checkAndShowImageAd();
       
-      // 新增：发送页面统计（异步，不阻塞）
       LocationService().sendAnalytics(context, 'home');
     });
   }
@@ -133,45 +123,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
   
-  // 使用SharedPreferences持久化，避免重启后重复提示
   Future<void> _checkAndRequestBatteryOptimization() async {
-    // 仅Android平台需要
     if (!Platform.isAndroid) return;
     
     try {
-      // 检查是否已经提示过（使用SharedPreferences持久化）
       final prefs = await SharedPreferences.getInstance();
       final hasPrompted = prefs.getBool('battery_optimization_prompted') ?? false;
       if (hasPrompted) return;
       
-      // 通过原生通道检查是否需要电池优化豁免
       final channel = const MethodChannel('com.example.cfvpn/v2ray');
       final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization');
       
-      // 返回true表示需要请求权限，false表示已有权限
       if (needsOptimization == true && mounted) {
-        // 标记已提示（持久化）
         await prefs.setBool('battery_optimization_prompted', true);
         
-        // 延迟显示，确保连接稳定
         await Future.delayed(const Duration(seconds: 3));
         
         if (!mounted) return;
         
         final l10n = AppLocalizations.of(context);
         
-        // 显示提示对话框
         final shouldRequest = await showDialog<bool>(
           context: context,
           barrierDismissible: true,
           builder: (context) => AlertDialog(
             icon: const Icon(Icons.battery_charging_full, color: Colors.green, size: 48),
-            title: Text(l10n.optimizeBattery),
+            title: Text(l10n.batteryOptimization),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.optimizeBatteryDesc),
+                Text(l10n.batteryOptimizationHint),
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(8),
@@ -185,7 +167,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          l10n.recommendedSetting,
+                          l10n.recommended,
                           style: TextStyle(fontSize: 12, color: Colors.green[700]),
                         ),
                       ),
@@ -197,18 +179,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: Text(l10n.later),
+                child: Text(l10n.cancel),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: Text(l10n.goToSettings),
+                child: Text(l10n.openSettings),
               ),
             ],
           ),
         );
         
         if (shouldRequest == true) {
-          // 调用原生方法打开电池优化设置
           await channel.invokeMethod('requestBatteryOptimization');
         }
       }
@@ -220,7 +201,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _onConnectionChanged() {
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
     
-    // 检查是否有断开原因（意外断开）
     if (connectionProvider.disconnectReason != null && mounted) {
       final l10n = AppLocalizations.of(context);
       String message = '';
@@ -230,7 +210,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           message = l10n.vpnDisconnected;
           break;
         case 'service_stopped':
-          message = l10n.vpnDisconnected;  // 使用已有的键
+          message = l10n.vpnDisconnected;
           break;
         default:
           message = l10n.connectionLost;
@@ -262,7 +242,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     } else {
       _stopConnectedTimeTimer();
-      // 断开时重置流量显示
       if (mounted) {
         setState(() {
           _uploadTotal = '0 KB';
@@ -280,14 +259,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final currentServerCount = serverProvider.servers.length;
     final l10n = AppLocalizations.of(context);
     
-    // 检测服务器列表从空变为非空（获取成功）
     if (_previousServerCount == 0 && currentServerCount > 0) {
-      // 如果当前没有选中的服务器，自动选择最优的
       if (connectionProvider.currentServer == null) {
         final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
         connectionProvider.setCurrentServer(bestServer);
         
-        // 显示提示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(l10n.autoSelectedBestNode(bestServer.name, bestServer.ping)),
@@ -297,9 +273,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         );
       }
     }
-    // 检测获取失败（从正在获取变为空）
     else if (serverProvider.servers.isEmpty && !serverProvider.isInitializing && serverProvider.initMessage.isNotEmpty) {
-      // 显示失败提示
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(l10n.getNodeFailedWithRetry),
@@ -321,9 +295,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   void _startConnectedTimeTimer() {
     _connectedTimeTimer?.cancel();
-    // 立即更新一次
     _updateConnectedTime();
-    // 每秒更新
     _connectedTimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _updateConnectedTime();
     });
@@ -353,7 +325,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  // 修改：先预加载图片，成功后再显示广告遮罩
   void _checkAndShowImageAd() async {
     final adService = context.read<AdService>();
     final imageAd = await adService.getImageAdForPageAsync('home');
@@ -361,34 +332,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (imageAd != null) {
       final imageUrl = imageAd.content.imageUrl;
       
-      // 如果没有图片URL，不显示广告
       if (imageUrl == null || imageUrl.isEmpty) {
         return;
       }
       
       try {
-        // 先预加载图片
         if (imageUrl.startsWith('assets/')) {
           await precacheImage(AssetImage(imageUrl), context);
         } else {
           await precacheImage(NetworkImage(imageUrl), context);
         }
         
-        // 图片加载成功后，延迟显示（等页面完全加载）
         await Future.delayed(const Duration(milliseconds: 500));
         
-        // 确认组件仍然挂载后再显示广告
         if (mounted) {
           _showImageAdOverlay(imageAd);
         }
       } catch (e) {
-        // 图片加载失败，不显示广告（静默处理）
         debugPrint('广告图片预加载失败: $e');
       }
     }
   }
 
-  // 显示图片广告遮罩（图片已预加载完成）
   void _showImageAdOverlay(dynamic ad) {
     showDialog(
       context: context,
@@ -410,8 +375,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     return Scaffold(
       body: Container(
-        width: double.infinity,  // 修复：确保容器填满整个宽度
-        height: double.infinity, // 修复：确保容器填满整个高度，避免背景渐变断层
+        width: double.infinity,
+        height: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -431,7 +396,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           top: false,
           child: Consumer2<ConnectionProvider, ServerProvider>(
             builder: (context, connectionProvider, serverProvider, child) {
-              // 重要：每次重建时更新对话框上下文
               connectionProvider.setDialogContext(context);
               
               final isConnected = connectionProvider.isConnected;
@@ -443,41 +407,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.only(
                     left: 20.0,
                     right: 20.0,
-                    top: 52.0, // 距离屏幕顶部
+                    top: 52.0,
                     bottom: 20.0,
                   ),
                   child: Column(
                     children: [
-                      // 顶部状态栏
                       _buildStatusBar(isConnected, l10n),
-                      const SizedBox(height: 30), // 距离下方连接按钮像素
+                      const SizedBox(height: 30),
                       
-                      // 主连接按钮
                       SlideTransition(
                         position: _slideAnimation,
                         child: _buildConnectionButton(isConnected, connectionProvider, l10n),
                       ),
-                      const SizedBox(height: 30), // 减少间距
+                      const SizedBox(height: 30),
                       
-                      // 服务器信息卡片 - 修改：传递serverProvider以获取状态
                       SlideTransition(
                         position: _slideAnimation,
                         child: currentServer != null
                           ? _buildServerInfoCard(currentServer, isConnected, l10n)
-                          : _buildEmptyServerCard(l10n, serverProvider),  // 传递serverProvider
+                          : _buildEmptyServerCard(l10n, serverProvider),
                       ),
                       
-                      // 流量统计卡片
                       if (isConnected) ...[
                         const SizedBox(height: 20),
                         _buildTrafficCard(l10n),
                       ],
                       
-                      // 快速操作按钮
                       const SizedBox(height: 20),
                       _buildQuickActions(serverProvider, connectionProvider, l10n),
                       
-                      // 新增：文字广告轮播
                       Consumer<AdService>(
                         builder: (context, adService, child) {
                           final textAds = adService.getTextAdsForPage('home');
@@ -552,103 +510,95 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // 修改：优化权限请求时机
-Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
-  return MouseRegion(
-    cursor: SystemMouseCursors.click,
-    child: GestureDetector(
-      onTap: _isProcessing ? null : () async {
-        // 触感反馈
-        Feedback.forTap(context);
-        
-        // 未连接时检查节点情况
-        if (!isConnected) {
-          final serverProvider = Provider.of<ServerProvider>(context, listen: false);
+  Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: _isProcessing ? null : () async {
+          Feedback.forTap(context);
           
-          // 情况1：正在获取节点
-          if (serverProvider.isInitializing) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.gettingNodes),  // 使用已有的国际化键
-                backgroundColor: Colors.blue,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-            return;
-          }
-          
-          // 情况2：没有节点
-          if (serverProvider.servers.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.noServers),  // 使用已有的国际化键
-                backgroundColor: Colors.orange,
-                action: SnackBarAction(
-                  label: l10n.refresh,
-                  textColor: Colors.white,
-                  onPressed: () async {
-                    await serverProvider.refreshFromCloudflare();
-                  },
+          // 未连接时检查节点
+          if (!isConnected) {
+            final serverProvider = Provider.of<ServerProvider>(context, listen: false);
+            
+            if (serverProvider.isInitializing) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(l10n.gettingNodes),
+                  backgroundColor: Colors.blue,
+                  duration: const Duration(seconds: 2),
                 ),
-                duration: const Duration(seconds: 4),
-              ),
-            );
-            return;  // 阻止连接
+              );
+              return;
+            }
+            
+            if (serverProvider.servers.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(l10n.noServers),
+                  backgroundColor: Colors.orange,
+                  action: SnackBarAction(
+                    label: l10n.refresh,
+                    textColor: Colors.white,
+                    onPressed: () async {
+                      await serverProvider.refreshFromCloudflare();
+                    },
+                  ),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+              return;
+            }
+            
+            if (provider.currentServer == null) {
+              final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
+              provider.setCurrentServer(bestServer);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(l10n.autoSelectedBestNode(bestServer.name, bestServer.ping)),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
           }
-          
-          // 情况3：有节点但未选择
-          if (provider.currentServer == null) {
-            final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
-            provider.setCurrentServer(bestServer);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.autoSelectedBestNode(bestServer.name, bestServer.ping)),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-            // 继续连接流程
-          }
-        }
           
           setState(() {
             _isProcessing = true;
-            // 如果是断开操作，设置断开标志
             if (isConnected) {
               _isDisconnecting = true;
             }
           });
           
-          // 启动加载动画
-        _loadingController.repeat();
-        
-        try {
-          if (isConnected) {
-            await provider.disconnect();
-          } else {
-            await provider.connect();
+          _loadingController.repeat();
+          
+          try {
+            if (isConnected) {
+              await provider.disconnect();
+            } else {
+              await provider.connect();
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${l10n.operationFailed}: ${e.toString()}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+                _isDisconnecting = false;
+              });
+              _loadingController.stop();
+              _loadingController.reset();
+            }
           }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${l10n.operationFailed}: ${e.toString()}'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        } finally {
-          if (mounted) {
-            setState(() {
-              _isProcessing = false;
-              _isDisconnecting = false;
-            });
-            _loadingController.stop();
-            _loadingController.reset();
-          }
-        }
-      },
-      child: AnimatedBuilder(
+        },
+        child: AnimatedBuilder(
           animation: _loadingAnimation,
           builder: (context, child) {
             return Container(
@@ -659,20 +609,20 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                 gradient: RadialGradient(
                   colors: _isProcessing
                     ? _isDisconnecting
-                      ? [  // 正在断开 - 红色
+                      ? [
                           Colors.red.shade400,
                           Colors.red.shade600,
                         ]
-                      : [  // 正在连接 - 橙色
+                      : [
                           Colors.orange.shade400,
                           Colors.orange.shade600,
                         ]
                     : isConnected
-                      ? [  // 已连接，准备断开 - 绿色
+                      ? [
                           Colors.green.shade400,
                           Colors.green.shade600,
                         ]
-                      : [  // 未连接，准备连接 - 蓝色
+                      : [
                           Colors.blue.shade400,
                           Colors.blue.shade600,
                         ],
@@ -691,12 +641,10 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // 中心内容容器
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 中心图标 - 使用火箭图标
                       Transform.rotate(
                         angle: _isProcessing ? _loadingAnimation.value : 0,
                         child: Icon(
@@ -708,7 +656,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                         ),
                       ),
                       const SizedBox(height: 12),
-                      // 状态文字
                       AnimatedOpacity(
                         opacity: _isProcessing ? 0.7 : 1.0,
                         duration: const Duration(milliseconds: 300),
@@ -736,16 +683,15 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
 
   Widget _buildServerInfoCard(ServerModel server, bool isConnected, AppLocalizations l10n) {
     final theme = Theme.of(context);
-    // 修改：使用国际化版本的方法
     final locationInfo = UIUtils.getLocalizedLocationInfo(server.location, context);
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: theme.brightness == Brightness.dark 
-            ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+            ? const Color(0xFF1E1E1E)
             : theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -762,7 +708,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         children: [
           Row(
             children: [
-              // 直接使用圆形国旗设计
               UIUtils.buildCountryFlag(server.location, size: 50),
               const SizedBox(width: 15),
               Expanded(
@@ -793,7 +738,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                   ],
                 ),
               ),
-              // 延迟指示器
               _buildPingIndicator(server.ping, isConnected),
             ],
           ),
@@ -802,21 +746,16 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
     );
   }
 
-  // 修改：处理 ServerProvider 的国际化显示
   Widget _buildEmptyServerCard(AppLocalizations l10n, ServerProvider serverProvider) {
     final theme = Theme.of(context);
     
-    // 根据状态显示不同内容
     Widget content;
     Color? borderColor;
     
     if (serverProvider.isInitializing) {
-      // 正在初始化/获取节点
-      // 获取本地化的消息
       String message = l10n.gettingNodes;
       String detail = '';
       
-      // 根据 messageKey 显示本地化文字
       if (serverProvider.initMessage.isNotEmpty) {
         switch (serverProvider.initMessage) {
           case 'gettingBestNodes':
@@ -842,7 +781,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         }
       }
       
-      // 根据 detailKey 显示本地化详情
       if (serverProvider.initDetail.isNotEmpty) {
         switch (serverProvider.initDetail) {
           case 'initializing':
@@ -895,7 +833,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         ],
       );
     } else if (serverProvider.servers.isEmpty && serverProvider.initMessage.isNotEmpty) {
-      // 获取失败 - 通过检查initMessage是否不为空来判断（成功时会清空）
       borderColor = Colors.orange.withOpacity(0.3);
       content = Column(
         mainAxisSize: MainAxisSize.min,
@@ -922,7 +859,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
             ],
           ),
           const SizedBox(height: 12),
-          // 重试按钮 - 添加防重复点击保护
           TextButton.icon(
             onPressed: serverProvider.isInitializing ? null : () async {
               await serverProvider.refreshFromCloudflare();
@@ -936,7 +872,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         ],
       );
     } else {
-      // 其他情况（正常显示暂无节点）- 与正在获取节点时保持一致的布局
       content = InkWell(
         onTap: serverProvider.isInitializing ? null : () async {
           await serverProvider.refreshFromCloudflare();
@@ -947,7 +882,7 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
           children: [
             Icon(
               Icons.cloud_download,
-              size: 24,  // 与加载动画一样大
+              size: 24,
               color: theme.primaryColor,
             ),
             const SizedBox(width: 12),
@@ -955,9 +890,8 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
               l10n.noNodesHint,
               style: TextStyle(
                 fontSize: 16,
-                color: theme.primaryColor,  // 蓝色文字
+                color: theme.primaryColor,
                 fontWeight: FontWeight.w500,
-                // 不带下划线
               ),
             ),
           ],
@@ -968,10 +902,10 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: theme.brightness == Brightness.dark 
-            ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+            ? const Color(0xFF1E1E1E)
             : theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
@@ -1046,15 +980,13 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
     );
   }
 
-  // 修改流量统计卡片 - 添加margin使宽度与节点卡片一致
   Widget _buildTrafficCard(AppLocalizations l10n) {
     final theme = Theme.of(context);
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8), // 添加与节点卡片相同的margin
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 统一内边距
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        // 修改：深色主题使用纯色背景
         color: theme.brightness == Brightness.dark 
             ? const Color(0xFF1E1E1E)
             : null,
@@ -1080,7 +1012,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // 上传部分
           Expanded(
             child: _buildTrafficItem(
               icon: Icons.upload,
@@ -1089,13 +1020,11 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
               color: Colors.orange,
             ),
           ),
-          // 分隔符
           Container(
             width: 1,
             height: 50,
             color: theme.dividerColor.withOpacity(0.3),
           ),
-          // 下载部分
           Expanded(
             child: _buildTrafficItem(
               icon: Icons.download,
@@ -1109,7 +1038,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
     );
   }
 
-  // 修改流量项布局 - 改为水平布局，左侧图标+文字，右侧数值（只在浅色主题显示白色描边）
   Widget _buildTrafficItem({
     required IconData icon,
     required String label,
@@ -1124,15 +1052,12 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 左侧：图标和标签（垂直排列）
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 图标 - 只在浅色主题添加淡白色描边
               isLight
                 ? Stack(
                     children: [
-                      // 淡白色描边效果
                       Icon(
                         icon,
                         color: Colors.white.withOpacity(0.7),
@@ -1151,11 +1076,9 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                     size: 28,
                   ),
               const SizedBox(height: 6),
-              // 标签文字 - 只在浅色主题添加淡白色描边
               isLight
                 ? Stack(
                     children: [
-                      // 淡白色描边
                       Text(
                         label,
                         style: TextStyle(
@@ -1167,7 +1090,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                             ..color = Colors.white.withOpacity(0.7),
                         ),
                       ),
-                      // 实际文字
                       Text(
                         label,
                         style: TextStyle(
@@ -1188,11 +1110,9 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                   ),
             ],
           ),
-          // 右侧：流量数值 - 只在浅色主题添加淡白色描边
           isLight
             ? Stack(
                 children: [
-                  // 淡白色描边
                   Text(
                     value,
                     style: TextStyle(
@@ -1204,7 +1124,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
                         ..color = Colors.white.withOpacity(0.7),
                     ),
                   ),
-                  // 实际文字
                   Text(
                     value,
                     style: TextStyle(
@@ -1236,7 +1155,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
           icon: Icons.flash_on,
           label: l10n.autoSelectNode,
           onTap: () async {
-            // 选择最优服务器
             final servers = serverProvider.servers;
             if (servers.isNotEmpty) {
               final bestServer = servers.reduce((a, b) => a.ping < b.ping ? a : b);
@@ -1253,7 +1171,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
           icon: Icons.speed,
           label: l10n.speedTest,
           onTap: () async {
-            // 获取当前显示的服务器
             final currentServer = connectionProvider.currentServer;
             
             if (currentServer == null) {
@@ -1263,7 +1180,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
               return;
             }
             
-            // 显示测速对话框 - 测试当前显示的服务器
             showDialog(
               context: context,
               barrierDismissible: false,
@@ -1275,7 +1191,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
           icon: Icons.refresh,
           label: l10n.refresh,
           onTap: () async {
-            // 手动触发V2Ray统计更新
             if (connectionProvider.isConnected) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('${l10n.refresh}...')),
@@ -1305,7 +1220,7 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
           color: theme.brightness == Brightness.dark 
-              ? const Color(0xFF1E1E1E)  // 修改：深色主题使用固定背景色
+              ? const Color(0xFF1E1E1E)
               : theme.cardColor,
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
@@ -1338,7 +1253,6 @@ Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, App
   }
 }
 
-// 速度测试对话框 - 修改为使用HTTPing
 class _SpeedTestDialog extends StatefulWidget {
   final ServerModel? currentServer;
   
@@ -1371,14 +1285,12 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
         throw l10n.noServers;
       }
       
-      // 如果有当前服务器，优先测试当前服务器
       final testServer = widget.currentServer ?? servers.first;
       
-      // 使用HTTPing测试，端口80
       final results = await CloudflareTestService.testLatencyUnified(
         ips: [testServer.ip],
-        port: 80,  // 使用80端口
-        useHttping: true,  // 使用HTTPing
+        port: 80,
+        useHttping: true,
         singleTest: true,
       );
       
@@ -1386,13 +1298,10 @@ class _SpeedTestDialogState extends State<_SpeedTestDialog> {
         final result = results.first;
         final latency = result['latency'] ?? 999;
         
-        // 修复：更新服务器的延迟值
         await serverProvider.updatePing(testServer.id, latency);
         
-        // 如果这是当前选中的服务器，也更新ConnectionProvider中的引用
         final connectionProvider = context.read<ConnectionProvider>();
         if (connectionProvider.currentServer?.id == testServer.id) {
-          // 重新设置当前服务器以触发UI更新
           final updatedServer = serverProvider.servers.firstWhere(
             (s) => s.id == testServer.id,
             orElse: () => testServer,
