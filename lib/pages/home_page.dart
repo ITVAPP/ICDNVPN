@@ -34,6 +34,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   bool _isProcessing = false;
   bool _isDisconnecting = false;  // 新增：跟踪是否正在断开连接
+  // 新增：记录是否已经提示过电池优化
+  static bool _hasBatteryOptimizationPrompted = false;
   
   // 用于跟踪服务器列表变化
   int _previousServerCount = 0;
@@ -154,6 +156,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     if (connectionProvider.isConnected) {
       _startConnectedTimeTimer();
+      // 连接成功后延迟检查电池优化
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && connectionProvider.isConnected) {
+          _checkAndRequestBatteryOptimization();
+        }
+      });
     } else {
       _stopConnectedTimeTimer();
       // 断开时重置流量显示
@@ -165,6 +173,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     }
   }
+}
   
   void _onServerListChanged() {
     if (!mounted) return;
@@ -244,6 +253,71 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         _connectedTime = '$hours:$minutes:$seconds';
       });
+    }
+  }
+  
+  // 新增：检查并请求电池优化方法
+  Future<void> _checkAndRequestBatteryOptimization() async {
+    if (!Platform.isAndroid) return;
+    if (_hasBatteryOptimizationPrompted) return;  // 避免重复提示
+    
+    try {
+      // 通过原生通道检查是否需要电池优化豁免
+      final channel = const MethodChannel('com.example.cfvpn/v2ray');
+      final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization');
+      
+      // 返回true表示需要请求权限
+      if (needsOptimization == true && mounted) {
+        _hasBatteryOptimizationPrompted = true;  // 标记已提示
+        
+        // 延迟显示，确保连接稳定
+        await Future.delayed(const Duration(seconds: 3));
+        
+        if (!mounted) return;
+        
+        final l10n = AppLocalizations.of(context);
+        
+        // 显示提示对话框
+        final shouldRequest = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.battery_charging_full, color: Colors.green, size: 48),
+            title: Text(l10n.optimizeBattery),  // 使用已有的国际化键
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(l10n.optimizeBatteryDesc),  // 使用已有的国际化键
+                const SizedBox(height: 12),
+                Text(
+                  l10n.recommendedSetting,  // 使用已有的国际化键
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(l10n.later),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(l10n.goToSettings),
+              ),
+            ],
+          ),
+        );
+        
+        // 如果用户选择去设置，再次调用原生方法打开设置
+        if (shouldRequest == true) {
+          await channel.invokeMethod('requestBatteryOptimization');
+        }
+      }
+    } catch (e) {
+      debugPrint('检查电池优化失败: $e');
     }
   }
 
@@ -447,53 +521,100 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   // 修改：优化权限请求时机
-  Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: _isProcessing ? null : () async {
-          // 触感反馈
-          Feedback.forTap(context);
+Widget _buildConnectionButton(bool isConnected, ConnectionProvider provider, AppLocalizations l10n) {
+  return MouseRegion(
+    cursor: SystemMouseCursors.click,
+    child: GestureDetector(
+      onTap: _isProcessing ? null : () async {
+        // 触感反馈
+        Feedback.forTap(context);
+        
+        // 新增：未连接时检查是否有可用节点
+        if (!isConnected) {
+          final serverProvider = Provider.of<ServerProvider>(context, listen: false);
           
-          setState(() {
-            _isProcessing = true;
-            // 如果是断开操作，设置断开标志
-            if (isConnected) {
-              _isDisconnecting = true;
-            }
-          });
-          
-          // 启动加载动画
-          _loadingController.repeat();
-          
-          try {
-            if (isConnected) {
-              await provider.disconnect();
-            } else {
-              // 修复：移除阻断性的权限检查，让原生端自动处理权限请求
-              // Android平台的VPN权限会在调用provider.connect()时由原生端自动处理
-              await provider.connect();
-            }
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${l10n.operationFailed}: ${e.toString()}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          } finally {
-            if (mounted) {
-              setState(() {
-                _isProcessing = false;
-                _isDisconnecting = false;
-              });
-              _loadingController.stop();
-              _loadingController.reset();
-            }
+          // 检查是否正在获取节点
+          if (serverProvider.isInitializing) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l10n.gettingNodes),
+                backgroundColor: Colors.blue,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+            return;
           }
-        },
+          
+          // 检查是否有可用节点
+          if (serverProvider.servers.isEmpty) {
+            // 显示友好提示
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l10n.noServersToConnect),  // 使用已存在的国际化键
+                backgroundColor: Colors.orange,
+                action: serverProvider.isRefreshing ? null : SnackBarAction(
+                  label: l10n.refresh,
+                  textColor: Colors.white,
+                  onPressed: () async {
+                    await serverProvider.refreshFromCloudflare();
+                  },
+                ),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+            return; // 阻止连接
+          }
+          
+          // 检查是否选择了服务器
+          if (provider.currentServer == null && serverProvider.servers.isNotEmpty) {
+            // 自动选择最优服务器
+            final bestServer = serverProvider.servers.reduce((a, b) => a.ping < b.ping ? a : b);
+            provider.setCurrentServer(bestServer);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l10n.autoSelectedBestNode(bestServer.name, bestServer.ping)),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+        
+        setState(() {
+          _isProcessing = true;
+          if (isConnected) {
+            _isDisconnecting = true;
+          }
+        });
+        
+        _loadingController.repeat();
+        
+        try {
+          if (isConnected) {
+            await provider.disconnect();
+          } else {
+            await provider.connect();
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${l10n.operationFailed}: ${e.toString()}'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } finally {
+          if (mounted) {
+            setState(() {
+              _isProcessing = false;
+              _isDisconnecting = false;
+            });
+            _loadingController.stop();
+            _loadingController.reset();
+          }
+        }
+      },
         child: AnimatedBuilder(
           animation: _loadingAnimation,
           builder: (context, child) {
