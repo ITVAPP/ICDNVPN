@@ -105,6 +105,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       
       _onConnectionChanged();
       
+      // 新增：移动端状态恢复检查
+      _checkAndRestoreMobileVpnState();
+      
       _checkAndShowImageAd();
       
       LocationService().sendAnalytics(context, 'home');
@@ -122,6 +125,46 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _statusSubscription?.cancel();
     _connectedTimeTimer?.cancel();
     super.dispose();
+  }
+  
+  // 新增方法：检查并恢复移动端VPN状态
+  Future<void> _checkAndRestoreMobileVpnState() async {
+    // 仅移动端需要恢复
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    
+    try {
+      final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
+      
+      // 通过原生通道检查VPN是否已连接
+      const channel = MethodChannel('com.example.cfvpn/v2ray');
+      final isConnected = await channel.invokeMethod<bool>('isVpnConnected') ?? false;
+      
+      if (isConnected) {
+        // VPN已连接，检查Dart端状态是否同步
+        if (!connectionProvider.isConnected || connectionProvider.connectStartTime == null) {
+          // 获取Native端的流量统计和连接时间
+          final stats = await channel.invokeMethod<Map>('getTrafficStats');
+          
+          if (stats != null) {
+            final startTime = stats['startTime'];
+            if (startTime != null && startTime is int && startTime > 0) {
+              // 恢复连接开始时间
+              final connectTime = DateTime.fromMillisecondsSinceEpoch(startTime);
+              
+              // 调用恢复方法
+              await connectionProvider.restoreMobileConnectionState(connectTime);
+              
+              // 立即启动连接时间定时器
+              _startConnectedTimeTimer();
+              
+              debugPrint('已从Native恢复VPN连接状态，连接时间: $connectTime');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('恢复VPN状态失败: $e');
+    }
   }
   
   Future<void> _checkAndRequestBatteryOptimization() async {
