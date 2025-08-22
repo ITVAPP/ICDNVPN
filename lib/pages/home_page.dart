@@ -71,9 +71,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       curve: Curves.linear,
     ));
     
-    _slideController.forward();
-    
-    // 监听V2Ray状态流
+  _slideController.forward();
+  
+  // 根据平台监听流量统计
+  if (Platform.isAndroid || Platform.isIOS) {
+    // 移动端：监听V2RayService状态流获取流量数据
+    _statusSubscription = V2RayService.statusStream.listen((status) {
+      if (mounted && status.state == V2RayConnectionState.connected) {
+        setState(() {
+          _uploadTotal = UIUtils.formatBytes(status.upload);
+          _downloadTotal = UIUtils.formatBytes(status.download);
+        });
+      }
+    });
+  } else if (Platform.isWindows) {
+    // Windows平台：同样监听状态流（由V2RayService的API更新）
     _statusSubscription = V2RayService.statusStream.listen((status) {
       if (mounted) {
         setState(() {
@@ -82,6 +94,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         });
       }
     });
+  }
     
     // 监听连接状态变化
     WidgetsBinding.instance.addPostFrameCallback((_) {
