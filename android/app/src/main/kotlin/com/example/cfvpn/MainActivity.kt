@@ -210,46 +210,55 @@ class MainActivity: FlutterActivity() {
                     result.success(isConnected)
                 }
                 
-"getTrafficStats" -> {
-    // 简化版：直接返回V2RayVpnService的原始数据
-    try {
-        val stats = V2RayVpnService.getTrafficStats()
-        VpnFileLogger.d(TAG, "返回流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
-        result.success(stats)
-    } catch (e: Exception) {
-        VpnFileLogger.e(TAG, "获取流量统计失败", e)
-        result.error("GET_STATS_FAILED", e.message, null)
-    }
-}
-
-"requestBatteryOptimization" -> {
-    // 请求电池优化豁免
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            val packageName = packageName
-            
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                VpnFileLogger.d(TAG, "请求电池优化豁免")
-                val intent = Intent().apply {
-                    action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                    data = Uri.parse("package:$packageName")
+                "getTrafficStats" -> {
+                    // 简化版：直接返回V2RayVpnService的原始数据
+                    try {
+                        val stats = V2RayVpnService.getTrafficStats()
+                        VpnFileLogger.d(TAG, "返回流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
+                        result.success(stats)
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "获取流量统计失败", e)
+                        result.error("GET_STATS_FAILED", e.message, null)
+                    }
                 }
-                startActivity(intent)
-                result.success(true)  // 需要请求
-            } else {
-                VpnFileLogger.d(TAG, "已有电池优化豁免权限")
-                result.success(false)  // 不需要请求
-            }
-        } else {
-            // 低版本不需要
-            result.success(false)
-        }
-    } catch (e: Exception) {
-        VpnFileLogger.e(TAG, "请求电池优化豁免失败", e)
-        result.error("BATTERY_OPTIMIZATION_FAILED", e.message, null)
-    }
-}
+                
+                "requestBatteryOptimization" -> {
+                    // 【关键修改】请求电池优化豁免 - 支持onlyCheck参数
+                    val onlyCheck = call.argument<Boolean>("onlyCheck") ?: false
+                    
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                            val packageName = packageName
+                            
+                            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                                if (onlyCheck) {
+                                    // 仅检查权限状态，不打开设置页面
+                                    VpnFileLogger.d(TAG, "电池优化检查：需要权限")
+                                    result.success(true)  // 返回true表示需要优化权限
+                                } else {
+                                    // 打开设置页面请求权限
+                                    VpnFileLogger.d(TAG, "打开电池优化设置页面")
+                                    val intent = Intent().apply {
+                                        action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                                        data = Uri.parse("package:$packageName")
+                                    }
+                                    startActivity(intent)
+                                    result.success(true)  // 已打开设置页面
+                                }
+                            } else {
+                                VpnFileLogger.d(TAG, "已有电池优化豁免权限")
+                                result.success(false)  // 返回false表示不需要（已有权限）
+                            }
+                        } else {
+                            // 低版本不需要
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        VpnFileLogger.e(TAG, "请求电池优化豁免失败", e)
+                        result.error("BATTERY_OPTIMIZATION_FAILED", e.message, null)
+                    }
+                }
                 
                 "checkPermission" -> {
                     // 检查VPN权限
@@ -741,4 +750,3 @@ class MainActivity: FlutterActivity() {
         mainScope.cancel()
     }
 }
-

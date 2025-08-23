@@ -61,7 +61,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
         private const val ACTION_STOP_VPN = "com.example.cfvpn.STOP_VPN"
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
-        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
         private const val ENABLE_IPV6 = false
         
@@ -1489,6 +1489,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             lastStatsTime = currentTime
             
+            // 【关键修改】同时更新实例变量，确保getCurrentTrafficStats()返回正确的值
             uploadBytes = totalUploadBytes
             downloadBytes = totalDownloadBytes
             
