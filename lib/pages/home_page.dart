@@ -167,7 +167,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
   
-  Future<void> _checkAndRequestBatteryOptimization() async {
+Future<void> _checkAndRequestBatteryOptimization() async {
     if (!Platform.isAndroid) return;
     
     try {
@@ -176,7 +176,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (hasPrompted) return;
       
       final channel = const MethodChannel('com.example.cfvpn/v2ray');
-      final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization');
+      // 【关键修改】第一次调用：仅检查权限，不打开设置页面
+      final needsOptimization = await channel.invokeMethod<bool>('requestBatteryOptimization', {
+        'onlyCheck': true  // 传递参数，告诉原生端仅检查权限
+      });
       
       if (needsOptimization == true && mounted) {
         await prefs.setBool('battery_optimization_prompted', true);
@@ -187,6 +190,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         
         final l10n = AppLocalizations.of(context);
         
+        // 显示对话框让用户选择
         final shouldRequest = await showDialog<bool>(
           context: context,
           barrierDismissible: true,
@@ -233,8 +237,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         );
         
+        // 【关键修改】用户确认后，第二次调用才真正打开设置页面
         if (shouldRequest == true) {
-          await channel.invokeMethod('requestBatteryOptimization');
+          await channel.invokeMethod('requestBatteryOptimization', {
+            'onlyCheck': false  // 这次真正打开设置页面
+          });
         }
       }
     } catch (e) {
