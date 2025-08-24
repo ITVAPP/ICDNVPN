@@ -22,7 +22,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _slideController;
   late AnimationController _loadingController;
   late Animation<Offset> _slideAnimation;
@@ -38,10 +38,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isDisconnecting = false;
   
   int _previousServerCount = 0;
+  bool _isRestoringState = false; // 添加标志，避免重复恢复
 
   @override
   void initState() {
     super.initState();
+    
+    // 添加应用生命周期监听器
+    WidgetsBinding.instance.addObserver(this);
     
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -116,6 +120,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // 移除应用生命周期监听器
+    WidgetsBinding.instance.removeObserver(this);
+    
     final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
     final serverProvider = Provider.of<ServerProvider>(context, listen: false);
     connectionProvider.removeListener(_onConnectionChanged);
@@ -127,10 +134,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
   
-  // 新增方法：检查并恢复移动端VPN状态
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // 当应用从后台恢复到前台时
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('应用从后台恢复，检查VPN状态...');
+      // 重新检查并恢复移动端VPN状态
+      _checkAndRestoreMobileVpnState();
+    } else if (state == AppLifecycleState.paused) {
+      debugPrint('应用进入后台');
+    }
+  }
+  
+  // 修复：检查并恢复移动端VPN状态
   Future<void> _checkAndRestoreMobileVpnState() async {
     // 仅移动端需要恢复
     if (!Platform.isAndroid && !Platform.isIOS) return;
+    
+    // 避免重复执行恢复逻辑
+    if (_isRestoringState) {
+      debugPrint('正在恢复状态中，跳过重复调用');
+      return;
+    }
+    
+    _isRestoringState = true;
     
     try {
       final connectionProvider = Provider.of<ConnectionProvider>(context, listen: false);
@@ -138,6 +167,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // 通过原生通道检查VPN是否已连接
       const channel = MethodChannel('com.example.cfvpn/v2ray');
       final isConnected = await channel.invokeMethod<bool>('isVpnConnected') ?? false;
+      
+      debugPrint('检查VPN连接状态: $isConnected');
       
       if (isConnected) {
         // VPN已连接，检查Dart端状态是否同步
@@ -151,8 +182,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               // 恢复连接开始时间
               final connectTime = DateTime.fromMillisecondsSinceEpoch(startTime);
               
-              // 调用恢复方法
+              // 恢复ConnectionProvider状态（按钮显示）
               await connectionProvider.restoreMobileConnectionState(connectTime);
+              
+              // 修复：恢复V2RayService状态并启动流量统计定时器
+              await V2RayService.restoreMobileConnectionState(connectTime);
               
               // 立即启动连接时间定时器
               _startConnectedTimeTimer();
@@ -160,10 +194,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               debugPrint('已从Native恢复VPN连接状态，连接时间: $connectTime');
             }
           }
+        } else {
+          debugPrint('VPN已连接且状态已同步，无需恢复');
         }
+      } else {
+        debugPrint('VPN未连接，无需恢复');
       }
     } catch (e) {
       debugPrint('恢复VPN状态失败: $e');
+    } finally {
+      _isRestoringState = false;
     }
   }
   
