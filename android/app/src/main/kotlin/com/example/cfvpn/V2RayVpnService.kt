@@ -90,22 +90,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private val instance: V2RayVpnService?
             get() = instanceRef?.get()
         
-        // 【核心修改】所有流量统计变量都改为静态
+        // 【核心修改】流量统计变量改为公开，供MainActivity直接访问
         @Volatile
-        private var uploadBytes: Long = 0
+        @JvmField
+        var uploadBytes: Long = 0
         
         @Volatile
-        private var downloadBytes: Long = 0
+        @JvmField
+        var downloadBytes: Long = 0
         
         @Volatile
-        private var uploadSpeed: Long = 0
+        @JvmField
+        var uploadSpeed: Long = 0
         
         @Volatile
-        private var downloadSpeed: Long = 0
+        @JvmField
+        var downloadSpeed: Long = 0
         
         @Volatile
-        private var startTime: Long = 0
+        @JvmField
+        var startTime: Long = 0
         
+        // 内部计算用的变量，保持私有
         @Volatile
         private var totalUploadBytes: Long = 0
         
@@ -217,16 +223,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        @JvmStatic
-        fun getTrafficStats(): Map<String, Long> {
-            return mapOf(
-                "uploadTotal" to uploadBytes,
-                "downloadTotal" to downloadBytes,
-                "uploadSpeed" to uploadSpeed,
-                "downloadSpeed" to downloadSpeed,
-                "startTime" to startTime
-            )
-        }
+        // 【已删除】getTrafficStats() 方法，不再需要，MainActivity直接访问公开变量
     }
     
     // 核心组件
@@ -269,7 +266,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 流量统计 - 保留这个用于内部计算
     private var lastStatsTime: Long = 0
     private val outboundTags = mutableListOf<String>()
-    // 【已删除】totalUploadBytes 和 totalDownloadBytes 移到了 companion object
     
     // 任务管理
     private var statsJob: Job? = null
@@ -1506,7 +1502,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             lastStatsTime = currentTime
             
-            // 【关键修改】更新静态变量
+            // 【关键修改】更新公开的静态变量
             uploadBytes = totalUploadBytes
             downloadBytes = totalDownloadBytes
             
@@ -1581,7 +1577,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         releaseWakeLock()
         
-        // 【重要】重置所有静态流量统计变量
+        // 【重要】重置所有公开的静态流量统计变量
         uploadBytes = 0
         downloadBytes = 0
         uploadSpeed = 0
@@ -1841,7 +1837,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 释放WakeLock
         releaseWakeLock()
         
-        // 【重要】重置所有静态流量统计变量
+        // 【重要】重置所有公开的静态流量统计变量
         uploadBytes = 0
         downloadBytes = 0
         uploadSpeed = 0
