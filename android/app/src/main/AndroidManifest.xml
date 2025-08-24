@@ -28,7 +28,7 @@
     <!-- 存储权限（可选，用于导入配置） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     
-    <!-- Android 13+ 媒体权限（新增：用于导入配置） -->
+    <!-- Android 13+ 媒体权限（用于导入配置） -->
     <uses-permission 
         android:name="android.permission.READ_MEDIA_IMAGES" 
         android:minSdkVersion="33" />
@@ -36,24 +36,11 @@
     <!-- 开机自启动权限 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     
-    <!-- 防止休眠（可选，保持服务稳定） -->
+    <!-- 防止休眠（保持服务稳定） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     
-    <!-- 电池优化豁免权限（新增：提高后台稳定性） -->
+    <!-- 电池优化豁免权限（提高后台稳定性） -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    
-    <!-- ContentProvider自定义权限声明 -->
-    <permission
-        android:name="com.example.cfvpn.permission.READ_TRAFFIC_STATS"
-        android:protectionLevel="signature" />
-    
-    <permission
-        android:name="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS"
-        android:protectionLevel="signature" />
-    
-    <!-- 声明使用ContentProvider权限 -->
-    <uses-permission android:name="com.example.cfvpn.permission.READ_TRAFFIC_STATS" />
-    <uses-permission android:name="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS" />
 
     <application
         android:label="CFVPN"
@@ -82,7 +69,7 @@
             </intent-filter>
         </activity>
         
-        <!-- V2Ray VPN服务声明（已优化） -->
+        <!-- V2Ray VPN服务声明 -->
         <service
             android:name=".V2RayVpnService"
             android:enabled="true"
@@ -91,8 +78,6 @@
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
             android:process=":vpn">
-            <!-- 新增：android:label 服务标签 -->
-            <!-- 新增：android:process 独立进程运行，提高稳定性 -->
             
             <!-- VPN服务必需的intent-filter -->
             <intent-filter>
@@ -111,17 +96,15 @@
         </service>
         
         <!-- 流量统计ContentProvider -->
-        <!-- 重要：必须运行在与V2RayVpnService相同的进程中 -->
+        <!-- 【修复】移除权限限制，仅应用内访问 -->
         <provider
             android:name=".TrafficStatsProvider"
             android:authorities="com.example.cfvpn.trafficprovider"
             android:enabled="true"
-            android:exported="true"
-            android:process=":vpn"
-            android:readPermission="com.example.cfvpn.permission.READ_TRAFFIC_STATS"
-            android:writePermission="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS" />
+            android:exported="false"
+            android:process=":vpn" />
         
-        <!-- 开机自启动接收器（已增强） -->
+        <!-- 开机自启动接收器 -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="false"
@@ -130,7 +113,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <!-- 新增：支持加密设备的更早启动 -->
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
