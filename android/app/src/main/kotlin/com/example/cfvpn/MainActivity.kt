@@ -199,16 +199,21 @@ class MainActivity: FlutterActivity() {
                             VpnFileLogger.d(TAG, "使用SharedPreferences更新通知栏文字")
                             
                             // 保存到 SharedPreferences（不保存时间戳）
-                            val prefs = getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
-                            prefs.edit().apply {
+                            val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                                getSharedPreferences("notification_strings", Context.MODE_MULTI_PROCESS)
+                            } else {
+                                getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
+                            }
+                            val success = prefs.edit().apply {
                                 localizedStrings.forEach { (key, value) ->
                                     putString(key, value)
                                 }
-                                apply()
-                            }
+                            }.commit()
                             
-                            // 发送广播通知服务更新
-                            sendBroadcast(Intent(ACTION_UPDATE_NOTIFICATION))
+                            if (success) {
+                                // 发送广播通知服务更新
+                                sendBroadcast(Intent(ACTION_UPDATE_NOTIFICATION))
+                            }
                             
                             result.success(true)
                         } else {
@@ -228,9 +233,13 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "isVpnConnected" -> {
-                    // 检查VPN是否连接 - 直接从 SharedPreferences 读取状态
+                    // 检查VPN是否连接 - 从 SharedPreferences 读取状态
                     try {
-                        val prefs = getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+                        val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                            getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+                        } else {
+                            getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+                        }
                         val isConnected = prefs.getBoolean("isConnected", false)
                         
                         // 双重验证：如果SharedPreferences显示已连接，再检查进程确保准确
@@ -248,9 +257,13 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "getTrafficStats" -> {
-                    // 从 SharedPreferences 读取流量数据，不检查时间戳
+                    // 从 SharedPreferences 读取流量数据
                     try {
-                        val prefs = getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                        val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                            getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+                        } else {
+                            getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                        }
                         
                         val stats = mapOf(
                             "uploadTotal" to prefs.getLong("uploadTotal", 0),
@@ -396,12 +409,21 @@ class MainActivity: FlutterActivity() {
             if (!isVpnServiceRunning()) {
                 VpnFileLogger.d(TAG, "服务未运行，清理残留数据")
                 // 服务未运行，清理所有残留数据
-                getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
-                    .edit().clear().apply()
-                getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
-                    .edit().clear().apply()
-                getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
-                    .edit().clear().apply()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                    getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+                        .edit().clear().commit()
+                    getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+                        .edit().clear().commit()
+                    getSharedPreferences("notification_strings", Context.MODE_MULTI_PROCESS)
+                        .edit().clear().commit()
+                } else {
+                    getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                        .edit().clear().commit()
+                    getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+                        .edit().clear().commit()
+                    getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
+                        .edit().clear().commit()
+                }
             } else {
                 VpnFileLogger.d(TAG, "服务正在运行，保留数据")
             }
@@ -596,13 +618,23 @@ class MainActivity: FlutterActivity() {
         
         // 提前清理 SharedPreferences 缓存（三重清理机制之一）
         try {
-            // 清理流量统计
-            getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
-                .edit().clear().apply()
-            
-            // 清理服务状态
-            getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                // 清理流量统计
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+                    .edit().clear().commit()
+                
+                // 清理服务状态
+                getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+                    .edit().clear().commit()
+            } else {
+                // 清理流量统计
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                    .edit().clear().commit()
+                
+                // 清理服务状态
+                getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+                    .edit().clear().commit()
+            }
         } catch (e: Exception) {
             // 忽略错误
         }
