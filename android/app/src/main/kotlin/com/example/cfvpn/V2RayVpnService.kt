@@ -15,7 +15,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Binder
 import android.os.Build
+import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.system.Os
@@ -54,6 +56,38 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         CONNECTING,
         CONNECTED
     }
+    
+    /**
+     * Binder内部类 - 用于跨进程通信
+     */
+    inner class VpnBinder : Binder() {
+        /**
+         * 获取服务实例（用于同进程）
+         */
+        fun getService(): V2RayVpnService = this@V2RayVpnService
+        
+        /**
+         * 获取流量统计（跨进程安全）
+         */
+        fun getTrafficStats(): Map<String, Long> {
+            return mapOf(
+                "uploadTotal" to uploadBytes,
+                "downloadTotal" to downloadBytes,
+                "uploadSpeed" to uploadSpeed,
+                "downloadSpeed" to downloadSpeed,
+                "startTime" to startTime
+            )
+        }
+        
+        /**
+         * 检查VPN是否连接（跨进程安全）
+         */
+        fun isVpnConnected(): Boolean {
+            return currentState == V2RayState.CONNECTED
+        }
+    }
+    
+    private val binder = VpnBinder()
     
     companion object {
         private const val TAG = "V2RayVpnService"
@@ -289,6 +323,14 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 stopV2Ray()
             }
         }
+    }
+    
+    /**
+     * 【新增】onBind实现 - 返回Binder用于跨进程通信
+     */
+    override fun onBind(intent: Intent?): IBinder? {
+        VpnFileLogger.d(TAG, "onBind被调用")
+        return binder
     }
     
     /**
