@@ -226,6 +226,43 @@ class V2RayService {
     }
   }
   
+  // ============ 新增：移动端连接状态恢复方法 ============
+  /// 恢复移动端连接状态（应用从后台恢复时调用）
+  /// 此方法会恢复V2RayService的内部状态并启动流量统计定时器
+  /// 
+  /// @param connectTime 连接开始时间
+  static Future<void> restoreMobileConnectionState(DateTime connectTime) async {
+    // 仅在移动平台执行
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      await _log.debug('非移动平台，跳过状态恢复', tag: _logTag);
+      return;
+    }
+    
+    await _log.info('恢复移动端V2Ray连接状态', tag: _logTag);
+    
+    // 恢复运行状态
+    _isRunning = true;
+    
+    // 恢复连接时间
+    _connectionStartTime = connectTime;
+    
+    // 更新连接状态
+    _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+    
+    // 确保通道已初始化
+    if (!_isChannelInitialized) {
+      _initializeChannelListeners();
+    }
+    
+    // 启动移动端状态定时器（会自动停止旧的定时器）
+    _startMobileStatusTimer();
+    
+    // 立即更新一次状态，确保UI能立即显示流量数据
+    await _updateMobileStatus();
+    
+    await _log.info('移动端V2Ray状态恢复完成', tag: _logTag);
+  }
+  
   // ============ 移动平台方法 ============
   // 初始化原生通道监听器（移动平台）
   static void _initializeChannelListeners() {
