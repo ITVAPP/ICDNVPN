@@ -41,6 +41,19 @@
     
     <!-- 电池优化豁免权限（新增：提高后台稳定性） -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    
+    <!-- ContentProvider自定义权限声明 -->
+    <permission
+        android:name="com.example.cfvpn.permission.READ_TRAFFIC_STATS"
+        android:protectionLevel="signature" />
+    
+    <permission
+        android:name="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS"
+        android:protectionLevel="signature" />
+    
+    <!-- 声明使用ContentProvider权限 -->
+    <uses-permission android:name="com.example.cfvpn.permission.READ_TRAFFIC_STATS" />
+    <uses-permission android:name="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS" />
 
     <application
         android:label="CFVPN"
@@ -96,6 +109,17 @@
                 android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
                 android:value="true" />
         </service>
+        
+        <!-- 流量统计ContentProvider -->
+        <!-- 重要：必须运行在与V2RayVpnService相同的进程中 -->
+        <provider
+            android:name=".TrafficStatsProvider"
+            android:authorities="com.example.cfvpn.trafficprovider"
+            android:enabled="true"
+            android:exported="true"
+            android:process=":vpn"
+            android:readPermission="com.example.cfvpn.permission.READ_TRAFFIC_STATS"
+            android:writePermission="com.example.cfvpn.permission.WRITE_TRAFFIC_STATS" />
         
         <!-- 开机自启动接收器（已增强） -->
         <receiver
