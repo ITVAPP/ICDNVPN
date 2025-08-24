@@ -211,9 +211,15 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "getTrafficStats" -> {
-                    // 简化版：直接返回V2RayVpnService的原始数据
+                    // 【核心修改】直接访问V2RayVpnService的公开静态变量
                     try {
-                        val stats = V2RayVpnService.getTrafficStats()
+                        val stats = mapOf(
+                            "uploadTotal" to V2RayVpnService.uploadBytes,
+                            "downloadTotal" to V2RayVpnService.downloadBytes,
+                            "uploadSpeed" to V2RayVpnService.uploadSpeed,
+                            "downloadSpeed" to V2RayVpnService.downloadSpeed,
+                            "startTime" to V2RayVpnService.startTime
+                        )
                         VpnFileLogger.d(TAG, "返回流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
                         result.success(stats)
                     } catch (e: Exception) {
