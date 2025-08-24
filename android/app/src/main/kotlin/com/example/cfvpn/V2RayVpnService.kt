@@ -243,16 +243,30 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 修复：使用SupervisorJob防止级联取消
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
     
-    // 流量统计
-    private var uploadBytes: Long = 0
-    private var downloadBytes: Long = 0
-    private var uploadSpeed: Long = 0
-    private var downloadSpeed: Long = 0
-    private var lastStatsTime: Long = 0
-    private var startTime: Long = 0
+    // 流量统计 - 【关键修改】改为静态变量，避免实例被回收导致数据丢失
     private val outboundTags = mutableListOf<String>()
-    private var totalUploadBytes: Long = 0
-    private var totalDownloadBytes: Long = 0
+    
+    companion object {
+        // 【关键修改】将流量统计变量移到companion object中作为静态变量
+        @Volatile
+        private var staticUploadBytes: Long = 0
+        @Volatile
+        private var staticDownloadBytes: Long = 0
+        @Volatile
+        private var staticUploadSpeed: Long = 0
+        @Volatile
+        private var staticDownloadSpeed: Long = 0
+        @Volatile
+        private var staticStartTime: Long = 0
+        
+        // 临时变量用于速度计算
+        @Volatile
+        private var lastStatsTime: Long = 0
+        @Volatile
+        private var totalUploadBytes: Long = 0
+        @Volatile
+        private var totalDownloadBytes: Long = 0
+    }
     
     // 任务管理
     private var statsJob: Job? = null
