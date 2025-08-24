@@ -307,9 +307,13 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
      */
     private fun updateNotificationFromPrefs() {
         try {
-            val prefs = getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
+            val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                getSharedPreferences("notification_strings", Context.MODE_MULTI_PROCESS)
+            } else {
+                getSharedPreferences("notification_strings", Context.MODE_PRIVATE)
+            }
             
-            // 【简化】直接读取，不检查时间戳
+            // 直接读取，不检查时间戳
             instanceLocalizedStrings.clear()
             
             // 读取所有本地化字符串
@@ -346,15 +350,24 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         currentState = newState
         
         try {
-            val prefs = getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
-            prefs.edit().apply {
-                putBoolean("isConnected", newState == V2RayState.CONNECTED)
-                putString("state", newState.name)
-                apply()
+            val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+            } else {
+                getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
             }
-            VpnFileLogger.d(TAG, "服务状态已更新到SharedPreferences: $newState")
+            
+            val success = prefs.edit()
+                .putBoolean("isConnected", newState == V2RayState.CONNECTED)
+                .putString("state", newState.name)
+                .commit()  // 使用 commit() 强制同步
+            
+            if (success) {
+                VpnFileLogger.d(TAG, "服务状态已更新到SharedPreferences: $newState")
+            } else {
+                VpnFileLogger.w(TAG, "保存服务状态失败")
+            }
         } catch (e: Exception) {
-            VpnFileLogger.w(TAG, "保存服务状态失败", e)
+            VpnFileLogger.w(TAG, "保存服务状态异常", e)
         }
     }
     
@@ -716,8 +729,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return START_NOT_STICKY
         }
         
-        // 【修复】从SharedPreferences检查是否已在运行，避免跨进程时检查失效
-        val prefs = getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+        // 从SharedPreferences检查是否已在运行，避免跨进程时检查失效
+        val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+            getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+        } else {
+            getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+        }
         val savedState = prefs.getString("state", "DISCONNECTED")
         if (savedState != "DISCONNECTED") {
             VpnFileLogger.w(TAG, "VPN服务已在运行或正在连接: $savedState")
@@ -1606,19 +1623,28 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             uploadBytes = totalUploadBytes
             downloadBytes = totalDownloadBytes
             
-            // 【简化】保存到 SharedPreferences 供主进程读取，不保存时间戳
+            // 保存到 SharedPreferences 供主进程读取 - 使用 commit() 强制同步
             try {
-                val prefs = getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
-                prefs.edit().apply {
-                    putLong("uploadTotal", totalUploadBytes)
-                    putLong("downloadTotal", totalDownloadBytes)
-                    putLong("uploadSpeed", uploadSpeed)
-                    putLong("downloadSpeed", downloadSpeed)
-                    putLong("startTime", startTime)
-                    apply()
+                // 使用 MODE_MULTI_PROCESS 确保跨进程同步
+                val prefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                    getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+                } else {
+                    getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                }
+                
+                val success = prefs.edit()
+                    .putLong("uploadTotal", totalUploadBytes)
+                    .putLong("downloadTotal", totalDownloadBytes)
+                    .putLong("uploadSpeed", uploadSpeed)
+                    .putLong("downloadSpeed", downloadSpeed)
+                    .putLong("startTime", startTime)
+                    .commit()  // 使用 commit() 而不是 apply()
+                
+                if (!success) {
+                    VpnFileLogger.w(TAG, "保存流量统计到SharedPreferences失败")
                 }
             } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "保存流量统计到SharedPreferences失败", e)
+                VpnFileLogger.w(TAG, "保存流量统计到SharedPreferences异常", e)
             }
             
             if (enableAutoStats) {
@@ -1695,12 +1721,20 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         // 【三重清理机制】清理所有 SharedPreferences 数据
         try {
             // 清理流量统计
-            getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+            val trafficPrefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+            } else {
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+            }
+            trafficPrefs.edit().clear().commit()
             
             // 清理服务状态
-            getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+            val statePrefs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+            } else {
+                getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+            }
+            statePrefs.edit().clear().commit()
             
             VpnFileLogger.d(TAG, "SharedPreferences数据已清理")
         } catch (e: Exception) {
@@ -1970,10 +2004,17 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         // 【三重清理机制】清理 SharedPreferences
         try {
-            getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
-                .edit().clear().apply()
-            getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_MULTI_PROCESS)
+                    .edit().clear().commit()
+                getSharedPreferences("vpn_service_state", Context.MODE_MULTI_PROCESS)
+                    .edit().clear().commit()
+            } else {
+                getSharedPreferences("vpn_traffic_stats", Context.MODE_PRIVATE)
+                    .edit().clear().commit()
+                getSharedPreferences("vpn_service_state", Context.MODE_PRIVATE)
+                    .edit().clear().commit()
+            }
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "清理SharedPreferences失败", e)
         }
