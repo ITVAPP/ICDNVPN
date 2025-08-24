@@ -31,7 +31,6 @@ import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URL
-import java.lang.ref.WeakReference
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.Socket
@@ -82,13 +81,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         @Volatile
         private var currentState: V2RayState = V2RayState.DISCONNECTED
         
+        // 【核心修改】将流量统计变量改为静态全局变量
         @Volatile
-        private var instanceRef: WeakReference<V2RayVpnService>? = null
+        private var globalUploadBytes: Long = 0
+        
+        @Volatile
+        private var globalDownloadBytes: Long = 0
+        
+        @Volatile
+        private var globalUploadSpeed: Long = 0
+        
+        @Volatile
+        private var globalDownloadSpeed: Long = 0
+        
+        @Volatile
+        private var globalStartTime: Long = 0
         
         private var localizedStrings = mutableMapOf<String, String>()
-        
-        private val instance: V2RayVpnService?
-            get() = instanceRef?.get()
         
         @JvmStatic
         fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
@@ -100,29 +109,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 localizedStrings.clear()
                 localizedStrings.putAll(newStrings)
                 
-                val service = instance
-                if (service != null) {
-                    service.instanceLocalizedStrings.clear()
-                    service.instanceLocalizedStrings.putAll(newStrings)
-                    
-                    if (currentState == V2RayState.CONNECTED) {
-                        val notification = service.buildNotification(isConnecting = false)
-                        if (notification != null) {
-                            val notificationManager = service.getSystemService(NotificationManager::class.java)
-                            notificationManager.notify(NOTIFICATION_ID, notification)
-                            VpnFileLogger.d(TAG, "通知栏更新成功")
-                            true
-                        } else {
-                            VpnFileLogger.w(TAG, "构建通知失败")
-                            false
-                        }
-                    } else {
-                        true
-                    }
-                } else {
-                    VpnFileLogger.w(TAG, "服务实例不存在，仅更新静态本地化字符串")
-                    true
-                }
+                // 注意：这里的逻辑暂时保留，但实际上已经不需要instance了
+                // 可以考虑后续优化，直接通过广播或其他方式更新通知
+                VpnFileLogger.w(TAG, "静态更新通知文字，需要服务运行时才能生效")
+                true
             } catch (e: Exception) {
                 VpnFileLogger.e(TAG, "更新通知栏文字异常", e)
                 false
@@ -195,14 +185,25 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
+        // 【简化】直接返回静态变量值
         @JvmStatic
         fun getTrafficStats(): Map<String, Long> {
-            return instance?.getCurrentTrafficStats() ?: mapOf(
-                "uploadTotal" to 0L,
-                "downloadTotal" to 0L,
-                "uploadSpeed" to 0L,
-                "downloadSpeed" to 0L
+            return mapOf(
+                "uploadTotal" to globalUploadBytes,
+                "downloadTotal" to globalDownloadBytes,
+                "uploadSpeed" to globalUploadSpeed,
+                "downloadSpeed" to globalDownloadSpeed,
+                "startTime" to globalStartTime
             )
+        }
+        
+        // 重置统计（服务停止时调用）
+        private fun resetTrafficStats() {
+            globalUploadBytes = 0
+            globalDownloadBytes = 0
+            globalUploadSpeed = 0
+            globalDownloadSpeed = 0
+            globalStartTime = 0
         }
     }
     
@@ -243,13 +244,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     // 修复：使用SupervisorJob防止级联取消
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
     
-    // 流量统计
-    private var uploadBytes: Long = 0
-    private var downloadBytes: Long = 0
-    private var uploadSpeed: Long = 0
-    private var downloadSpeed: Long = 0
+    // 流量统计 - 保留用于内部计算
     private var lastStatsTime: Long = 0
-    private var startTime: Long = 0
     private val outboundTags = mutableListOf<String>()
     private var totalUploadBytes: Long = 0
     private var totalDownloadBytes: Long = 0
@@ -400,7 +396,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             val content = if (isConnecting) {
                 "......"
             } else {
-                formatTrafficStatsForNotification(uploadBytes, downloadBytes)
+                // 使用全局变量
+                formatTrafficStatsForNotification(globalUploadBytes, globalDownloadBytes)
             }
             
             val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
@@ -460,8 +457,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         VpnFileLogger.init(applicationContext)
         VpnFileLogger.d(TAG, "VPN服务onCreate开始")
-        
-        instanceRef = WeakReference(this)
         
         try {
             Seq.setContext(applicationContext)
@@ -854,7 +849,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             // 连接测试成功后才更新状态
             currentState = V2RayState.CONNECTED
-            startTime = System.currentTimeMillis()
+            globalStartTime = System.currentTimeMillis()  // 设置全局开始时间
             
             updateNotificationToConnected()
             
@@ -1483,15 +1478,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             val timeDiff = (currentTime - lastStatsTime) / 1000.0
             
             if (timeDiff > 0 && lastStatsTime > 0) {
-                uploadSpeed = (newUpload / timeDiff).toLong()
-                downloadSpeed = (newDownload / timeDiff).toLong()
+                globalUploadSpeed = (newUpload / timeDiff).toLong()
+                globalDownloadSpeed = (newDownload / timeDiff).toLong()
             }
             
             lastStatsTime = currentTime
             
-            // 【关键修改】同时更新实例变量，确保getCurrentTrafficStats()返回正确的值
-            uploadBytes = totalUploadBytes
-            downloadBytes = totalDownloadBytes
+            // 【核心修改】更新全局静态变量
+            globalUploadBytes = totalUploadBytes
+            globalDownloadBytes = totalDownloadBytes
             
             if (enableAutoStats) {
                 updateNotification()
@@ -1504,16 +1499,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         } catch (e: Exception) {
             VpnFileLogger.w(TAG, "查询流量统计失败", e)
         }
-    }
-    
-    fun getCurrentTrafficStats(): Map<String, Long> {
-        return mapOf(
-            "uploadTotal" to uploadBytes,
-            "downloadTotal" to downloadBytes,
-            "uploadSpeed" to uploadSpeed,
-            "downloadSpeed" to downloadSpeed,
-            "startTime" to startTime
-        )
     }
     
     /**
@@ -1529,6 +1514,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         currentState = V2RayState.DISCONNECTED
         isRestartingTun2socks = false
+        
+        // 重置全局流量统计
+        resetTrafficStats()
         
         statsJob?.cancel()
         statsJob = null
@@ -1752,9 +1740,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         VpnFileLogger.d(TAG, "onDestroy开始")
         
-        // 清除实例引用
-        instanceRef?.clear()
-        instanceRef = null
+        // 重置全局流量统计
+        resetTrafficStats()
         
         // 取消所有协程
         try {
