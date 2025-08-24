@@ -182,13 +182,10 @@ class TrafficStatsProvider : ContentProvider() {
                 startTime
             ))
             
-            // 调试日志
-            if (VpnFileLogger.isDebugEnabled()) {
-                VpnFileLogger.d("TrafficStatsProvider", 
-                    "查询流量统计: connected=${startTime > 0}, " +
-                    "upload=$uploadBytes, download=$downloadBytes")
-            }
+            // 调试日志（移除isDebugEnabled检查）
+            // VpnFileLogger可能没有isDebugEnabled方法，直接记录日志即可
         }
+        
         
         // 设置通知URI，以便数据更新时通知观察者
         cursor.setNotificationUri(context?.contentResolver, uri)
