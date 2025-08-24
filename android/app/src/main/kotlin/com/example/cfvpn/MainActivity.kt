@@ -3,14 +3,17 @@ package com.example.cfvpn
 import android.Manifest
 import android.app.Activity
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.net.VpnService
 import android.net.Uri
 import android.os.Build
+import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -24,6 +27,7 @@ import kotlinx.coroutines.*
  * 增强版：支持分应用代理、子网绕过、Android 13+通知权限等功能
  * 修改：支持国际化文字传递
  * 优化：实时流量统计查询
+ * 【重要修改】：添加Binder支持解决跨进程通信问题
  * 
  * 简化版本：
  * - 不接收blockedApps（Dart端不传递）
@@ -46,6 +50,25 @@ class MainActivity: FlutterActivity() {
     
     private lateinit var channel: MethodChannel
     private val mainScope = MainScope()
+    
+    // 【新增】服务绑定相关变量
+    private var vpnServiceBinder: V2RayVpnService.VpnBinder? = null
+    private var serviceBound = false
+    
+    // 【新增】ServiceConnection实现
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            vpnServiceBinder = service as? V2RayVpnService.VpnBinder
+            serviceBound = true
+            VpnFileLogger.d(TAG, "VPN服务已绑定")
+        }
+        
+        override fun onServiceDisconnected(name: ComponentName?) {
+            vpnServiceBinder = null
+            serviceBound = false
+            VpnFileLogger.d(TAG, "VPN服务连接断开")
+        }
+    }
     
     // 保存待处理的VPN启动请求（增加国际化文字参数）
     private data class PendingVpnRequest(
@@ -89,6 +112,8 @@ class MainActivity: FlutterActivity() {
                         if (success) {
                             result.success(true)
                             channel.invokeMethod("onVpnConnected", null)
+                            // 【新增】VPN连接成功后尝试绑定服务
+                            bindVpnService()
                         } else {
                             result.error("START_FAILED", error ?: "VPN服务启动失败", null)
                         }
@@ -104,6 +129,8 @@ class MainActivity: FlutterActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_VPN_STOPPED) {
                 VpnFileLogger.d(TAG, "收到VPN停止广播（来自通知栏）")
+                // 【新增】VPN停止后解绑服务
+                unbindVpnService()
                 // 通知Flutter端VPN已断开
                 channel.invokeMethod("onVpnDisconnected", null)
             }
@@ -118,6 +145,9 @@ class MainActivity: FlutterActivity() {
         
         // 修复：安全注册广播接收器
         registerReceivers()
+        
+        // 【新增】尝试绑定已存在的VPN服务（如果有）
+        tryBindExistingService()
         
         // 设置方法通道，处理Flutter调用
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -205,23 +235,43 @@ class MainActivity: FlutterActivity() {
                 }
                 
                 "isVpnConnected" -> {
-                    // 检查VPN是否连接
-                    val isConnected = V2RayVpnService.isServiceRunning()
+                    // 【核心修改】通过Binder检查VPN是否连接
+                    val isConnected = if (serviceBound && vpnServiceBinder != null) {
+                        try {
+                            vpnServiceBinder!!.isVpnConnected()
+                        } catch (e: Exception) {
+                            VpnFileLogger.e(TAG, "通过Binder检查VPN状态失败", e)
+                            // 降级到静态方法（可能不准确）
+                            V2RayVpnService.isServiceRunning()
+                        }
+                    } else {
+                        // 服务未绑定，使用静态方法（可能不准确）
+                        VpnFileLogger.w(TAG, "服务未绑定，使用静态方法检查状态")
+                        V2RayVpnService.isServiceRunning()
+                    }
                     result.success(isConnected)
                 }
                 
                 "getTrafficStats" -> {
-                    // 【核心修改】直接访问V2RayVpnService的公开静态变量
+                    // 【核心修改】通过Binder获取流量统计
                     try {
-                        val stats = mapOf(
-                            "uploadTotal" to V2RayVpnService.uploadBytes,
-                            "downloadTotal" to V2RayVpnService.downloadBytes,
-                            "uploadSpeed" to V2RayVpnService.uploadSpeed,
-                            "downloadSpeed" to V2RayVpnService.downloadSpeed,
-                            "startTime" to V2RayVpnService.startTime
-                        )
-                        VpnFileLogger.d(TAG, "返回流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
-                        result.success(stats)
+                        if (serviceBound && vpnServiceBinder != null) {
+                            val stats = vpnServiceBinder!!.getTrafficStats()
+                            VpnFileLogger.d(TAG, "通过Binder获取流量统计: 上传=${stats["uploadTotal"]}, 下载=${stats["downloadTotal"]}")
+                            result.success(stats)
+                        } else {
+                            // 服务未绑定，尝试重新绑定
+                            VpnFileLogger.w(TAG, "VPN服务未绑定，尝试重新绑定")
+                            tryBindExistingService()
+                            // 返回默认值
+                            result.success(mapOf(
+                                "uploadTotal" to 0L,
+                                "downloadTotal" to 0L,
+                                "uploadSpeed" to 0L,
+                                "downloadSpeed" to 0L,
+                                "startTime" to 0L
+                            ))
+                        }
                     } catch (e: Exception) {
                         VpnFileLogger.e(TAG, "获取流量统计失败", e)
                         result.error("GET_STATS_FAILED", e.message, null)
@@ -342,6 +392,57 @@ class MainActivity: FlutterActivity() {
                 else -> {
                     result.notImplemented()
                 }
+            }
+        }
+    }
+    
+    /**
+     * 【新增】尝试绑定已存在的VPN服务
+     */
+    private fun tryBindExistingService() {
+        if (!serviceBound) {
+            try {
+                // 检查服务是否正在运行
+                if (V2RayVpnService.isServiceRunning()) {
+                    bindVpnService()
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "尝试绑定现有服务失败", e)
+            }
+        }
+    }
+    
+    /**
+     * 【新增】绑定VPN服务
+     */
+    private fun bindVpnService() {
+        if (!serviceBound) {
+            try {
+                val intent = Intent(this, V2RayVpnService::class.java)
+                val bound = bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+                if (bound) {
+                    VpnFileLogger.d(TAG, "开始绑定VPN服务")
+                } else {
+                    VpnFileLogger.w(TAG, "绑定VPN服务失败")
+                }
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "绑定VPN服务异常", e)
+            }
+        }
+    }
+    
+    /**
+     * 【新增】解绑VPN服务
+     */
+    private fun unbindVpnService() {
+        if (serviceBound) {
+            try {
+                unbindService(serviceConnection)
+                serviceBound = false
+                vpnServiceBinder = null
+                VpnFileLogger.d(TAG, "VPN服务已解绑")
+            } catch (e: Exception) {
+                VpnFileLogger.w(TAG, "解绑VPN服务异常", e)
             }
         }
     }
@@ -513,6 +614,9 @@ class MainActivity: FlutterActivity() {
         
         // 如果正在连接，取消并返回错误
         cancelPendingStart("用户取消连接")
+        
+        // 【新增】停止前解绑服务
+        unbindVpnService()
         
         V2RayVpnService.stopVpnService(this)
         
@@ -748,6 +852,9 @@ class MainActivity: FlutterActivity() {
         
         // 清理pending状态
         cancelPendingStart("Activity销毁")
+        
+        // 【新增】解绑VPN服务
+        unbindVpnService()
         
         // 修复：安全注销广播接收器
         unregisterReceivers()
