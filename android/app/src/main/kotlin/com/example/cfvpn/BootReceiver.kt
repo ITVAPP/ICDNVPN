@@ -104,6 +104,35 @@ class BootReceiver : BroadcastReceiver() {
     }
     
     /**
+     * 【修复】检查VPN服务是否正在运行
+     * 通过ContentProvider查询VPN状态，解决跨进程问题
+     * @param context Android上下文
+     * @return true表示VPN正在运行
+     */
+    private fun isVpnServiceRunning(context: Context): Boolean {
+        return try {
+            // 通过ContentProvider查询VPN状态
+            val cursor = context.contentResolver.query(
+                TrafficStatsProvider.CONTENT_URI,
+                null, null, null, null
+            )
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    // startTime > 0 表示VPN已连接
+                    val startTime = it.getLong(4)
+                    startTime > 0
+                } else {
+                    false
+                }
+            } ?: false
+        } catch (e: Exception) {
+            VpnFileLogger.e(TAG, "查询VPN状态失败", e)
+            false
+        }
+    }
+    
+    /**
      * 处理开机完成后的VPN启动流程
      * 检查配置、权限并重试启动VPN服务
      * @param context Android上下文
@@ -154,8 +183,8 @@ class BootReceiver : BroadcastReceiver() {
                 // 等待服务启动响应
                 delay(3000)
                 
-                // 验证VPN服务运行状态
-                success = V2RayVpnService.isServiceRunning()
+                // 【修复】使用新的方法验证VPN服务运行状态
+                success = isVpnServiceRunning(context)
                 
                 if (success) {
                     VpnFileLogger.i(TAG, "VPN服务启动成功")
@@ -445,5 +474,4 @@ object AutoStartManager {
             Pair(false, 10853)  // 返回默认配置
         }
     }
-
 }
