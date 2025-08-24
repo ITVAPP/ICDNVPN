@@ -46,6 +46,7 @@ import libv2ray.CoreCallbackHandler
 
 /**
  * V2Ray VPN服务实现
+ * 修复版本：解决跨进程状态同步问题
  */
 class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
@@ -61,7 +62,8 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_CHANNEL_ID = "v2ray_vpn_channel"
         private const val ACTION_STOP_VPN = "com.example.cfvpn.STOP_VPN"
         private const val ACTION_VPN_START_RESULT = "com.example.cfvpn.VPN_START_RESULT"
-        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"  // 新增：VPN停止广播
+        private const val ACTION_VPN_STOPPED = "com.example.cfvpn.VPN_STOPPED"
+        private const val ACTION_UPDATE_NOTIFICATION = "com.example.cfvpn.UPDATE_NOTIFICATION"  // 新增：更新通知广播
         private const val WAKELOCK_TAG = "cfvpn:v2ray"
         private const val ENABLE_IPV6 = false
         
@@ -79,52 +81,45 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         private const val TUN2SOCKS = "libtun2socks.so"
         private const val CONNECTION_CHECK_INTERVAL = 30000L
         
-        @Volatile
-        private var currentState: V2RayState = V2RayState.DISCONNECTED
+        // 【修复】移除跨进程不可见的静态状态变量
+        // 改为通过ContentProvider查询状态
         
-        @Volatile
-        private var instanceRef: WeakReference<V2RayVpnService>? = null
+        // 保留枚举以保持接口兼容性
+        enum class AppProxyMode {
+            EXCLUDE,
+            INCLUDE
+        }
         
-        private var localizedStrings = mutableMapOf<String, String>()
+        /**
+         * 【已移除】此静态方法存在跨进程问题
+         * 
+         * 正确用法：
+         * - 在MainActivity中：使用实例方法 isServiceRunning()
+         * - 在V2RayVpnService中：直接检查 currentState 变量
+         * 
+         * @deprecated 已移除，请勿使用
+         */
         
-        private val instance: V2RayVpnService?
-            get() = instanceRef?.get()
-        
+        /**
+         * 【修复】通过广播更新通知栏文字
+         * 移除对静态instance的依赖
+         */
         @JvmStatic
-        fun isServiceRunning(): Boolean = currentState == V2RayState.CONNECTED
-
-        @JvmStatic
-        fun updateNotificationStrings(newStrings: Map<String, String>): Boolean {
+        fun updateNotificationStrings(context: Context, newStrings: Map<String, String>): Boolean {
             return try {
-                VpnFileLogger.d(TAG, "开始更新通知栏本地化文字")
-                localizedStrings.clear()
-                localizedStrings.putAll(newStrings)
+                VpnFileLogger.d(TAG, "发送更新通知栏广播")
                 
-                val service = instance
-                if (service != null) {
-                    service.instanceLocalizedStrings.clear()
-                    service.instanceLocalizedStrings.putAll(newStrings)
-                    
-                    if (currentState == V2RayState.CONNECTED) {
-                        val notification = service.buildNotification(isConnecting = false)
-                        if (notification != null) {
-                            val notificationManager = service.getSystemService(NotificationManager::class.java)
-                            notificationManager.notify(NOTIFICATION_ID, notification)
-                            VpnFileLogger.d(TAG, "通知栏更新成功")
-                            true
-                        } else {
-                            VpnFileLogger.w(TAG, "构建通知失败")
-                            false
-                        }
-                    } else {
-                        true
+                val intent = Intent(ACTION_UPDATE_NOTIFICATION).apply {
+                    `package` = context.packageName  // 限制包内广播
+                    newStrings.forEach { (key, value) ->
+                        putExtra("l10n_$key", value)
                     }
-                } else {
-                    VpnFileLogger.w(TAG, "服务实例不存在，仅更新静态本地化字符串")
-                    true
                 }
+                
+                context.sendBroadcast(intent)
+                true
             } catch (e: Exception) {
-                VpnFileLogger.e(TAG, "更新通知栏文字异常", e)
+                VpnFileLogger.e(TAG, "发送更新通知栏广播失败", e)
                 false
             }
         }
@@ -148,9 +143,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             virtualDnsPort: Int = 10853
         ) {
             VpnFileLogger.d(TAG, "准备启动服务, 全局代理: $globalProxy, 虚拟DNS: $enableVirtualDns")
-            
-            this.localizedStrings.clear()
-            this.localizedStrings.putAll(localizedStrings)
             
             val intent = Intent(context, V2RayVpnService::class.java).apply {
                 action = "START_VPN"
@@ -178,12 +170,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // 保留枚举以保持接口兼容性
-        enum class AppProxyMode {
-            EXCLUDE,
-            INCLUDE
-        }
-        
         @JvmStatic
         fun stopVpnService(context: Context) {
             VpnFileLogger.d(TAG, "准备停止VPN服务")
@@ -196,6 +182,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
+    // 【修复】服务实例状态（仅在当前进程内使用）
+    @Volatile
+    private var currentState: V2RayState = V2RayState.DISCONNECTED
+    
     // 核心组件
     private var coreController: CoreController? = null
     private var mInterface: ParcelFileDescriptor? = null
@@ -207,13 +197,12 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var tun2socksRestartCount = 0
     private var tun2socksFirstRestartTime = 0L
     
-    // 修复：添加重启状态标记防止死循环
     @Volatile
     private var isRestartingTun2socks = false
     
     // 配置信息
     private var configJson: String = ""
-    private var configCache: JSONObject? = null  // 配置缓存
+    private var configCache: JSONObject? = null
     private var globalProxy: Boolean = false
     private var allowedApps: List<String> = emptyList()
     private var bypassSubnets: List<String> = emptyList()
@@ -223,20 +212,19 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     private var enableVirtualDns: Boolean = false
     private var configuredVirtualDnsPort: Int = 10853
     
+    // 本地化字符串（实例级别）
     private val instanceLocalizedStrings = mutableMapOf<String, String>()
     
-    // 修复：添加异常处理器
     private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
         VpnFileLogger.e(TAG, "协程异常", exception)
     }
     
-    // 修复：使用SupervisorJob防止级联取消
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
     
-    // 流量统计 - 保留用于内部计算
+    // 流量统计
     private var lastStatsTime: Long = 0
     private val outboundTags = mutableListOf<String>()
-    private var startTime: Long = 0  // 连接开始时间
+    private var startTime: Long = 0
     private var totalUploadBytes: Long = 0
     private var totalDownloadBytes: Long = 0
     
@@ -251,15 +239,43 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     @Volatile
     private var startupLatch: CompletableDeferred<Boolean>? = null
     
-    // 修复：添加广播接收器注册状态
     @Volatile
     private var stopReceiverRegistered = false
+    
+    @Volatile
+    private var updateNotificationReceiverRegistered = false
     
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_STOP_VPN) {
                 VpnFileLogger.d(TAG, "收到停止VPN广播")
                 stopV2Ray()
+            }
+        }
+    }
+    
+    /**
+     * 【新增】更新通知栏广播接收器
+     */
+    private val updateNotificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_UPDATE_NOTIFICATION) {
+                VpnFileLogger.d(TAG, "收到更新通知栏广播")
+                
+                // 提取国际化文字
+                instanceLocalizedStrings.clear()
+                instanceLocalizedStrings["appName"] = intent?.getStringExtra("l10n_appName") ?: "CFVPN"
+                instanceLocalizedStrings["notificationChannelName"] = intent?.getStringExtra("l10n_notificationChannelName") ?: "VPN服务"
+                instanceLocalizedStrings["notificationChannelDesc"] = intent?.getStringExtra("l10n_notificationChannelDesc") ?: "VPN连接状态通知"
+                instanceLocalizedStrings["globalProxyMode"] = intent?.getStringExtra("l10n_globalProxyMode") ?: "全局代理模式"
+                instanceLocalizedStrings["smartProxyMode"] = intent?.getStringExtra("l10n_smartProxyMode") ?: "智能代理模式"
+                instanceLocalizedStrings["disconnectButtonName"] = intent?.getStringExtra("l10n_disconnectButtonName") ?: "断开"
+                instanceLocalizedStrings["trafficStatsFormat"] = intent?.getStringExtra("l10n_trafficStatsFormat") ?: "流量: ↑%upload ↓%download"
+                
+                // 更新通知
+                if (currentState == V2RayState.CONNECTED) {
+                    updateNotificationToConnected()
+                }
             }
         }
     }
@@ -274,7 +290,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         
         return try {
             val config = JSONObject(configJson)
-            // 已删除validateGeoRules调用
             configCache = config
             config
         } catch (e: Exception) {
@@ -447,8 +462,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         VpnFileLogger.init(applicationContext)
         VpnFileLogger.d(TAG, "VPN服务onCreate开始")
         
-        instanceRef = WeakReference(this)
-        
         try {
             Seq.setContext(applicationContext)
             VpnFileLogger.d(TAG, "Go运行时初始化成功")
@@ -458,8 +471,9 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return
         }
         
-        // 修复：安全注册广播接收器
+        // 注册广播接收器
         registerStopReceiver()
+        registerUpdateNotificationReceiver()
         
         copyAssetFiles()
         
@@ -481,7 +495,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复：安全注册停止广播接收器
+     * 安全注册停止广播接收器
      */
     private fun registerStopReceiver() {
         if (!stopReceiverRegistered) {
@@ -496,7 +510,23 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     /**
-     * 修复：安全注销停止广播接收器
+     * 【新增】注册更新通知栏广播接收器
+     */
+    private fun registerUpdateNotificationReceiver() {
+        if (!updateNotificationReceiverRegistered) {
+            try {
+                val filter = IntentFilter(ACTION_UPDATE_NOTIFICATION)
+                registerReceiver(updateNotificationReceiver, filter)
+                updateNotificationReceiverRegistered = true
+                VpnFileLogger.d(TAG, "更新通知栏广播接收器注册成功")
+            } catch (e: Exception) {
+                VpnFileLogger.e(TAG, "注册更新通知栏广播接收器失败", e)
+            }
+        }
+    }
+    
+    /**
+     * 安全注销停止广播接收器
      */
     private fun unregisterStopReceiver() {
         if (stopReceiverRegistered) {
@@ -504,6 +534,21 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 unregisterReceiver(stopReceiver)
                 stopReceiverRegistered = false
                 VpnFileLogger.d(TAG, "停止广播接收器注销成功")
+            } catch (e: Exception) {
+                // 忽略异常
+            }
+        }
+    }
+    
+    /**
+     * 【新增】注销更新通知栏广播接收器
+     */
+    private fun unregisterUpdateNotificationReceiver() {
+        if (updateNotificationReceiverRegistered) {
+            try {
+                unregisterReceiver(updateNotificationReceiver)
+                updateNotificationReceiverRegistered = false
+                VpnFileLogger.d(TAG, "更新通知栏广播接收器注销成功")
             } catch (e: Exception) {
                 // 忽略异常
             }
@@ -591,17 +636,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             return START_NOT_STICKY
         }
         
-        // 修复：防止重复启动
         if (currentState != V2RayState.DISCONNECTED) {
             VpnFileLogger.w(TAG, "VPN服务已在运行或正在连接")
-            // 不发送失败广播，避免误导调用方
             return START_STICKY
         }
         
         currentState = V2RayState.CONNECTING
         v2rayCoreStarted = false
-        configCache = null  // 清除配置缓存
-        isRestartingTun2socks = false  // 重置重启标记
+        configCache = null
+        isRestartingTun2socks = false
         
         // 获取配置
         enableVirtualDns = intent.getBooleanExtra("enableVirtualDns", false)
@@ -752,7 +795,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 启动V2Ray(VPN模式)
-     * 修改：添加同步的连接测试，测试成功后才返回成功
      */
     private suspend fun startV2RayWithVPN() = withContext(Dispatchers.IO) {
         VpnFileLogger.d(TAG, "startV2RayWithVPN开始")
@@ -828,7 +870,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             // 启动tun2socks
             runTun2socks()
             
-            // 【关键修改】等待并验证连接是否真正可用
+            // 等待并验证连接是否真正可用
             VpnFileLogger.d(TAG, "开始验证远程服务器连接...")
             val connectionTestSuccess = verifyRemoteConnection()
             
@@ -877,7 +919,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "启动V2Ray失败: ${e.message}")
             
-            // 修复：确保资源清理
             try {
                 cleanupResources()
             } catch (cleanupError: Exception) {
@@ -893,7 +934,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 简化的远程连接验证
-     * 只测试必要的项目：通过SOCKS代理访问远程服务器
      */
     private suspend fun verifyRemoteConnection(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -930,7 +970,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     private fun updateNotificationToConnected() {
         try {
-            // 【关键修改】更新ContentProvider状态
+            // 【关键修改】更新ContentProvider状态，传入连接时间
             TrafficStatsProvider.updateStats(0, 0, 0, 0, startTime)
             
             val connectedNotification = buildNotification(isConnecting = false)
@@ -1080,9 +1120,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    /**
-     * 修复：改进资源清理顺序
-     */
     private fun cleanupResources() {
         currentState = V2RayState.DISCONNECTED
         
@@ -1159,7 +1196,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         builder.addRoute("0.0.0.0", 0)
         VpnFileLogger.d(TAG, "添加IPv4全局路由")
         
-        // 简化：ENABLE_IPV6为false时不添加IPv6路由
         if (ENABLE_IPV6 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 builder.addRoute("::", 0)
@@ -1358,9 +1394,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         return tun2socksRestartCount < MAX_TUN2SOCKS_RESTART_COUNT
     }
     
-    /**
-     * 修复：防止重启死循环
-     */
     private fun restartTun2socks() {
         if (isRestartingTun2socks) {
             VpnFileLogger.w(TAG, "tun2socks正在重启中，跳过重复重启")
@@ -1383,7 +1416,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             if (mInterface == null || mInterface?.fileDescriptor == null) {
                 VpnFileLogger.e(TAG, "VPN接口无效，无法重启tun2socks")
-                // 不调用stopV2Ray()避免死循环
                 return
             }
             
@@ -1392,7 +1424,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.i(TAG, "tun2socks重启成功")
         } catch (e: Exception) {
             VpnFileLogger.e(TAG, "重启tun2socks失败", e)
-            // 不调用stopV2Ray()避免死循环
         } finally {
             isRestartingTun2socks = false
         }
@@ -1481,7 +1512,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             lastStatsTime = currentTime
             
-            // 【关键修改】更新ContentProvider而不是静态变量
+            // 【关键】更新ContentProvider
             TrafficStatsProvider.updateStats(
                 totalUploadBytes,
                 totalDownloadBytes,
@@ -1503,9 +1534,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    /**
-     * 修复：防止重复调用stopV2Ray
-     */
     private fun stopV2Ray() {
         if (currentState == V2RayState.DISCONNECTED) {
             VpnFileLogger.d(TAG, "服务已停止，跳过重复停止")
@@ -1517,7 +1545,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         currentState = V2RayState.DISCONNECTED
         isRestartingTun2socks = false
         
-        // 【关键修改】重置ContentProvider统计
+        // 【关键】重置ContentProvider统计
         TrafficStatsProvider.resetStats()
         
         statsJob?.cancel()
@@ -1580,7 +1608,6 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     }
     
     private fun formatTrafficStatsForNotification(): String {
-        // 优化：直接使用本地变量，因为在同一进程中
         val template = instanceLocalizedStrings["trafficStatsFormat"] ?: "流量: ↑%upload ↓%download"
         return template
             .replace("%upload", formatBytes(totalUploadBytes))
@@ -1739,17 +1766,10 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
     
-    /**
-     * 修复：改进onDestroy确保资源正确释放
-     */
     override fun onDestroy() {
         super.onDestroy()
         
         VpnFileLogger.d(TAG, "onDestroy开始")
-        
-        // 清除实例引用
-        instanceRef?.clear()
-        instanceRef = null
         
         // 取消所有协程
         try {
@@ -1758,14 +1778,15 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             VpnFileLogger.w(TAG, "取消协程作用域失败", e)
         }
         
-        // 修复：安全注销广播接收器
+        // 注销广播接收器
         unregisterStopReceiver()
+        unregisterUpdateNotificationReceiver()
         
         // 如果服务还在运行，执行清理
         if (currentState != V2RayState.DISCONNECTED) {
             currentState = V2RayState.DISCONNECTED
             
-            // 【关键修改】重置ContentProvider统计
+            // 重置ContentProvider统计
             TrafficStatsProvider.resetStats()
             
             // 取消所有任务
