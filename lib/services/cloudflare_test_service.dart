@@ -107,7 +107,7 @@ class CloudflareTestService {
           if (latency > 0 && latency < 999 && lossRate < 1.0) {
             successCount++;
             batchSuccessCount++;
-            _log.debug('✓ IP $ip 延迟: ${latency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(2)}%', tag: _logTag);
+            _log.debug('✔ IP $ip 延迟: ${latency}ms, 丢包率: ${(lossRate * 100).toStringAsFixed(2)}%', tag: _logTag);
           } else {
             failCount++;
             batchFailCount++;
@@ -1196,7 +1196,7 @@ class TestException implements Exception {
   String toString() => '$messageKey: $detailKey';
 }
 
-// ===== Cloudflare 测试对话框（更新使用新的进度系统） =====
+// ===== Cloudflare 测试对话框（更新使用新的进度系统）=====
 class CloudflareTestDialog extends StatefulWidget {
   final VoidCallback? onComplete;
   final VoidCallback? onError;
@@ -1335,13 +1335,21 @@ class _CloudflareTestDialogState extends State<CloudflareTestDialog> {
         final count = progress.detailParams?['count'] ?? 0;
         return l10n.samplingFromRanges(count);
       case 'nodeProgress':
+        // 【修改点2：使用本地化的nodeProgress格式】
         final current = progress.detailParams?['current'] ?? 0;
         final total = progress.detailParams?['total'] ?? 0;
         final ip = progress.detailParams?['ip'] ?? '';
+        
+        // 使用本地化的nodeProgress字符串（格式为: %s/%s）
+        String result = l10n.nodeProgress
+            .replaceFirst('%s', current.toString())
+            .replaceFirst('%s', total.toString());
+        
+        // 如果有IP信息，追加显示
         if (ip.isNotEmpty) {
-          return '$current/$total - $ip';
+          result += ' - $ip';
         }
-        return '$current/$total';
+        return result;
       case 'foundQualityNodes':
         final count = progress.detailParams?['count'] ?? 0;
         return l10n.foundNodes(count);
