@@ -139,6 +139,7 @@ class MainActivity: FlutterActivity() {
                     localizedStrings["proxyOnlyMode"] = call.argument<String>("proxyOnlyMode") ?: "Proxy Only"
                     localizedStrings["disconnectButtonName"] = call.argument<String>("disconnectButtonName") ?: "Disconnect"
                     localizedStrings["trafficStatsFormat"] = call.argument<String>("trafficStatsFormat") ?: "Traffic: ↑%upload ↓%download"
+                    localizedStrings["connecting"] = call.argument<String>("connecting") ?: "Connecting..."
                     
                     if (config != null) {
                         // 检查通知权限（Android 13+）
@@ -167,6 +168,7 @@ class MainActivity: FlutterActivity() {
                         localizedStrings["proxyOnlyMode"] = call.argument<String>("proxyOnlyMode") ?: "Proxy Only"
                         localizedStrings["disconnectButtonName"] = call.argument<String>("disconnectButtonName") ?: "Disconnect"
                         localizedStrings["trafficStatsFormat"] = call.argument<String>("trafficStatsFormat") ?: "Traffic: ↑%upload ↓%download"
+                        localizedStrings["connecting"] = call.argument<String>("connecting") ?: "Connecting..."
                         
                         VpnFileLogger.d(TAG, "发送更新通知栏文字广播")
                         

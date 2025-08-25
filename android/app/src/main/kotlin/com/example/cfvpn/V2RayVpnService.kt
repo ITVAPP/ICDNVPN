@@ -271,6 +271,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
                 instanceLocalizedStrings["smartProxyMode"] = intent?.getStringExtra("l10n_smartProxyMode") ?: "智能代理模式"
                 instanceLocalizedStrings["disconnectButtonName"] = intent?.getStringExtra("l10n_disconnectButtonName") ?: "断开"
                 instanceLocalizedStrings["trafficStatsFormat"] = intent?.getStringExtra("l10n_trafficStatsFormat") ?: "流量: ↑%upload ↓%download"
+                instanceLocalizedStrings["connecting"] = intent?.getStringExtra("l10n_connecting") ?: "Connecting..."
                 
                 // 更新通知
                 if (currentState == V2RayState.CONNECTED) {
@@ -388,7 +389,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             
             val appName = instanceLocalizedStrings["appName"] ?: "CFVPN"
             val title = if (isConnecting) {
-                "$appName - ......"
+                "$appName - ${instanceLocalizedStrings["connecting"] ?: "Connecting..."}"
             } else {
                 val modeText = if (globalProxy) {
                     instanceLocalizedStrings["globalProxyMode"] ?: "全局代理模式"
@@ -399,7 +400,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
             
             val content = if (isConnecting) {
-                "......"
+                instanceLocalizedStrings["connecting"] ?: "Connecting..."
             } else {
                 formatTrafficStatsForNotification()
             }
