@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
@@ -1171,6 +1172,7 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
     
     /**
      * 建立VPN隧道
+     * 【核心修复】：修正白名单逻辑，不能同时使用addAllowedApplication和addDisallowedApplication
      */
     private fun establishVpn() {
         VpnFileLogger.d(TAG, "开始建立VPN隧道")
@@ -1206,30 +1208,41 @@ class V2RayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
         
-        // 分应用代理
+        // 【核心修复】分应用代理逻辑
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                builder.addDisallowedApplication(packageName)
-                VpnFileLogger.d(TAG, "排除自身应用: $packageName")
-            } catch (e: Exception) {
-                VpnFileLogger.w(TAG, "排除自身应用失败", e)
-            }
+            // 首先过滤并验证白名单中的应用（排除自身和无效包名）
+            val filteredApps = allowedApps
+                .map { it.trim() }
+                .filter { app -> app.isNotEmpty() && app != packageName }
+                .distinct()
             
-            if (allowedApps.isNotEmpty()) {
-                val filteredApps = allowedApps
-                    .map { it.trim() }
-                    .filter { app -> app.isNotEmpty() && app != packageName }
-                    .distinct()
+            if (filteredApps.isNotEmpty()) {
+                // 【关键修改】白名单模式：只使用addAllowedApplication，不使用addDisallowedApplication
+                VpnFileLogger.d(TAG, "启用白名单模式：${filteredApps.size}个应用将使用VPN")
                 
-                if (filteredApps.isNotEmpty()) {
-                    VpnFileLogger.d(TAG, "使用包含模式，${filteredApps.size}个应用走VPN")
-                    filteredApps.forEach { app ->
-                        try {
-                            builder.addAllowedApplication(app)
-                        } catch (e: Exception) {
-                            VpnFileLogger.w(TAG, "添加允许应用失败: $app", e)
-                        }
+                for (app in filteredApps) {
+                    try {
+                        builder.addAllowedApplication(app)
+                        VpnFileLogger.d(TAG, "添加白名单应用: $app")
+                    } catch (e: PackageManager.NameNotFoundException) {
+                        VpnFileLogger.w(TAG, "白名单应用未找到: $app", e)
+                    } catch (e: Exception) {
+                        VpnFileLogger.w(TAG, "添加白名单应用失败: $app", e)
                     }
+                }
+                
+                // 注意：在白名单模式下，不需要也不能调用addDisallowedApplication
+                // Android VPN API会自动排除未在白名单中的应用（包括自身）
+                
+            } else {
+                // 没有配置白名单或白名单为空：所有应用走VPN（除了自身）
+                VpnFileLogger.d(TAG, "未启用白名单模式：所有应用将使用VPN（排除自身）")
+                try {
+                    // 【关键】只有在不使用白名单时，才使用addDisallowedApplication排除自身
+                    builder.addDisallowedApplication(packageName)
+                    VpnFileLogger.d(TAG, "排除自身应用: $packageName")
+                } catch (e: Exception) {
+                    VpnFileLogger.w(TAG, "排除自身应用失败", e)
                 }
             }
         }
