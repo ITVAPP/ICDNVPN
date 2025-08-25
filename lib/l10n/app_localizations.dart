@@ -307,6 +307,20 @@ class AppLocalizations {
   String get continentAfrica => _get('continentAfrica');
   String get continentUnknown => _get('continentUnknown');
   
+  // 应用白名单相关
+  String get appWhitelist => _get('appWhitelist');
+  String get appWhitelistDesc => _get('appWhitelistDesc');
+  String get selectApps => _get('selectApps');
+  String get searchApps => _get('searchApps');
+  String get selectAll => _get('selectAll');
+  String get deselectAll => _get('deselectAll');
+  String get noAppsSelected => _get('noAppsSelected');
+  String get userApps => _get('userApps');
+  String get noAppsFound => _get('noAppsFound');
+  String get noSearchResults => _get('noSearchResults');
+  String get cannotModifyWhileConnected => _get('cannotModifyWhileConnected');
+  String get notSupportedOnThisPlatform => _get('notSupportedOnThisPlatform');
+  
   // 带参数的文本格式化方法
   String samplingFromRanges(int count) {
     final template = _get('samplingFromIPRanges');
@@ -388,6 +402,12 @@ class AppLocalizations {
   String systemProxySettingsError(String appName) {
     final template = _get('systemProxySettingsError');
     return template.replaceAll('%appName', appName);
+  }
+  
+  // 应用白名单带参数方法
+  String appsSelected(int count) {
+    final template = _get('appsSelected');
+    return template.replaceAll('%count', count.toString());
   }
 }
 
@@ -714,6 +734,21 @@ const Map<String, String> _zhCnTranslations = {
   'continentSouthAmerica': '南美洲',
   'continentAfrica': '非洲',
   'continentUnknown': '未知',
+  
+  // 应用白名单相关
+  'appWhitelist': '应用白名单',
+  'appWhitelistDesc': '仅选中的应用使用VPN',
+  'selectApps': '选择应用',
+  'searchApps': '搜索应用',
+  'selectAll': '全选',
+  'deselectAll': '取消全选',
+  'appsSelected': '已选择 %count 个应用',
+  'noAppsSelected': '所有应用使用VPN',
+  'userApps': '用户应用',
+  'noAppsFound': '没有找到应用',
+  'noSearchResults': '没有搜索结果',
+  'cannotModifyWhileConnected': '连接时无法修改',
+  'notSupportedOnThisPlatform': '此平台不支持该功能',
 };
 
 // 英语翻译
