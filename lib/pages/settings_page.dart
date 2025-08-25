@@ -6,6 +6,7 @@ import '../providers/app_provider.dart';
 import '../services/autostart_service.dart';
 import '../services/version_service.dart';  // 新增：引入版本服务
 import '../services/ad_service.dart';  // 新增：引入广告服务
+import '../services/v2ray_service.dart';  // 新增：引入V2Ray服务（用于获取应用列表）
 import '../utils/log_service.dart';  // 新增：引入日志服务
 import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -224,6 +225,61 @@ void _updateConnectionProviderLocale() {
     );
   }
 
+  // 获取应用白名单概要文字
+  String _getAppWhitelistSummary(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final connectionProvider = context.watch<ConnectionProvider>();
+    final count = connectionProvider.allowedApps.length;
+    
+    if (count == 0) {
+      return l10n.noAppsSelected;
+    } else {
+      return l10n.appsSelected(count);
+    }
+  }
+
+  // 显示应用选择对话框
+  Future<void> _showAppSelectorDialog(BuildContext context) async {
+    final connectionProvider = context.read<ConnectionProvider>();
+    final l10n = AppLocalizations.of(context);
+    
+    // 只在Android/iOS平台显示
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.notSupportedOnThisPlatform),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
+    // 如果已连接，不允许修改
+    if (connectionProvider.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.cannotModifyWhileConnected),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
+    // 显示应用选择对话框
+    final selectedApps = await showDialog<List<String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _AppSelectorDialog(
+        selectedApps: List<String>.from(connectionProvider.allowedApps),
+      ),
+    );
+    
+    // 如果用户选择了应用，保存
+    if (selectedApps != null) {
+      await connectionProvider.setAllowedApps(selectedApps);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -284,6 +340,34 @@ void _updateConnectionProviderLocale() {
                 );
               },
             ),
+            
+            // 新增：应用白名单设置（仅Android/iOS显示）
+            if (Platform.isAndroid || Platform.isIOS)
+              Consumer<ConnectionProvider>(
+                builder: (context, connectionProvider, child) {
+                  return _SettingTile(
+                    title: l10n.appWhitelist,
+                    subtitle: _getAppWhitelistSummary(context),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: connectionProvider.isConnected 
+                        ? theme.disabledColor 
+                        : null,
+                    ),
+                    onTap: connectionProvider.isConnected
+                      ? () {
+                          // 连接时点击，显示提示
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(l10n.cannotModifyWhileConnected),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      : () => _showAppSelectorDialog(context),
+                  );
+                },
+              ),
             
             // 外观设置
             const _SectionDivider(),
@@ -771,6 +855,225 @@ void _updateConnectionProviderLocale() {
           ],
         ),
       ),
+    );
+  }
+}
+
+// 应用选择对话框
+class _AppSelectorDialog extends StatefulWidget {
+  final List<String> selectedApps;
+  
+  const _AppSelectorDialog({
+    required this.selectedApps,
+  });
+
+  @override
+  State<_AppSelectorDialog> createState() => _AppSelectorDialogState();
+}
+
+class _AppSelectorDialogState extends State<_AppSelectorDialog> {
+  List<Map<String, dynamic>> _allApps = [];
+  List<Map<String, dynamic>> _filteredApps = [];
+  List<String> _selectedApps = [];
+  String _searchQuery = '';
+  bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedApps = List<String>.from(widget.selectedApps);
+    _loadApps();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadApps() async {
+    try {
+      final apps = await V2RayService.getInstalledApps();
+      
+      // 过滤系统应用，只显示用户应用
+      final userApps = apps.where((app) => 
+        app['isSystemApp'] != true
+      ).toList();
+      
+      // 按应用名排序
+      userApps.sort((a, b) => 
+        (a['appName'] as String).toLowerCase().compareTo(
+          (b['appName'] as String).toLowerCase()
+        )
+      );
+      
+      setState(() {
+        _allApps = userApps;
+        _filteredApps = userApps;
+        _isLoading = false;
+      });
+    } catch (e) {
+      LogService.instance.error('加载应用列表失败', tag: 'AppSelector', error: e);
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _filterApps(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredApps = _allApps;
+      } else {
+        final lowerQuery = query.toLowerCase();
+        _filteredApps = _allApps.where((app) {
+          final appName = (app['appName'] as String).toLowerCase();
+          final packageName = (app['packageName'] as String).toLowerCase();
+          return appName.contains(lowerQuery) || packageName.contains(lowerQuery);
+        }).toList();
+      }
+    });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectedApps.length == _filteredApps.length) {
+        // 如果已全选，则取消全选
+        _selectedApps.clear();
+      } else {
+        // 全选当前过滤的应用
+        _selectedApps = _filteredApps
+          .map((app) => app['packageName'] as String)
+          .toList();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    
+    return AlertDialog(
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.apps, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                l10n.selectApps,
+                style: const TextStyle(fontSize: FontSizes.dialogTitle),
+              ),
+              const Spacer(),
+              // 全选/取消全选按钮
+              TextButton(
+                onPressed: _isLoading ? null : _toggleSelectAll,
+                child: Text(
+                  _selectedApps.length == _filteredApps.length
+                    ? l10n.deselectAll
+                    : l10n.selectAll,
+                  style: const TextStyle(fontSize: FontSizes.description),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 搜索框
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: l10n.searchApps,
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      _filterApps('');
+                    },
+                  )
+                : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+            onChanged: _filterApps,
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _filteredApps.isEmpty
+            ? Center(
+                child: Text(
+                  _searchQuery.isEmpty 
+                    ? l10n.noAppsFound
+                    : l10n.noSearchResults,
+                  style: TextStyle(
+                    fontSize: FontSizes.description,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+              )
+            : ListView.builder(
+                itemCount: _filteredApps.length,
+                itemBuilder: (context, index) {
+                  final app = _filteredApps[index];
+                  final packageName = app['packageName'] as String;
+                  final appName = app['appName'] as String;
+                  final isSelected = _selectedApps.contains(packageName);
+                  
+                  return CheckboxListTile(
+                    value: isSelected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedApps.add(packageName);
+                        } else {
+                          _selectedApps.remove(packageName);
+                        }
+                      });
+                    },
+                    title: Text(
+                      appName,
+                      style: const TextStyle(fontSize: FontSizes.settingTitle),
+                    ),
+                    subtitle: Text(
+                      packageName,
+                      style: TextStyle(
+                        fontSize: FontSizes.description - 1,
+                        color: theme.textTheme.bodySmall?.color,
+                      ),
+                    ),
+                    dense: true,
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            l10n.cancel,
+            style: const TextStyle(fontSize: FontSizes.description),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, _selectedApps),
+          child: Text(
+            l10n.save,
+            style: const TextStyle(fontSize: FontSizes.description),
+          ),
+        ),
+      ],
     );
   }
 }
