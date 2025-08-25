@@ -860,6 +860,38 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     }
   }
   
+  // 测试远程连接（Windows平台专用）
+  static Future<bool> _testRemoteConnection() async {
+    try {
+      await _log.info('测试远程服务器连接...', tag: _logTag);
+      
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      
+      // 设置HTTP代理
+      client.findProxy = (uri) => 'PROXY 127.0.0.1:${AppConfig.v2rayHttpPort}';
+      
+      // 测试Google 204端点（与Android端保持一致）
+      final request = await client.getUrl(Uri.parse('http://www.google.com/generate_204'));
+      final response = await request.close();
+      client.close();
+      
+      final success = (response.statusCode == 204 || response.statusCode == 200);
+      
+      if (success) {
+        await _log.info('✅ 远程连接测试成功，响应码: ${response.statusCode}', tag: _logTag);
+      } else {
+        await _log.error('❌ 远程连接测试失败，响应码: ${response.statusCode}', tag: _logTag);
+      }
+      
+      return success;
+      
+    } catch (e) {
+      await _log.error('❌ 远程连接测试异常: ${e.toString().split('\n').first}', tag: _logTag);
+      return false;
+    }
+  }
+  
   // 启动V2Ray服务（增强版，支持新功能）
   static Future<bool> start({
     required String serverIp,
@@ -1162,7 +1194,7 @@ static Future<Map<String, dynamic>> _generateConfigMap({
     }
   }
   
-  // 桌面平台启动逻辑（Windows） - 修复：不设置connected状态
+  // 桌面平台启动逻辑（Windows） - 添加远程连接测试
   static Future<bool> _startDesktopPlatform({
     required String serverIp,
     required int serverPort,
@@ -1238,31 +1270,60 @@ static Future<Map<String, dynamic>> _generateConfigMap({
       }
     });
     
-    // 等待并验证
+    // 等待V2Ray启动
     await Future.delayed(AppConfig.v2rayStartupWait);
     
-    if (await isPortListening(AppConfig.v2raySocksPort)) {
-      _isRunning = true;
-      _uploadTotal = 0;
-      _downloadTotal = 0;
-      _lastUpdateTime = 0;
-      _lastUploadBytes = 0;
-      _lastDownloadBytes = 0;
-      
-      // 修复：保持connecting状态，不设置为connected
-      // 让ConnectionProvider在设置系统代理后再更新为connected
-      // _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));  // 删除这行
-      _startStatsTimer();
-      _startDurationTimer();
-      
-      await _log.info('V2Ray服务启动成功', tag: _logTag);
-      return true;
-    } else {
-      await _log.error('V2Ray启动但端口未监听', tag: _logTag);
+    // 检查端口监听（同时检查SOCKS和HTTP端口）
+    if (!await isPortListening(AppConfig.v2raySocksPort)) {
+      await _log.error('V2Ray SOCKS端口未监听', tag: _logTag);
       _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
       await stop();
       return false;
     }
+    
+    if (!await isPortListening(AppConfig.v2rayHttpPort)) {
+      await _log.error('V2Ray HTTP端口未监听', tag: _logTag);
+      _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
+      await stop();
+      return false;
+    }
+    
+    await _log.info('V2Ray端口已监听，测试远程连接...', tag: _logTag);
+    
+    // 测试远程连接（与Android端逻辑一致）
+    await Future.delayed(const Duration(milliseconds: 500)); // 等待服务稳定
+    
+    bool connectionTestSuccess = await _testRemoteConnection();
+    
+    if (!connectionTestSuccess) {
+      // 重试一次（与Android端一致）
+      await _log.info('连接测试失败，2秒后重试', tag: _logTag);
+      await Future.delayed(const Duration(seconds: 2));
+      connectionTestSuccess = await _testRemoteConnection();
+    }
+    
+    if (!connectionTestSuccess) {
+      await _log.error('Unable to connect to remote server', tag: _logTag);  // 与Android端保持一致的错误消息
+      _updateStatus(V2RayStatus(state: V2RayConnectionState.error));
+      await stop();
+      return false;
+    }
+    
+    // 测试通过，设置状态
+    await _log.info('✅ V2Ray服务完全就绪', tag: _logTag);
+    
+    _isRunning = true;
+    _uploadTotal = 0;
+    _downloadTotal = 0;
+    _lastUpdateTime = 0;
+    _lastUploadBytes = 0;
+    _lastDownloadBytes = 0;
+    
+    _updateStatus(V2RayStatus(state: V2RayConnectionState.connected));
+    _startStatsTimer();
+    _startDurationTimer();
+    
+    return true;
   }
   
   // 停止V2Ray服务 - 修复：添加资源清理
