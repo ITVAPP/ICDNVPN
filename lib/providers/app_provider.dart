@@ -31,6 +31,9 @@ class ConnectionProvider with ChangeNotifier {
   String? _disconnectReason;
   bool _globalProxy = false;
   
+  // 添加：应用白名单管理
+  List<String> _allowedApps = [];
+  
   Map<String, String>? _localizedStrings;
   BuildContext? _dialogContext;
   
@@ -45,6 +48,9 @@ class ConnectionProvider with ChangeNotifier {
   String? get disconnectReason => _disconnectReason;
   bool get globalProxy => _globalProxy;
   bool _isUpdatingNotification = false;
+  
+  // 添加：getter for allowedApps
+  List<String> get allowedApps => _allowedApps;
   
   ConnectionProvider() {
     V2RayService.setOnProcessExit(_handleV2RayProcessExit);
@@ -69,6 +75,7 @@ class ConnectionProvider with ChangeNotifier {
     
     _loadSettings();
     _loadCurrentServer();
+    _loadAllowedApps();  // 添加：加载应用白名单
   }
   
   @override
@@ -179,6 +186,35 @@ class ConnectionProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _autoConnect = prefs.getBool('auto_connect') ?? false;
     _globalProxy = prefs.getBool('global_proxy') ?? false;
+  }
+  
+  // 添加：加载已保存的应用白名单
+  Future<void> _loadAllowedApps() async {
+    try {
+      final config = await V2RayService.loadProxyConfig();
+      _allowedApps = config['allowedApps'] ?? [];
+      await _log.info('加载应用白名单: ${_allowedApps.length}个应用', tag: _logTag);
+    } catch (e) {
+      await _log.error('加载应用白名单失败', tag: _logTag, error: e);
+      _allowedApps = [];
+    }
+  }
+  
+  // 添加：设置应用白名单
+  Future<void> setAllowedApps(List<String> apps) async {
+    _allowedApps = apps;
+    
+    // 保存到原生端
+    await V2RayService.saveProxyConfig(
+      allowedApps: apps,
+      bypassSubnets: [],  // 保持原有的子网配置
+    );
+    
+    await _log.info('保存应用白名单: ${apps.length}个应用', tag: _logTag);
+    
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
   
   Future<void> tryAutoConnect() async {
@@ -392,6 +428,13 @@ class ConnectionProvider with ChangeNotifier {
         
         bool v2rayStarted = false;
         try {
+          // 记录应用白名单状态
+          if (_allowedApps.isNotEmpty) {
+            await _log.info('启用应用白名单模式: ${_allowedApps.length}个应用', tag: _logTag);
+          } else {
+            await _log.info('未启用应用白名单，所有应用使用VPN', tag: _logTag);
+          }
+          
           await _log.info('开始启动V2Ray服务', tag: _logTag);
           v2rayStarted = await V2RayService.start(
             serverIp: serverToConnect.ip,
@@ -399,6 +442,7 @@ class ConnectionProvider with ChangeNotifier {
             globalProxy: _globalProxy,
             localizedStrings: _localizedStrings,
             enableVirtualDns: enableVirtualDns ?? AppConfig.enableVirtualDns,
+            allowedApps: _allowedApps.isEmpty ? null : _allowedApps,  // 修改：传递应用白名单
           );
 
           if (v2rayStarted) {
