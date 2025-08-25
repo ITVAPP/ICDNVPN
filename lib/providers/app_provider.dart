@@ -140,6 +140,7 @@ class ConnectionProvider with ChangeNotifier {
       'proxyOnlyMode': l10n.proxyOnlyMode,
       'disconnectButtonName': l10n.disconnect,
       'trafficStatsFormat': l10n.trafficStats,
+      'connecting': l10n.connecting, 
     };
   }
   
