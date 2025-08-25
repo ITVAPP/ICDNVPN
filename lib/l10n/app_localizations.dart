@@ -320,6 +320,7 @@ class AppLocalizations {
   String get noSearchResults => _get('noSearchResults');
   String get cannotModifyWhileConnected => _get('cannotModifyWhileConnected');
   String get notSupportedOnThisPlatform => _get('notSupportedOnThisPlatform');
+  String get save => _get('save');
   
   // 带参数的文本格式化方法
   String samplingFromRanges(int count) {
@@ -749,6 +750,7 @@ const Map<String, String> _zhCnTranslations = {
   'noSearchResults': '没有搜索结果',
   'cannotModifyWhileConnected': '连接时无法修改',
   'notSupportedOnThisPlatform': '此平台不支持该功能',
+  'save': '保存',
 };
 
 // 英语翻译
@@ -802,3 +804,4 @@ const Map<String, String> _arTranslations = {
   'systemProxySettingsError': 'فشل تعيين وكيل النظام. مطلوب تعديل السجل ولكن تم حظره. يرجى الوثوق بـ %appName في برنامج الأمان الخاص بك.',
   // 其他阿拉伯语翻译待完善
 };
+
