@@ -963,9 +963,24 @@ Future<void> _checkAndRequestBatteryOptimization() async {
         ],
       );
     } else {
+      // 【修改点1：使用CloudflareTestDialog对话框而不是直接调用】
       content = InkWell(
-        onTap: serverProvider.isInitializing ? null : () async {
-          await serverProvider.refreshFromCloudflare();
+        onTap: serverProvider.isInitializing ? null : () {
+          // 显示Cloudflare测试对话框
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.cloud_download, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Text(l10n.addFromCloudflare),
+                ],
+              ),
+              content: const CloudflareTestDialog(),
+            ),
+          );
         },
         borderRadius: BorderRadius.circular(16),
         child: Row(
